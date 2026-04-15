@@ -175,19 +175,47 @@ button:hover {
 }
 
 .question-visibility-btn {
-    width: auto;
-    min-height: 32px;
+    flex: 0 0 46px;
+    width: 46px;
+    height: 36px;
+    min-height: auto;
     margin-top: 0;
-    padding: 6px 10px;
+    padding: 0;
     border-radius: 999px;
-    font-size: 0.76rem;
-    line-height: 1;
-    background: #1d4ed8;
+    background: #ffffff;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 150ms ease;
+}
+
+.question-visibility-btn:hover {
+    background: #ffffff;
+    transform: scale(1.1);
 }
 
 .question-visibility-btn:disabled {
-    background: #94a3b8;
+    background: #f1f5f9;
     cursor: not-allowed;
+}
+
+.question-visibility-icon {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
+.question-visibility-btn[data-view-mode="all"] .question-visibility-icon {
+    filter: none;
+}
+
+.question-visibility-btn[data-view-mode="team-left"] .question-visibility-icon {
+    filter: invert(20%) sepia(91%) saturate(2660%) hue-rotate(344deg) brightness(94%) contrast(96%);
+}
+
+.question-visibility-btn[data-view-mode="team-right"] .question-visibility-icon {
+    filter: invert(35%) sepia(86%) saturate(2170%) hue-rotate(209deg) brightness(97%) contrast(102%);
 }
 
 .rulebook-btn {

@@ -15,6 +15,9 @@ def _build_visible_question_text(normalized_chars: list[str], game: dict | None,
     if chat_role == "questioner":
         return "".join(normalized_chars)
 
+    if chat_role == "spectator" and game and game.get("game_status") == "playing":
+        return "".join(normalized_chars)
+
     masked = [QUESTION_MASK_CHAR] * len(normalized_chars)
     if not game or game.get("game_status") != "playing":
         return "".join(masked)

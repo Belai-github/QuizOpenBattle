@@ -29,6 +29,7 @@ const CHAT_MIN_INTERVAL_MS = 800;
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
 const QUESTIONER_VIEW_MODE_CYCLE = ["all", "team-left", "team-right"];
+const SPECTATOR_VIEW_MODE_CYCLE = ["team-left", "team-right"];
 const DEBUG_VIEWPORT_OVERLAY_ENABLED = true;
 let currentArenaQuestionRawText = "";
 let questionerViewMode = "all";
@@ -352,31 +353,62 @@ function showGameArenaScreen() {
     updateChatBoxVisibility();
 }
 
+function canToggleQuestionViewMode() {
+    if (!isInGameArena()) {
+        return false;
+    }
+
+    if (userRole === "questioner") {
+        return true;
+    }
+
+    const roomState = currentRoomGameState || "waiting";
+    return userRole === "spectator" && roomState === "playing";
+}
+
+function getQuestionViewModeCycleForCurrentUser() {
+    if (userRole === "questioner") {
+        return QUESTIONER_VIEW_MODE_CYCLE;
+    }
+    if (userRole === "spectator") {
+        return SPECTATOR_VIEW_MODE_CYCLE;
+    }
+    return QUESTIONER_VIEW_MODE_CYCLE;
+}
+
 function updateQuestionVisibilityButton() {
     if (!toggleQuestionVisibilityBtnEl) return;
 
-    const canToggle = isInGameArena() && userRole === "questioner";
+    const canToggle = canToggleQuestionViewMode();
     toggleQuestionVisibilityBtnEl.classList.toggle("hidden", !canToggle);
     toggleQuestionVisibilityBtnEl.disabled = !canToggle;
 
     if (!canToggle) {
-        toggleQuestionVisibilityBtnEl.textContent = "表示切替";
+        toggleQuestionVisibilityBtnEl.dataset.viewMode = "all";
         toggleQuestionVisibilityBtnEl.title = "表示視点を切り替え";
+        toggleQuestionVisibilityBtnEl.setAttribute("aria-label", "表示視点を切り替え");
         return;
+    }
+
+    const viewModeCycle = getQuestionViewModeCycleForCurrentUser();
+    if (!viewModeCycle.includes(questionerViewMode)) {
+        questionerViewMode = viewModeCycle[0];
     }
 
     const modeLabels = {
         all: "全開示",
-        "team-left": "左視点",
-        "team-right": "右視点",
+        "team-left": "先攻視点",
+        "team-right": "後攻視点",
     };
 
-    const currentIndex = QUESTIONER_VIEW_MODE_CYCLE.indexOf(questionerViewMode);
+    const currentIndex = viewModeCycle.indexOf(questionerViewMode);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
-    const nextMode = QUESTIONER_VIEW_MODE_CYCLE[(safeIndex + 1) % QUESTIONER_VIEW_MODE_CYCLE.length];
+    const nextMode = viewModeCycle[(safeIndex + 1) % viewModeCycle.length];
 
-    toggleQuestionVisibilityBtnEl.textContent = modeLabels[questionerViewMode] || modeLabels.all;
-    toggleQuestionVisibilityBtnEl.title = `表示視点切替（次: ${modeLabels[nextMode]}）`;
+    const currentModeLabel = modeLabels[questionerViewMode] || modeLabels.all;
+    toggleQuestionVisibilityBtnEl.dataset.viewMode = questionerViewMode;
+    toggleQuestionVisibilityBtnEl.title = `現在: ${currentModeLabel} / 次: ${modeLabels[nextMode]}`;
+    toggleQuestionVisibilityBtnEl.setAttribute("aria-label", `表示視点: ${currentModeLabel}`);
 }
 
 function updateStartGameButtonVisibility(currentRoom) {
@@ -712,17 +744,27 @@ function buildArenaQuestionRows(charsPerLine) {
 }
 
 function getEffectiveQuestionViewerRole() {
-    if (userRole !== "questioner") {
-        return userRole;
+    if (userRole === "questioner") {
+        if (questionerViewMode === "team-left") {
+            return "team-left";
+        }
+        if (questionerViewMode === "team-right") {
+            return "team-right";
+        }
+        return "questioner";
     }
 
-    if (questionerViewMode === "team-left") {
-        return "team-left";
+    if (userRole === "spectator") {
+        if (questionerViewMode === "team-left") {
+            return "team-left";
+        }
+        if (questionerViewMode === "team-right") {
+            return "team-right";
+        }
+        return "spectator";
     }
-    if (questionerViewMode === "team-right") {
-        return "team-right";
-    }
-    return "questioner";
+
+    return userRole;
 }
 
 function getOpenedByTeamMap() {
@@ -1462,13 +1504,18 @@ shuffleParticipantsBtnEl?.addEventListener("click", async () => {
 });
 
 toggleQuestionVisibilityBtnEl?.addEventListener("click", () => {
-    if (!isInGameArena() || userRole !== "questioner") {
+    if (!canToggleQuestionViewMode()) {
         return;
     }
 
-    const currentIndex = QUESTIONER_VIEW_MODE_CYCLE.indexOf(questionerViewMode);
+    const viewModeCycle = getQuestionViewModeCycleForCurrentUser();
+    if (!viewModeCycle.includes(questionerViewMode)) {
+        questionerViewMode = viewModeCycle[0];
+    }
+
+    const currentIndex = viewModeCycle.indexOf(questionerViewMode);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
-    questionerViewMode = QUESTIONER_VIEW_MODE_CYCLE[(safeIndex + 1) % QUESTIONER_VIEW_MODE_CYCLE.length];
+    questionerViewMode = viewModeCycle[(safeIndex + 1) % viewModeCycle.length];
     updateQuestionVisibilityButton();
     renderArenaQuestionText();
 });
