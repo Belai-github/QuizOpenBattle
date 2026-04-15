@@ -1348,6 +1348,10 @@ body.modal-open #arena-question-text .arena-question-line {
     box-shadow: 0 3px 10px rgba(29, 78, 216, 0.18);
 }
 
+#arena-spectator-list .player-list-item.player-list-item-me {
+    border-color: #111827;
+}
+
 #arena-spectator-list .player-list-item,
 #participants-list .player-list-item {
     border-color: #cbd5e1;
