@@ -302,8 +302,9 @@ function canSendChatType(chatType) {
         return true;
     }
 
-    // 準備中はアリーナ内の全体チャットのみ全員が送信できる。
-    if (chatType === "game-global" && (currentRoomGameState || "waiting") === "waiting") {
+    // 準備中・終了後はアリーナ内の全体チャットのみ全員が送信できる。
+    const roomState = currentRoomGameState || "waiting";
+    if (chatType === "game-global" && (roomState === "waiting" || roomState === "finished")) {
         return true;
     }
 

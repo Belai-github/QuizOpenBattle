@@ -421,6 +421,16 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
             event_recipient_ids |= ids
         return {"ok": True, "event_recipient_ids": event_recipient_ids}
 
+    # 全体チャットは待機中・終了後のみ利用可能
+    if chat_type == "game-global":
+        if room_state != "finished":
+            return {"ok": False, "error": "対戦中は全体チャットを利用できません。"}
+
+        event_recipient_ids = set()
+        for ids in role_to_ids.values():
+            event_recipient_ids |= ids
+        return {"ok": True, "event_recipient_ids": event_recipient_ids}
+
     sendable_roles_by_type = {
         "team-left": {"team-left", "questioner"},
         "team-right": {"team-right", "questioner"},

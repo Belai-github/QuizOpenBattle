@@ -377,7 +377,8 @@ button:hover {
 }
 
 .chat-log {
-    height: 140px;
+    flex: 1 1 auto;
+    min-height: 140px;
     overflow: auto;
     background: #ffedd5;
     border: 1px solid #fdba74;
@@ -728,9 +729,10 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #arena-player-right {
-    order: 3;
-    width: 100%;
-    max-width: 100%;
+    #arena-global-chat-box.hidden {
+        display: none;
+    }
+
     min-width: 0;
 }
 
@@ -771,6 +773,19 @@ body.modal-open #arena-question-text .arena-question-line {
     border: 1px solid #facc15;
     border-radius: 12px;
     padding: 10px;
+    display: flex;
+    flex-direction: column;
+    min-height: 360px;
+    overflow: visible;
+}
+
+#arena-global-chat-box.hidden {
+    display: none;
+}
+
+#arena-global-chat-box .chat-log {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 #arena-lower-layout {
