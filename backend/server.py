@@ -14,6 +14,26 @@ class QuizGameManager:
         # 【対策1】同時に接続できる最大人数を設定（例: プレイヤー2人＋観戦2人 = 4）
         self.MAX_CONNECTIONS = 4
 
+    def build_participants(self):
+        participants = []
+        for client_id, nickname in self.nicknames.items():
+            participants.append({"client_id": client_id, "nickname": nickname})
+        return participants
+
+    async def broadcast_state(self, public_info: str, private_map: dict | None = None):
+        participants = self.build_participants()
+        for client_id, ws in self.active_connections.items():
+            private_info = ""
+            if private_map is not None:
+                private_info = private_map.get(client_id, "")
+
+            response = {
+                "public_info": public_info,
+                "private_info": private_info,
+                "participants": participants,
+            }
+            await ws.send_text(json.dumps(response))
+
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         await websocket.accept()
 
@@ -27,25 +47,30 @@ class QuizGameManager:
         self.active_connections[client_id] = websocket
         self.nicknames[client_id] = nickname
         print(f"プレイヤー接続: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
+
+        await self.broadcast_state(
+            public_info=f"{nickname} が参加しました",
+            private_map={client_id: "ゲームへようこそ"},
+        )
         return True
 
-    def disconnect(self, client_id: str):
+    async def disconnect(self, client_id: str):
         if client_id in self.active_connections:
             del self.active_connections[client_id]
             nickname = self.nicknames.pop(client_id, client_id)
             print(f"プレイヤー切断: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
+            await self.broadcast_state(public_info=f"{nickname} が退出しました")
 
     async def process_action(self, action_player_id: str, action_data: dict):
-        # （前回の処理と同じ）
-        for client_id, ws in self.active_connections.items():
+        private_map = {}
+        actor_name = self.nicknames.get(action_player_id, "相手")
+        for client_id in self.active_connections.keys():
             if client_id == action_player_id:
-                secret_msg = f"あなたは「{action_data.get('action')}」を選択しました。"
+                private_map[client_id] = f"あなたは「{action_data.get('action')}」を選択しました。"
             else:
-                actor_name = self.nicknames.get(action_player_id, "相手")
-                secret_msg = f"{actor_name} が行動を完了しました。あなたのターンです。"
+                private_map[client_id] = f"{actor_name} が行動を完了しました。あなたのターンです。"
 
-            response = {"public_info": "行動が受理されました", "private_info": secret_msg}
-            await ws.send_text(json.dumps(response))
+        await self.broadcast_state(public_info="行動が受理されました", private_map=private_map)
 
 
 manager = QuizGameManager()
@@ -76,4 +101,4 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 pass
 
     except WebSocketDisconnect:
-        manager.disconnect(client_id)
+        await manager.disconnect(client_id)

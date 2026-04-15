@@ -1,5 +1,23 @@
 let ws;
 
+function renderParticipants(participants) {
+    const listEl = document.getElementById("participants-list");
+    listEl.innerHTML = "";
+
+    if (!Array.isArray(participants) || participants.length === 0) {
+        const emptyItem = document.createElement("li");
+        emptyItem.textContent = "参加者はいません";
+        listEl.appendChild(emptyItem);
+        return;
+    }
+
+    participants.forEach((participant) => {
+        const item = document.createElement("li");
+        item.textContent = participant.nickname || "ゲスト";
+        listEl.appendChild(item);
+    });
+}
+
 function buildWebSocketUrl(clientId, nickname) {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = new URL(window.location.origin);
@@ -42,6 +60,7 @@ document.getElementById("join-btn").addEventListener("click", () => {
         const data = JSON.parse(event.data);
         document.getElementById("public-info").textContent = data.public_info;
         document.getElementById("private-info").textContent = data.private_info;
+        renderParticipants(data.participants);
     };
 });
 

@@ -1,0 +1,81 @@
+:root {
+    --bg-start: #f2f5ff;
+    --bg-end: #e8f7f2;
+    --panel: #ffffff;
+    --panel-border: #d8e0f0;
+    --text: #1f2937;
+    --primary: #0f766e;
+    --primary-hover: #115e59;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 16px;
+    color: var(--text);
+    font-family: "Noto Sans JP", "Hiragino Sans", sans-serif;
+    background: linear-gradient(160deg, var(--bg-start), var(--bg-end));
+}
+
+h1 {
+    margin: 0 0 16px;
+    text-align: center;
+    font-size: 1.6rem;
+}
+
+#login-screen,
+#game-screen {
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 16px;
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    background: var(--panel);
+    box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
+}
+
+input,
+button {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 8px;
+    font-size: 16px;
+    border-radius: 10px;
+}
+
+input {
+    padding: 10px 12px;
+    border: 1px solid #c7d2e5;
+}
+
+button {
+    border: none;
+    color: #ffffff;
+    background: var(--primary);
+    cursor: pointer;
+    font-weight: 700;
+}
+
+button:hover {
+    background: var(--primary-hover);
+}
+
+#participants-list {
+    margin: 8px 0 0;
+    padding-left: 20px;
+}
+
+@media (min-width: 768px) {
+    body {
+        padding: 28px;
+    }
+
+    #login-screen,
+    #game-screen {
+        padding: 20px;
+    }
+}
