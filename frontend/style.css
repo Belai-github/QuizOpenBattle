@@ -1187,6 +1187,7 @@ body[data-room-role="spectator"] #arena-answer-box {
 
 .arena-question-char.is-mask-token.is-selectable:hover {
     filter: brightness(1.06);
+    transform: scale(1.1);
 }
 
 .arena-question-char.is-mask-token:hover::before {
@@ -1207,6 +1208,7 @@ body[data-room-role="spectator"] #arena-answer-box {
 
     .arena-question-char.is-mask-token.is-selectable:hover {
         filter: none;
+        transform: scale(1.06);
     }
 
     .arena-question-char.is-selectable:not(.is-mask-token):active {
@@ -1230,6 +1232,24 @@ body[data-room-role="spectator"] #arena-answer-box {
 
 .arena-question-char.is-selected {
     background: #fde68a;
+    color: #111827;
+}
+
+.arena-question-char.is-selectable.is-selected:not(.is-mask-token):hover {
+    background: #facc15;
+    color: #111827;
+}
+
+.arena-question-char.is-mask-token.is-selected {
+    --mask-token-bg: #facc15;
+    background: var(--mask-token-bg);
+    box-shadow: 0 4px 10px rgba(202, 138, 4, 0.32);
+}
+
+.arena-question-char.is-mask-token.is-selectable.is-selected:hover {
+    --mask-token-bg: #eab308;
+    background: var(--mask-token-bg);
+    filter: none;
 }
 
 .arena-question-char.is-revealed-left {
