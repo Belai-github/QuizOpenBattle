@@ -680,15 +680,17 @@ button:hover {
     background: #7c2d12;
 }
 
-.modal {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
+dialog.modal {
+    padding: 0;
+    border: none;
+    background: transparent;
+    overflow: visible;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+}
+
+dialog.modal::backdrop {
     background: rgba(15, 23, 42, 0.48);
-    z-index: 1000;
 }
 
 body.modal-open #arena-question-text,
@@ -1190,38 +1192,28 @@ body[data-room-role="spectator"] #arena-answer-box {
     transform: scale(1.1);
 }
 
-.arena-question-char.is-mask-token:hover::before {
-    color: #ffffff;
-}
-
-.arena-question-char.is-mask-token.is-selectable:active::before {
-    color: #111827 !important;
-}
-
 /* iPad/タッチ端末でも同様に強制 */
 @media (hover: none),
 (pointer: coarse) {
-    .arena-question-char.is-selectable:hover {
+    .arena-question-char.is-selectable:not(.is-mask-token):hover {
         background: transparent;
         transform: none;
     }
 
     .arena-question-char.is-mask-token.is-selectable:hover {
-        filter: none;
-        transform: scale(1.06);
+        background: var(--mask-token-bg);
+        filter: brightness(1.06);
+        transform: scale(1.1);
     }
 
     .arena-question-char.is-selectable:not(.is-mask-token):active {
         background: #e2e8f0;
-        transform: scale(1.06);
+        transform: scale(1.1);
     }
 
     .arena-question-char.is-mask-token.is-selectable:active {
         filter: brightness(1.06);
-    }
-
-    .arena-question-char.is-mask-token.is-selectable:active::before {
-        color: #111827 !important;
+        transform: scale(1.1);
     }
 }
 

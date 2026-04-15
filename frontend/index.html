@@ -192,7 +192,7 @@
         </div>
     </div>
 
-    <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-message">
+    <dialog id="confirm-modal" class="modal" aria-labelledby="confirm-message">
         <div class="modal-card">
             <p id="confirm-message"></p>
             <div class="modal-actions">
@@ -200,18 +200,18 @@
                 <button id="confirm-ok-btn" type="button">送信する</button>
             </div>
         </div>
-    </div>
+    </dialog>
 
-    <div id="alert-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="alert-message">
+    <dialog id="alert-modal" class="modal" aria-labelledby="alert-message">
         <div class="modal-card">
             <p id="alert-message"></p>
             <div class="modal-actions single">
                 <button id="alert-ok-btn" type="button">OK</button>
             </div>
         </div>
-    </div>
+    </dialog>
 
-    <div id="rulebook-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="rulebook-title">
+    <dialog id="rulebook-modal" class="modal" aria-labelledby="rulebook-title">
         <div class="modal-card rulebook-modal-card">
             <h2 id="rulebook-title">QuizOpenBattle ルールブック</h2>
             <div id="rulebook-content" class="rulebook-content">
@@ -247,7 +247,7 @@
                 <button id="rulebook-close-btn" type="button">閉じる</button>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <script src="client.js"></script>
 </body>

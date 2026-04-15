@@ -257,9 +257,9 @@ function setArenaCharClickGuard() {
 
 function isAnyModalOpen() {
     const judgementModal = document.getElementById("answer-judgement-modal");
-    if (confirmModal && !confirmModal.classList.contains("hidden")) return true;
-    if (alertModal && !alertModal.classList.contains("hidden")) return true;
-    if (rulebookModalEl && !rulebookModalEl.classList.contains("hidden")) return true;
+    if (confirmModal && confirmModal.open) return true;
+    if (alertModal && alertModal.open) return true;
+    if (rulebookModalEl && rulebookModalEl.open) return true;
     if (judgementModal && !judgementModal.classList.contains("hidden")) return true;
     return false;
 }
@@ -994,10 +994,11 @@ function updateStartGameButtonVisibility(currentRoom) {
 function closeAllModals() {
     setArenaCharClickGuard();
     alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
-    alertModal.classList.add("hidden");
-    confirmModal.classList.add("hidden");
+    if (alertModal.open) alertModal.close();
+    if (confirmModal.open) confirmModal.close();
+    if (rulebookModalEl && rulebookModalEl.open) rulebookModalEl.close();
     const judgementModal = document.getElementById("answer-judgement-modal");
-    if (judgementModal) {
+    if (judgementModal && !judgementModal.classList.contains("hidden")) {
         judgementModal.classList.add("hidden");
     }
     updateArenaInteractionLock();
@@ -1022,18 +1023,22 @@ function showAlertModal(message) {
         if (winnerAlertClass) {
             alertMessageEl.classList.add(winnerAlertClass);
         }
-        alertModal.classList.remove("hidden");
+        if (!alertModal.open) {
+            alertModal.showModal();
+        }
         alertOkBtn.focus();
         setArenaCharClickGuard();
         updateArenaInteractionLock();
 
         const close = () => {
             setArenaCharClickGuard();
-            alertModal.classList.add("hidden");
+            if (alertModal.open) {
+                alertModal.close();
+            }
             alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
             alertOkBtn.removeEventListener("click", onOk);
             alertModal.removeEventListener("click", onBackdropClick);
-            document.removeEventListener("keydown", onEscape);
+            alertModal.removeEventListener("cancel", onCancel);
             updateArenaInteractionLock();
             resolve();
         };
@@ -1044,54 +1049,56 @@ function showAlertModal(message) {
                 close();
             }
         };
-        const onEscape = (event) => {
-            if (event.key === "Escape") {
-                close();
-            }
+        const onCancel = (event) => {
+            event.preventDefault();
+            close();
         };
 
         alertOkBtn.addEventListener("click", onOk, { once: true });
         alertModal.addEventListener("click", onBackdropClick);
-        document.addEventListener("keydown", onEscape);
+        alertModal.addEventListener("cancel", onCancel);
     });
 }
 
 function showQuestionConfirmModal(questionText) {
     return new Promise((resolve) => {
         confirmMessageEl.textContent = `以下の問題文で出題しますか？\n\nQ. ${questionText}`;
-        confirmModal.classList.remove("hidden");
+        if (!confirmModal.open) {
+            confirmModal.showModal();
+        }
         confirmOkBtn.focus();
         setArenaCharClickGuard();
         updateArenaInteractionLock();
 
         const close = (result) => {
             setArenaCharClickGuard();
-            confirmModal.classList.add("hidden");
+            if (confirmModal.open) {
+                confirmModal.close();
+            }
             confirmOkBtn.removeEventListener("click", onOk);
-            confirmCancelBtn.removeEventListener("click", onCancel);
+            confirmCancelBtn.removeEventListener("click", onCancelClick);
             confirmModal.removeEventListener("click", onBackdropClick);
-            document.removeEventListener("keydown", onEscape);
+            confirmModal.removeEventListener("cancel", onCancel);
             updateArenaInteractionLock();
             resolve(result);
         };
 
         const onOk = () => close(true);
-        const onCancel = () => close(false);
+        const onCancelClick = () => close(false);
         const onBackdropClick = (event) => {
             if (event.target === confirmModal) {
                 close(false);
             }
         };
-        const onEscape = (event) => {
-            if (event.key === "Escape") {
-                close(false);
-            }
+        const onCancel = (event) => {
+            event.preventDefault();
+            close(false);
         };
 
         confirmOkBtn.addEventListener("click", onOk, { once: true });
-        confirmCancelBtn.addEventListener("click", onCancel, { once: true });
+        confirmCancelBtn.addEventListener("click", onCancelClick, { once: true });
         confirmModal.addEventListener("click", onBackdropClick);
-        document.addEventListener("keydown", onEscape);
+        confirmModal.addEventListener("cancel", onCancel);
     });
 }
 
@@ -1103,43 +1110,46 @@ function showConfirmModal(message, options = {}) {
         confirmCancelBtn.textContent = cancelLabel;
         confirmCancelBtn.style.display = hideCancel ? "none" : "";
         confirmActionsEl.classList.toggle("single", hideCancel);
-        confirmModal.classList.remove("hidden");
+        if (!confirmModal.open) {
+            confirmModal.showModal();
+        }
         confirmOkBtn.focus();
         setArenaCharClickGuard();
         updateArenaInteractionLock();
 
         const close = (result) => {
             setArenaCharClickGuard();
-            confirmModal.classList.add("hidden");
+            if (confirmModal.open) {
+                confirmModal.close();
+            }
             confirmCancelBtn.style.display = "";
             confirmActionsEl.classList.remove("single");
             confirmOkBtn.textContent = "送信する";
             confirmCancelBtn.textContent = "キャンセル";
             confirmOkBtn.removeEventListener("click", onOk);
-            confirmCancelBtn.removeEventListener("click", onCancel);
+            confirmCancelBtn.removeEventListener("click", onCancelClick);
             confirmModal.removeEventListener("click", onBackdropClick);
-            document.removeEventListener("keydown", onEscape);
+            confirmModal.removeEventListener("cancel", onCancel);
             updateArenaInteractionLock();
             resolve(result);
         };
 
         const onOk = () => close(true);
-        const onCancel = () => close(false);
+        const onCancelClick = () => close(false);
         const onBackdropClick = (event) => {
             if (event.target === confirmModal) {
                 close(hideCancel ? true : false);
             }
         };
-        const onEscape = (event) => {
-            if (event.key === "Escape") {
-                close(hideCancel ? true : false);
-            }
+        const onCancel = (event) => {
+            event.preventDefault();
+            close(hideCancel ? true : false);
         };
 
         confirmOkBtn.addEventListener("click", onOk, { once: true });
-        confirmCancelBtn.addEventListener("click", onCancel, { once: true });
+        confirmCancelBtn.addEventListener("click", onCancelClick, { once: true });
         confirmModal.addEventListener("click", onBackdropClick);
-        document.addEventListener("keydown", onEscape);
+        confirmModal.addEventListener("cancel", onCancel);
     });
 }
 
@@ -2544,7 +2554,9 @@ function showRulebookModal(triggerEl = null) {
     if (triggerEl instanceof HTMLElement) {
         lastRulebookTriggerEl = triggerEl;
     }
-    rulebookModalEl.classList.remove("hidden");
+    if (!rulebookModalEl.open) {
+        rulebookModalEl.showModal();
+    }
     updateArenaInteractionLock();
     rulebookCloseBtnEl?.focus();
 }
@@ -2552,7 +2564,9 @@ function showRulebookModal(triggerEl = null) {
 function closeRulebookModal() {
     if (!rulebookModalEl) return;
     setArenaCharClickGuard();
-    rulebookModalEl.classList.add("hidden");
+    if (rulebookModalEl.open) {
+        rulebookModalEl.close();
+    }
     updateArenaInteractionLock();
     lastRulebookTriggerEl?.focus();
 }
@@ -2576,13 +2590,12 @@ function bindRulebookHandlers() {
                 closeRulebookModal();
             }
         });
-    }
 
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !rulebookModalEl.classList.contains("hidden")) {
+        rulebookModalEl.addEventListener("cancel", (event) => {
+            event.preventDefault();
             closeRulebookModal();
-        }
-    });
+        });
+    }
 }
 
 bindRulebookHandlers();
