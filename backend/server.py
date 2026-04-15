@@ -1,8 +1,19 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 import json
-import random
 import time
+
+from backend.game_logic import (
+    apply_create_question_room,
+    apply_exit_room,
+    apply_join_room,
+    apply_shuffle_participants,
+    apply_start_game,
+    build_current_room_for_client,
+    remove_client_from_all_rooms as remove_client_from_all_rooms_logic,
+    resolve_chat_recipients,
+    resolve_client_room_context,
+)
 
 app = FastAPI()
 
@@ -47,69 +58,7 @@ class QuizGameManager:
         return rooms
 
     def build_current_room_for_client(self, client_id: str):
-        for owner_id, room in self.rooms.items():
-            if owner_id == client_id:
-                role = "owner"
-                chat_role = "questioner"
-            elif client_id in room["left_participants"] or client_id in room["right_participants"]:
-                role = "participant"
-                if client_id in room["left_participants"]:
-                    chat_role = "team-left"
-                else:
-                    chat_role = "team-right"
-            elif client_id in room["spectators"]:
-                role = "spectator"
-                chat_role = "spectator"
-            else:
-                continue
-
-            # 左右の参加者を別々にリスト化（client_idも返して同名判定に対応）
-            left_participants = []
-            for pid in room["left_participants"]:
-                left_participants.append(
-                    {
-                        "client_id": pid,
-                        "nickname": self.nicknames.get(pid, "ゲスト"),
-                    }
-                )
-
-            right_participants = []
-            for pid in room["right_participants"]:
-                right_participants.append(
-                    {
-                        "client_id": pid,
-                        "nickname": self.nicknames.get(pid, "ゲスト"),
-                    }
-                )
-
-            spectators = []
-            for sid in room["spectators"]:
-                spectators.append(
-                    {
-                        "client_id": sid,
-                        "nickname": self.nicknames.get(sid, "ゲスト"),
-                    }
-                )
-
-            raw_question_text = str(room.get("question_text", ""))
-            # 問題文の生テキストは出題者のみに配信し、他ロールには長さ情報のみ渡す。
-            question_text_for_client = raw_question_text if chat_role == "questioner" else ""
-
-            return {
-                "room_owner_id": owner_id,
-                "questioner_id": owner_id,
-                "questioner_name": room["questioner_name"],
-                "question_text": question_text_for_client,
-                "question_length": len(raw_question_text),
-                "game_state": room.get("game_state", "waiting"),
-                "role": role,
-                "chat_role": chat_role,
-                "left_participants": left_participants,
-                "right_participants": right_participants,
-                "spectators": spectators,
-            }
-
-        return None
+        return build_current_room_for_client(self.rooms, self.nicknames, client_id)
 
     async def broadcast_state(
         self,
@@ -205,63 +154,29 @@ class QuizGameManager:
         )
 
     def remove_client_from_all_rooms(self, client_id: str):
-        for room in self.rooms.values():
-            room["left_participants"].discard(client_id)
-            room["right_participants"].discard(client_id)
-            room["spectators"].discard(client_id)
+        remove_client_from_all_rooms_logic(self.rooms, client_id)
 
     async def join_room(self, client_id: str, room_owner_id: str, role: str):
-        room = self.rooms.get(room_owner_id)
-        if room is None:
-            await self.send_private_info(client_id, "部屋が見つかりません。")
+        result = apply_join_room(self.rooms, client_id, room_owner_id, role)
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "部屋への入室に失敗しました。"))
             return
 
-        if client_id == room_owner_id:
-            await self.send_private_info(client_id, "あなたの出題部屋に入室しました。", target_screen="game_arena")
-            return
-
-        self.remove_client_from_all_rooms(client_id)
-        converted_to_spectator = False
-
-        if role == "participant" and room.get("game_state", "waiting") == "playing":
-            role = "spectator"
-            converted_to_spectator = True
-
-        if role == "participant":
-            # 左右の参加者数を比較して配置を決定
-            left_count = len(room["left_participants"])
-            right_count = len(room["right_participants"])
-
-            if left_count == right_count:
-                # 同数の場合はランダム
-                side = random.choice(["left", "right"])
-            elif left_count < right_count:
-                # 左の方が少ない場合は左へ
-                side = "left"
-            else:
-                # 右の方が少ない場合は右へ
-                side = "right"
-
-            if side == "left":
-                room["left_participants"].add(client_id)
-            else:
-                room["right_participants"].add(client_id)
-
-            role_name = "参加者"
-        else:
-            room["spectators"].add(client_id)
-            role_name = "観戦者"
-
-        nickname = self.nicknames.get(client_id, "ゲスト")
-        entry_message = f"{room['questioner_name']} の部屋に{role_name}として入りました。"
-        if converted_to_spectator:
-            entry_message = "ゲーム中のため参加では入室できません。\n" f"{room['questioner_name']} の部屋に観戦者として入りました。"
         await self.send_private_info(
             client_id,
-            entry_message,
-            target_screen="game_arena",
+            result.get("entry_message", "部屋に入りました。"),
+            target_screen=result.get("target_screen"),
         )
 
+        role_name = result.get("event_role_name")
+        if role_name is None:
+            return
+
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            return
+
+        nickname = self.nicknames.get(client_id, "ゲスト")
         await self.broadcast_state(
             public_info=f"{nickname} が部屋に入りました",
             event_type="room_entry",
@@ -270,21 +185,12 @@ class QuizGameManager:
         )
 
     async def start_game(self, client_id: str):
-        room = self.rooms.get(client_id)
-        if room is None:
-            await self.send_private_info(client_id, "ゲーム開始は出題者のみ実行できます。")
+        result = apply_start_game(self.rooms, client_id)
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "ゲーム開始に失敗しました。"))
             return
 
-        if room.get("game_state", "waiting") == "playing":
-            await self.send_private_info(client_id, "すでにゲームは開始しています。")
-            return
-
-        if not room["left_participants"] or not room["right_participants"]:
-            await self.send_private_info(client_id, "先攻・後攻の参加者がそろってから開始してください。")
-            return
-
-        room["game_state"] = "playing"
-        questioner_name = room["questioner_name"]
+        questioner_name = result["questioner_name"]
         await self.broadcast_state(
             public_info=f"{questioner_name} がゲームを開始しました",
             event_type="game_start",
@@ -293,37 +199,12 @@ class QuizGameManager:
         )
 
     async def shuffle_participants(self, client_id: str):
-        room = self.rooms.get(client_id)
-        if room is None:
-            await self.send_private_info(client_id, "参加者シャッフルは出題者のみ実行できます。")
+        result = apply_shuffle_participants(self.rooms, client_id)
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "参加者シャッフルに失敗しました。"))
             return
 
-        if room.get("game_state", "waiting") != "waiting":
-            await self.send_private_info(client_id, "ゲーム開始後は参加者シャッフルできません。")
-            return
-
-        participants = list(set(room["left_participants"]) | set(room["right_participants"]))
-        if len(participants) < 2:
-            await self.send_private_info(client_id, "参加者が2人以上いるときにシャッフルできます。")
-            return
-
-        random.shuffle(participants)
-        odd_to_left = random.choice([True, False])
-
-        new_left = set()
-        new_right = set()
-        for idx, pid in enumerate(participants, start=1):
-            is_odd = idx % 2 == 1
-            assign_left = is_odd if odd_to_left else not is_odd
-            if assign_left:
-                new_left.add(pid)
-            else:
-                new_right.add(pid)
-
-        room["left_participants"] = new_left
-        room["right_participants"] = new_right
-
-        questioner_name = room["questioner_name"]
+        questioner_name = result["questioner_name"]
         await self.broadcast_state(
             public_info=f"{questioner_name} が参加者をシャッフルしました",
             event_type="room_shuffle",
@@ -361,7 +242,7 @@ class QuizGameManager:
             self.chat_last_message.pop(client_id, None)
 
             closed_room = self.rooms.pop(client_id, None)
-            self.remove_client_from_all_rooms(client_id)
+            remove_client_from_all_rooms_logic(self.rooms, client_id)
 
             if closed_room is not None:
                 affected_client_ids = set(closed_room["left_participants"]) | set(closed_room["right_participants"]) | set(closed_room["spectators"])
@@ -391,12 +272,9 @@ class QuizGameManager:
     async def exit_room(self, client_id: str):
         nickname = self.nicknames.get(client_id, "ゲスト")
 
-        # 出題者が退室した場合は、その出題部屋を閉じる。
-        if client_id in self.rooms:
-            room = self.rooms.pop(client_id)
-
-            affected_client_ids = set(room["left_participants"]) | set(room["right_participants"]) | set(room["spectators"])
-            for target_client_id in affected_client_ids:
+        result = apply_exit_room(self.rooms, client_id)
+        if result.get("owner_closed"):
+            for target_client_id in result.get("affected_client_ids", set()):
                 await self.send_private_info(
                     target_client_id,
                     "出題者が退室したため、部屋から退室しました。",
@@ -412,7 +290,6 @@ class QuizGameManager:
             )
             return
 
-        self.remove_client_from_all_rooms(client_id)
         await self.broadcast_state(
             public_info=f"{nickname} が部屋から退室しました",
             event_type="room_exit",
@@ -420,28 +297,13 @@ class QuizGameManager:
         )
 
     async def process_question(self, player_id: str, payload: dict):
-        if player_id in self.rooms:
-            await self.send_private_info(player_id, "同時に出題できる問題は1つまでです。")
+        result = apply_create_question_room(self.rooms, self.nicknames, player_id, payload)
+        if not result.get("ok"):
+            await self.send_private_info(player_id, result.get("error", "出題に失敗しました。"))
             return
 
         private_map = {}
-        actor_name = self.nicknames.get(player_id, "相手")
-        question_text = str(payload.get("question_text", payload.get("content", ""))).strip()
-        if question_text == "":
-            question_text = "（空欄）"
-
-        self.rooms[player_id] = {
-            "owner_id": player_id,
-            "question_text": question_text,
-            "questioner_name": actor_name,
-            "game_state": "waiting",
-            "left_participants": set(),
-            "right_participants": set(),
-            "spectators": set(),
-        }
-
-        # 出題者は作成時点で自分の部屋に所属する。
-        self.remove_client_from_all_rooms(player_id)
+        actor_name = result["actor_name"]
 
         for client_id in self.active_connections.keys():
             if client_id == player_id:
@@ -514,75 +376,20 @@ class QuizGameManager:
             )
             return
 
-        current_room = self.build_current_room_for_client(client_id)
-        if current_room is None:
+        room_ctx = resolve_client_room_context(self.rooms, client_id)
+        if room_ctx is None:
             await self.send_private_info(client_id, "部屋に参加していないため、部屋内チャットは送信できません。")
             return
 
-        room_owner_id = current_room.get("room_owner_id")
-        room = self.rooms.get(room_owner_id)
-        if room is None:
-            await self.send_private_info(client_id, "部屋情報の取得に失敗しました。")
+        room_owner_id = room_ctx["room_owner_id"]
+        room = room_ctx["room"]
+        sender_chat_role = room_ctx["chat_role"]
+        chat_result = resolve_chat_recipients(room_owner_id, room, sender_chat_role, chat_type)
+        if not chat_result.get("ok"):
+            await self.send_private_info(client_id, chat_result.get("error", "チャット送信に失敗しました。"))
             return
 
-        sender_chat_role = current_room.get("chat_role")
-        room_state = room.get("game_state", "waiting")
-
-        if room_state == "waiting":
-            # 準備中は全員で1つの部屋内チャットのみ運用する。
-            if chat_type != "game-global":
-                await self.send_private_info(client_id, "ゲーム開始前は全体チャットのみ利用できます。")
-                return
-
-            role_to_ids = {
-                "questioner": {room_owner_id},
-                "team-left": set(room["left_participants"]),
-                "team-right": set(room["right_participants"]),
-                "spectator": set(room["spectators"]),
-            }
-            event_recipient_ids = set()
-            for ids in role_to_ids.values():
-                event_recipient_ids |= ids
-
-            history.append(now)
-            self.chat_last_message[client_id] = (message, now)
-            await self.broadcast_state(
-                public_info=f"{nickname} がチャットを送信しました",
-                event_type="chat",
-                event_message=f"{nickname}: {message}",
-                event_chat_type=chat_type,
-                event_recipient_ids=event_recipient_ids,
-            )
-            return
-
-        sendable_roles_by_type = {
-            "team-left": {"team-left", "questioner"},
-            "team-right": {"team-right", "questioner"},
-            "spectator": {"spectator", "questioner"},
-        }
-        readable_roles_by_type = {
-            "team-left": {"team-left", "questioner", "spectator"},
-            "team-right": {"team-right", "questioner", "spectator"},
-            "spectator": {"spectator", "questioner"},
-        }
-
-        if chat_type not in sendable_roles_by_type:
-            await self.send_private_info(client_id, "未対応のチャット種別です。")
-            return
-
-        if sender_chat_role not in sendable_roles_by_type[chat_type]:
-            await self.send_private_info(client_id, "このチャット欄では発言できません。")
-            return
-
-        role_to_ids = {
-            "questioner": {room_owner_id},
-            "team-left": set(room["left_participants"]),
-            "team-right": set(room["right_participants"]),
-            "spectator": set(room["spectators"]),
-        }
-        event_recipient_ids = set()
-        for role_name in readable_roles_by_type[chat_type]:
-            event_recipient_ids |= role_to_ids.get(role_name, set())
+        event_recipient_ids = chat_result["event_recipient_ids"]
 
         history.append(now)
         self.chat_last_message[client_id] = (message, now)
