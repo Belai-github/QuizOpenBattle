@@ -8,6 +8,9 @@ import unicodedata
 
 
 DEFAULT_CACHE_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "judge_cache.db")
+if not os.path.exists(DEFAULT_CACHE_DB_PATH):
+    # fallback: backend/data/judge_cache.db（古い構造）
+    DEFAULT_CACHE_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "judge_cache.db")
 DEFAULT_PROMPT_VERSION = 1
 
 _ANSWER_PREFIX_RE = re.compile(r"^(答え|こたえ)(は|:|：)?", re.IGNORECASE)
