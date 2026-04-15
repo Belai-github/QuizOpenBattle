@@ -158,7 +158,7 @@ class QuizGameManager:
         self.rooms = {}
         self.reconnect_reservations = {}
         self.pending_disconnect_tasks = {}
-        self.MAX_CONNECTIONS = 4
+        self.MAX_CONNECTIONS = 10
         self.RECONNECT_RESERVATION_SECONDS = 120
         self.DISCONNECT_GRACE_SECONDS = 30
         self.CHAT_MAX_LENGTH = 200

@@ -2,7 +2,9 @@ import os
 import json
 import re
 import unicodedata
+import time
 from difflib import SequenceMatcher
+from typing import Any
 from openai import AsyncOpenAI
 from google import genai
 from dotenv import load_dotenv
@@ -10,6 +12,7 @@ from dotenv import load_dotenv
 try:
     from backend.pronpt import get_quiz_prompt, get_judge_prompt
     from backend.judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
+    from backend.api_history import append_api_history
     from backend.model_catalog import (
         get_answer_judgement_model_id,
         get_available_model_ids,
@@ -20,6 +23,7 @@ try:
 except ImportError:
     from pronpt import get_quiz_prompt, get_judge_prompt
     from judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
+    from api_history import append_api_history
     from model_catalog import (
         get_answer_judgement_model_id,
         get_available_model_ids,
@@ -131,12 +135,51 @@ def _fallback_answer_judgement(expected_answer: str, user_answer: str) -> bool:
     return similarity >= 0.9
 
 
+def _extract_gemini_token_usage(response: Any) -> dict[str, int | None]:
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return {
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+        }
+
+    prompt_tokens = getattr(usage, "prompt_token_count", None)
+    completion_tokens = getattr(usage, "candidates_token_count", None)
+    total_tokens = getattr(usage, "total_token_count", None)
+    return {
+        "prompt_tokens": int(prompt_tokens) if isinstance(prompt_tokens, int) else None,
+        "completion_tokens": int(completion_tokens) if isinstance(completion_tokens, int) else None,
+        "total_tokens": int(total_tokens) if isinstance(total_tokens, int) else None,
+    }
+
+
+def _extract_openai_token_usage(response: Any) -> dict[str, int | None]:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return {
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+        }
+
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+    completion_tokens = getattr(usage, "completion_tokens", None)
+    total_tokens = getattr(usage, "total_tokens", None)
+    return {
+        "prompt_tokens": int(prompt_tokens) if isinstance(prompt_tokens, int) else None,
+        "completion_tokens": int(completion_tokens) if isinstance(completion_tokens, int) else None,
+        "total_tokens": int(total_tokens) if isinstance(total_tokens, int) else None,
+    }
+
+
 async def generate_quiz_async(genre="一般常識", model_id: str | None = None, difficulty: int | str | None = 0):
     """Gemini APIを叩いてクイズを1問生成する非同期関数"""
 
     normalized_difficulty = normalize_difficulty(difficulty)
     prompt = get_quiz_prompt(genre, normalized_difficulty)
     selected_model_id = normalize_model_id(model_id)
+    request_started_at = time.time()
 
     if is_openai_model(selected_model_id):
         try:
@@ -156,8 +199,48 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                 response_format={"type": "json_object"},
             )
             response_text = (response.choices[0].message.content or "").strip()
-            return json.loads(response_text)
+            parsed_quiz = json.loads(response_text)
+            append_api_history(
+                {
+                    "api_name": "generate_quiz_async",
+                    "provider": "openai",
+                    "model_id": selected_model_id,
+                    "status": "success",
+                    "duration_ms": int((time.time() - request_started_at) * 1000),
+                    "prompt": prompt,
+                    "request": {
+                        "genre": genre,
+                        "difficulty": normalized_difficulty,
+                        "temperature": QUIZ_GENERATION_TEMPERATURE,
+                    },
+                    "response_text": response_text,
+                    "response_json": parsed_quiz,
+                    "token_usage": _extract_openai_token_usage(response),
+                    "source": "openai",
+                }
+            )
+            return parsed_quiz
         except Exception as e:
+            append_api_history(
+                {
+                    "api_name": "generate_quiz_async",
+                    "provider": "openai",
+                    "model_id": selected_model_id,
+                    "status": "error",
+                    "duration_ms": int((time.time() - request_started_at) * 1000),
+                    "prompt": prompt,
+                    "request": {
+                        "genre": genre,
+                        "difficulty": normalized_difficulty,
+                        "temperature": QUIZ_GENERATION_TEMPERATURE,
+                    },
+                    "error": {
+                        "type": type(e).__name__,
+                        "message": str(e),
+                    },
+                    "source": "openai",
+                }
+            )
             if _is_openai_resource_exhausted_error(e):
                 print(
                     "クイズ生成エラー(OpenAI 課金上限):",
@@ -213,9 +296,51 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
             response_text = response.text or ""
             quiz_data = json.loads(response_text)
 
+        append_api_history(
+            {
+                "api_name": "generate_quiz_async",
+                "provider": "google",
+                "model_id": selected_model_id,
+                "status": "success",
+                "duration_ms": int((time.time() - request_started_at) * 1000),
+                "prompt": prompt,
+                "request": {
+                    "genre": genre,
+                    "difficulty": normalized_difficulty,
+                    "temperature": QUIZ_GENERATION_TEMPERATURE,
+                    "response_mime_type": "application/json",
+                },
+                "response_text": response.text or "",
+                "response_json": quiz_data,
+                "token_usage": _extract_gemini_token_usage(response),
+                "source": "gemini",
+            }
+        )
+
         return quiz_data
 
     except Exception as e:
+        append_api_history(
+            {
+                "api_name": "generate_quiz_async",
+                "provider": "google",
+                "model_id": selected_model_id,
+                "status": "error",
+                "duration_ms": int((time.time() - request_started_at) * 1000),
+                "prompt": prompt,
+                "request": {
+                    "genre": genre,
+                    "difficulty": normalized_difficulty,
+                    "temperature": QUIZ_GENERATION_TEMPERATURE,
+                    "response_mime_type": "application/json",
+                },
+                "error": {
+                    "type": type(e).__name__,
+                    "message": str(e),
+                },
+                "source": "gemini",
+            }
+        )
         if _is_resource_exhausted_error(e):
             print(
                 "クイズ生成エラー(Gemini 課金上限):",
@@ -248,10 +373,35 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
 async def check_answer_async(expected_answer: str, user_answer: str):
     """プレイヤーの解答が正解と意味的に同じか判定する非同期関数"""
 
+    request_started_at = time.time()
     if expected_answer == user_answer:
+        append_api_history(
+            {
+                "api_name": "check_answer_async",
+                "provider": "local",
+                "model_id": "local-equal-check",
+                "status": "success",
+                "duration_ms": int((time.time() - request_started_at) * 1000),
+                "prompt": get_judge_prompt(expected_answer, user_answer),
+                "request": {
+                    "expected_answer": expected_answer,
+                    "user_answer": user_answer,
+                    "cache_hit": False,
+                    "source": "local-equal-check",
+                },
+                "response_json": True,
+                "token_usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "source": "local-equal-check",
+            }
+        )
         return True
 
     selected_model_id = get_answer_judgement_model_id()
+    prompt = get_judge_prompt(expected_answer, user_answer)
     cached_result = get_cached_answer_judgement(
         expected_answer,
         user_answer,
@@ -259,9 +409,30 @@ async def check_answer_async(expected_answer: str, user_answer: str):
         ANSWER_JUDGEMENT_CACHE_VERSION,
     )
     if cached_result is not None:
+        append_api_history(
+            {
+                "api_name": "check_answer_async",
+                "provider": "cache",
+                "model_id": selected_model_id,
+                "status": "cached",
+                "duration_ms": int((time.time() - request_started_at) * 1000),
+                "prompt": prompt,
+                "request": {
+                    "expected_answer": expected_answer,
+                    "user_answer": user_answer,
+                    "cache_hit": True,
+                    "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                },
+                "response_json": bool(cached_result),
+                "token_usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "source": "cache",
+            }
+        )
         return cached_result
-
-    prompt = get_judge_prompt(expected_answer, user_answer)
 
     try:
         response = await gemini_client.aio.models.generate_content(
@@ -281,15 +452,106 @@ async def check_answer_async(expected_answer: str, user_answer: str):
             is_correct,
             source="gemini",
         )
+        append_api_history(
+            {
+                "api_name": "check_answer_async",
+                "provider": "google",
+                "model_id": selected_model_id,
+                "status": "success",
+                "duration_ms": int((time.time() - request_started_at) * 1000),
+                "prompt": prompt,
+                "request": {
+                    "expected_answer": expected_answer,
+                    "user_answer": user_answer,
+                    "cache_hit": False,
+                    "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                    "temperature": ANSWER_JUDGEMENT_TEMPERATURE,
+                },
+                "response_text": response_text,
+                "response_json": is_correct,
+                "token_usage": _extract_gemini_token_usage(response),
+                "source": "gemini",
+            }
+        )
         return is_correct
 
     except Exception as e:
+        append_api_history(
+            {
+                "api_name": "check_answer_async",
+                "provider": "google",
+                "model_id": selected_model_id,
+                "status": "error",
+                "duration_ms": int((time.time() - request_started_at) * 1000),
+                "prompt": prompt,
+                "request": {
+                    "expected_answer": expected_answer,
+                    "user_answer": user_answer,
+                    "cache_hit": False,
+                    "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                    "temperature": ANSWER_JUDGEMENT_TEMPERATURE,
+                },
+                "error": {
+                    "type": type(e).__name__,
+                    "message": str(e),
+                },
+                "source": "gemini",
+            }
+        )
         if _is_resource_exhausted_error(e):
             print("判定エラー(Gemini 課金上限): RESOURCE_EXHAUSTED -> ローカル簡易判定にフォールバックします")
-            return _fallback_answer_judgement(expected_answer, user_answer)
+            fallback_result = _fallback_answer_judgement(expected_answer, user_answer)
+            append_api_history(
+                {
+                    "api_name": "check_answer_async",
+                    "provider": "local",
+                    "model_id": "local-fallback",
+                    "status": "fallback",
+                    "duration_ms": int((time.time() - request_started_at) * 1000),
+                    "prompt": prompt,
+                    "request": {
+                        "expected_answer": expected_answer,
+                        "user_answer": user_answer,
+                        "cache_hit": False,
+                        "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                    },
+                    "response_json": fallback_result,
+                    "token_usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "source": "local-fallback",
+                }
+            )
+            return fallback_result
 
         print(f"判定エラー(Gemini): {e} -> ローカル簡易判定にフォールバックします")
-        return _fallback_answer_judgement(expected_answer, user_answer)
+        fallback_result = _fallback_answer_judgement(expected_answer, user_answer)
+        append_api_history(
+            {
+                "api_name": "check_answer_async",
+                "provider": "local",
+                "model_id": "local-fallback",
+                "status": "fallback",
+                "duration_ms": int((time.time() - request_started_at) * 1000),
+                "prompt": prompt,
+                "request": {
+                    "expected_answer": expected_answer,
+                    "user_answer": user_answer,
+                    "cache_hit": False,
+                    "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                },
+                "response_json": fallback_result,
+                "token_usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "source": "local-fallback",
+            }
+        )
+        return fallback_result
 
 
 # --- 単独で実行した時のテスト用コード ---
