@@ -1023,9 +1023,7 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #arena-answer-box {
-    width: 100%;
-    max-width: 100%;
-    align-self: stretch;
+    width: min(100%, 520px);
     display: flex;
     flex-direction: column;
     gap: 8px;
