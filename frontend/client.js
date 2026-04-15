@@ -27,6 +27,8 @@ const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
 let currentArenaQuestionRawText = "";
 let questionerShowRawQuestionText = false;
+const selectedArenaQuestionCharIndexes = new Set();
+let lastAutoSelectedQuestionKey = null;
 const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
 let lastRulebookTriggerEl = null;
 
@@ -210,6 +212,11 @@ function isInGameArena() {
     return document.getElementById("game-arena-screen").style.display !== "none";
 }
 
+function canSelectArenaQuestionChars() {
+    const roomState = currentRoomGameState || "waiting";
+    return isInGameArena() && userRole === "questioner" && roomState === "waiting";
+}
+
 function updateChatLengthWarning(inputEl) {
     if (!inputEl) return;
 
@@ -242,8 +249,15 @@ function showWaitingRoomScreen() {
 }
 
 function showGameArenaScreen() {
+    const wasInGameArena = isInGameArena();
     document.getElementById("waiting-room-screen").style.display = "none";
     document.getElementById("game-arena-screen").style.display = "block";
+
+    // 出題者は部屋に入った直後のみ、問題文表示を初期状態にする。
+    if (!wasInGameArena && userRole === "questioner") {
+        questionerShowRawQuestionText = true;
+    }
+
     updateQuestionVisibilityButton();
     updateChatBoxVisibility();
 }
@@ -463,6 +477,46 @@ function splitIntoGraphemes(text) {
     return Array.from(text);
 }
 
+function getNormalizedArenaQuestionChars() {
+    const graphemes = splitIntoGraphemes(String(currentArenaQuestionRawText || ""));
+    return graphemes.filter((ch) => ch !== "\n" && ch !== "\r");
+}
+
+function isDefaultPunctuationChar(ch) {
+    if (typeof ch !== "string" || ch.length === 0) return false;
+    if (ch === ARENA_MASK_CHAR) return false;
+
+    // 句読点や一般的な記号をデフォルト選択対象にする。
+    return /[\p{P}\p{S}]/u.test(ch);
+}
+
+function ensureDefaultPunctuationSelection() {
+    if (!canSelectArenaQuestionChars()) {
+        return;
+    }
+
+    const normalized = getNormalizedArenaQuestionChars();
+    const questionKey = normalized.join("");
+    if (questionKey === "") {
+        selectedArenaQuestionCharIndexes.clear();
+        lastAutoSelectedQuestionKey = null;
+        return;
+    }
+
+    if (lastAutoSelectedQuestionKey === questionKey) {
+        return;
+    }
+
+    selectedArenaQuestionCharIndexes.clear();
+    normalized.forEach((ch, index) => {
+        if (isDefaultPunctuationChar(ch)) {
+            selectedArenaQuestionCharIndexes.add(index);
+        }
+    });
+
+    lastAutoSelectedQuestionKey = questionKey;
+}
+
 function getArenaCharsPerLine() {
     const boardEl = document.getElementById("arena-question-board");
     const questionEl = document.getElementById("arena-question-text");
@@ -537,6 +591,86 @@ function buildPlainQuestionText(questionText, charsPerLine) {
     return output.replace(/\n+$/g, "");
 }
 
+function buildArenaQuestionRows(charsPerLine) {
+    const normalized = getNormalizedArenaQuestionChars();
+    if (normalized.length === 0) {
+        return [];
+    }
+
+    const lineLimit = Number.isFinite(charsPerLine) ? Math.max(Math.floor(charsPerLine), ARENA_MIN_CHARS_PER_LINE) : 10;
+    const canShowRaw = userRole === "questioner" && questionerShowRawQuestionText;
+    const renderChars = normalized.map((ch) => (canShowRaw ? ch : ARENA_MASK_CHAR));
+
+    const rows = [];
+    for (let i = 0; i < renderChars.length; i += lineLimit) {
+        rows.push(renderChars.slice(i, i + lineLimit));
+    }
+    return rows;
+}
+
+function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
+    const rows = buildArenaQuestionRows(charsPerLine);
+    if (rows.length === 0) {
+        questionEl.textContent = "問題文を準備中...";
+        selectedArenaQuestionCharIndexes.clear();
+        return;
+    }
+
+    const selectable = canSelectArenaQuestionChars();
+
+    let totalChars = 0;
+    rows.forEach((row) => {
+        totalChars += row.length;
+    });
+
+    if (!selectable) {
+        selectedArenaQuestionCharIndexes.clear();
+        lastAutoSelectedQuestionKey = null;
+    } else {
+        for (const index of Array.from(selectedArenaQuestionCharIndexes)) {
+            if (index < 0 || index >= totalChars) {
+                selectedArenaQuestionCharIndexes.delete(index);
+            }
+        }
+    }
+
+    questionEl.textContent = "";
+    const fragment = document.createDocumentFragment();
+    let globalIndex = 0;
+
+    rows.forEach((rowChars) => {
+        const lineEl = document.createElement("span");
+        lineEl.className = "arena-question-line";
+
+        rowChars.forEach((char) => {
+            const charEl = document.createElement("span");
+            charEl.className = "arena-question-char";
+            charEl.setAttribute("aria-label", `文字 ${globalIndex + 1}`);
+            charEl.dataset.charIndex = String(globalIndex);
+            charEl.textContent = char;
+
+            if (selectable) {
+                charEl.classList.add("is-selectable");
+                charEl.setAttribute("role", "button");
+                charEl.setAttribute("tabindex", "0");
+            } else {
+                charEl.setAttribute("aria-disabled", "true");
+            }
+
+            if (selectedArenaQuestionCharIndexes.has(globalIndex)) {
+                charEl.classList.add("is-selected");
+            }
+
+            lineEl.appendChild(charEl);
+            globalIndex += 1;
+        });
+
+        fragment.appendChild(lineEl);
+    });
+
+    questionEl.appendChild(fragment);
+}
+
 function renderMaskedArenaQuestionText() {
     const questionEl = document.getElementById("arena-question-text");
     if (!questionEl) return;
@@ -550,13 +684,7 @@ function renderArenaQuestionText() {
     if (!questionEl) return;
 
     const charsPerLine = getArenaCharsPerLine();
-    const canShowRaw = userRole === "questioner" && questionerShowRawQuestionText;
-    if (canShowRaw) {
-        questionEl.textContent = buildPlainQuestionText(currentArenaQuestionRawText, charsPerLine);
-        return;
-    }
-
-    questionEl.textContent = buildMaskedQuestionText(currentArenaQuestionRawText, charsPerLine);
+    renderArenaQuestionCharGrid(questionEl, charsPerLine);
 }
 
 function renderArena(currentRoom) {
@@ -570,6 +698,8 @@ function renderArena(currentRoom) {
         titleEl.textContent = "出題者: -";
         currentArenaQuestionRawText = "";
         questionerShowRawQuestionText = false;
+        selectedArenaQuestionCharIndexes.clear();
+        lastAutoSelectedQuestionKey = null;
         questionEl.textContent = "問題文を準備中...";
         updateQuestionVisibilityButton();
         renderNameList(leftListEl, []);
@@ -595,6 +725,7 @@ function renderArena(currentRoom) {
         currentArenaQuestionRawText = "";
     }
 
+    ensureDefaultPunctuationSelection();
     renderArenaQuestionText();
     updateQuestionVisibilityButton();
 
@@ -978,6 +1109,42 @@ function bindChatHandlers() {
 
 bindChatHandlers();
 
+function toggleArenaQuestionCharSelectionFromTarget(targetEl) {
+    if (!canSelectArenaQuestionChars()) return;
+
+    const charEl = targetEl?.closest?.(".arena-question-char");
+    if (!charEl) return;
+
+    const index = Number(charEl.dataset.charIndex);
+    if (!Number.isFinite(index)) return;
+
+    if (selectedArenaQuestionCharIndexes.has(index)) {
+        selectedArenaQuestionCharIndexes.delete(index);
+    } else {
+        selectedArenaQuestionCharIndexes.add(index);
+    }
+
+    renderArenaQuestionText();
+}
+
+document.addEventListener("click", (event) => {
+    toggleArenaQuestionCharSelectionFromTarget(event.target);
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+        return;
+    }
+
+    const targetEl = event.target;
+    if (!(targetEl instanceof HTMLElement) || !targetEl.classList.contains("arena-question-char")) {
+        return;
+    }
+
+    event.preventDefault();
+    toggleArenaQuestionCharSelectionFromTarget(targetEl);
+});
+
 startGameBtnEl?.addEventListener("click", async () => {
     const confirmed = await showConfirmModal("ゲームを開始しますか？", {
         okLabel: "開始する",
@@ -993,6 +1160,7 @@ startGameBtnEl?.addEventListener("click", async () => {
     ws.send(
         JSON.stringify({
             type: "start_game",
+            selected_char_indexes: Array.from(selectedArenaQuestionCharIndexes).sort((a, b) => a - b),
             timestamp: Date.now()
         })
     );

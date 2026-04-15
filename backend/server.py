@@ -184,8 +184,8 @@ class QuizGameManager:
             event_room_id=room_owner_id,
         )
 
-    async def start_game(self, client_id: str):
-        result = apply_start_game(self.rooms, client_id)
+    async def start_game(self, client_id: str, payload: dict | None = None):
+        result = apply_start_game(self.rooms, client_id, payload)
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "ゲーム開始に失敗しました。"))
             return
@@ -417,7 +417,7 @@ class QuizGameManager:
             return
 
         if payload_type == "start_game":
-            await self.start_game(client_id)
+            await self.start_game(client_id, payload)
             return
 
         if payload_type == "shuffle_participants":

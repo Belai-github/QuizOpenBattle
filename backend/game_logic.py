@@ -90,6 +90,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "questioner_name": room["questioner_name"],
         "question_text": question_text_for_client,
         "question_length": len(raw_question_text),
+        "yakumono_indexes": sorted(list(room.get("yakumono_indexes", set()))),
         "game_state": room.get("game_state", "waiting"),
         "role": ctx["role"],
         "chat_role": chat_role,
@@ -154,7 +155,22 @@ def apply_join_room(rooms: dict, client_id: str, room_owner_id: str, role: str):
     }
 
 
-def apply_start_game(rooms: dict, client_id: str):
+def _sanitize_selected_indexes(raw_indexes, max_length: int):
+    if not isinstance(raw_indexes, list):
+        return set()
+
+    selected = set()
+    for value in raw_indexes:
+        if isinstance(value, bool):
+            continue
+        if not isinstance(value, int):
+            continue
+        if 0 <= value < max_length:
+            selected.add(value)
+    return selected
+
+
+def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
     room = rooms.get(client_id)
     if room is None:
         return {"ok": False, "error": "ゲーム開始は出題者のみ実行できます。"}
@@ -164,6 +180,11 @@ def apply_start_game(rooms: dict, client_id: str):
 
     if not room["left_participants"] or not room["right_participants"]:
         return {"ok": False, "error": "先攻・後攻の参加者がそろってから開始してください。"}
+
+    payload = payload or {}
+    question_length = len(str(room.get("question_text", "")))
+    selected_indexes = _sanitize_selected_indexes(payload.get("selected_char_indexes"), question_length)
+    room["yakumono_indexes"] = selected_indexes
 
     room["game_state"] = "playing"
     return {"ok": True, "questioner_name": room["questioner_name"]}
@@ -227,6 +248,7 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
     rooms[player_id] = {
         "owner_id": player_id,
         "question_text": question_text,
+        "yakumono_indexes": set(),
         "questioner_name": actor_name,
         "game_state": "waiting",
         "left_participants": set(),
