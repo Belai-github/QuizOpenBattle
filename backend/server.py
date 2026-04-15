@@ -50,7 +50,7 @@ class QuizGameManager:
 
         await self.broadcast_state(
             public_info=f"{nickname} が参加しました",
-            private_map={client_id: "ゲームへようこそ"},
+            private_map={client_id: "QuizOpenBattleへようこそ"},
         )
         return True
 
