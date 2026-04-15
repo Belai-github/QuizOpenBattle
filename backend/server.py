@@ -2487,6 +2487,7 @@ class QuizGameManager:
         questioner_name = room["questioner_name"]
         # 強制退室通知は参加者・観戦者のみに送り、出題者本人には送らない。
         affected_client_ids = set(room["left_participants"]) | set(room["right_participants"]) | set(room["spectators"])
+        affected_client_ids.discard(requester_id)
         self.rooms.pop(room_owner_id, None)
         self._finalize_kifu_if_tracking(room_owner_id, room, "owner_cancelled")
         self._clear_room_reconnect_reservations(room_owner_id)
