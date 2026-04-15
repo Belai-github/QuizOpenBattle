@@ -29,7 +29,7 @@ from backend.game_logic import (
     resolve_chat_recipients,
     resolve_client_room_context,
 )
-from backend.ai_logic import check_answer_async, generate_quiz_async
+from backend.ai_logic import check_answer_async, generate_quiz_async, normalize_model_id
 from backend.kifu_storage import (
     append_action,
     begin_kifu_record,
@@ -169,6 +169,12 @@ class QuizGameManager:
         self.lobby_chat_history = []
         self.lobby_chat_seq = 0
         self.active_kifu_by_room_owner = {}
+        self.ai_question_generation_active = False
+        self.ai_question_generation_owner_id = None
+        self.ai_question_generation_lock = asyncio.Lock()
+
+    def _has_active_ai_room(self):
+        return any(bool(room.get("is_ai_mode")) for room in self.rooms.values())
 
     def _start_kifu_tracking(self, room_owner_id: str):
         room = self.rooms.get(room_owner_id)
@@ -400,6 +406,7 @@ class QuizGameManager:
             return
 
         expected_answer = str(room.get("ai_expected_answer", "")).strip()
+        model_id = normalize_model_id(room.get("ai_model_id"))
         if expected_answer == "":
             game["pending_answer_judgement"] = None
             private_map = {target_id: "AI正誤判定に失敗しました。再度アンサーしてください。" for target_id in self._room_member_ids(owner_id, room)}
@@ -412,7 +419,10 @@ class QuizGameManager:
             return
 
         try:
-            is_correct = await asyncio.wait_for(check_answer_async(expected_answer, answer_text), timeout=12.0)
+            is_correct = await asyncio.wait_for(
+                check_answer_async(expected_answer, answer_text, model_id=model_id),
+                timeout=12.0,
+            )
         except Exception:
             game["pending_answer_judgement"] = None
             private_map = {target_id: "AI正誤判定に失敗しました。再度アンサーしてください。" for target_id in self._room_member_ids(owner_id, room)}
@@ -560,6 +570,8 @@ class QuizGameManager:
                 "rooms": rooms,
                 "current_room": current_room,
                 "lobby_chat_history": self._build_lobby_chat_history_snapshot(),
+                "ai_question_generation_active": self.ai_question_generation_active,
+                "ai_question_generation_owner_id": self.ai_question_generation_owner_id,
                 "event_type": response_event_type,
                 "event_message": response_event_message,
                 "event_chat_type": response_event_chat_type,
@@ -2536,37 +2548,85 @@ class QuizGameManager:
     async def process_question(self, player_id: str, payload: dict):
         normalized_payload = dict(payload or {})
         is_ai_mode = bool(normalized_payload.get("is_ai_mode"))
+        model_id = normalize_model_id(normalized_payload.get("model_id"))
 
         if is_ai_mode:
+            async with self.ai_question_generation_lock:
+                if self.ai_question_generation_active:
+                    await self.send_private_info(player_id, "他のAI問題を生成中です。しばらく待ってから再試行してください。")
+                    return
+
+                if self._has_active_ai_room():
+                    await self.send_private_info(player_id, "すでにAI出題部屋があるため、AI出題はできません。")
+                    return
+
+                self.ai_question_generation_active = True
+                self.ai_question_generation_owner_id = player_id
+
+            await self.broadcast_state(
+                public_info="",
+                event_type="ai_generation_state",
+                event_room_id=player_id,
+                event_payload={
+                    "active": True,
+                    "owner_id": player_id,
+                },
+            )
+
+            quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
             try:
-                quiz_data = await asyncio.wait_for(generate_quiz_async(genre), timeout=18.0)
-            except Exception:
-                await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
-                return
+                try:
+                    quiz_data = await asyncio.wait_for(generate_quiz_async(genre, model_id=model_id), timeout=18.0)
+                except Exception:
+                    await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
+                    return
 
-            question_text = str((quiz_data or {}).get("question", "")).strip()
-            expected_answer = str((quiz_data or {}).get("answer", "")).strip()
-            if question_text == "" or expected_answer == "" or expected_answer == "エラー":
-                await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
-                return
+                question_text = str((quiz_data or {}).get("question", "")).strip()
+                expected_answer = str((quiz_data or {}).get("answer", "")).strip()
+                if question_text == "" or expected_answer == "" or expected_answer == "エラー":
+                    await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
+                    return
 
-            normalized_payload["question_text"] = question_text
-            normalized_payload["questioner_name"] = "AI"
-            normalized_payload["questioner_id"] = "ai-questioner"
-            normalized_payload["genre"] = genre
+                normalized_payload["question_text"] = question_text
+                normalized_payload["questioner_name"] = "AI"
+                normalized_payload["questioner_id"] = "ai-questioner"
+                normalized_payload["genre"] = genre
+                normalized_payload["model_id"] = model_id
+
+                result = apply_create_question_room(self.rooms, self.nicknames, player_id, normalized_payload)
+                if not result.get("ok"):
+                    await self.send_private_info(player_id, result.get("error", "出題に失敗しました。"))
+                    return
+
+                room = self.rooms.get(player_id)
+                if room is not None:
+                    room["is_ai_mode"] = True
+                    room["ai_genre"] = str(normalized_payload.get("genre", "")).strip() or "一般常識"
+                    room["ai_expected_answer"] = str((quiz_data or {}).get("answer", "")).strip()
+                    room["ai_model_id"] = model_id
+            finally:
+                async with self.ai_question_generation_lock:
+                    if self.ai_question_generation_owner_id == player_id:
+                        self.ai_question_generation_active = False
+                        self.ai_question_generation_owner_id = None
+
+                await self.broadcast_state(
+                    public_info="",
+                    event_type="ai_generation_state",
+                    event_room_id=player_id,
+                    event_payload={
+                        "active": False,
+                        "owner_id": None,
+                    },
+                )
+
+            return
 
         result = apply_create_question_room(self.rooms, self.nicknames, player_id, normalized_payload)
         if not result.get("ok"):
             await self.send_private_info(player_id, result.get("error", "出題に失敗しました。"))
             return
-
-        if is_ai_mode:
-            room = self.rooms.get(player_id)
-            if room is not None:
-                room["is_ai_mode"] = True
-                room["ai_genre"] = str(normalized_payload.get("genre", "")).strip() or "一般常識"
-                room["ai_expected_answer"] = str((quiz_data or {}).get("answer", "")).strip()
 
         private_map = {}
         actor_name = result["actor_name"]

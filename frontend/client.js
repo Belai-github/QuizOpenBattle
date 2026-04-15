@@ -27,6 +27,7 @@ const aiQuestionBtnEl = document.getElementById("ai-question-btn");
 const aiQuestionSpinnerEl = document.getElementById("ai-question-spinner");
 const aiQuestionModalEl = document.getElementById("ai-question-modal");
 const aiGenreInputEl = document.getElementById("ai-genre-input");
+const aiModelSelectEl = document.getElementById("ai-model-select");
 const aiQuestionModalCancelBtnEl = document.getElementById("ai-question-cancel-btn");
 const aiQuestionModalSubmitBtnEl = document.getElementById("ai-question-submit-btn");
 const kifuListScreenEl = document.getElementById("kifu-list-screen");
@@ -46,6 +47,7 @@ let userRole = null; // "questioner", "team-left", "team-right", "spectator", nu
 let currentRoomGameState = null; // "waiting" | "playing" | "finished" | null
 let currentGameState = null; // game中の詳細状態: {current_turn_team, team_left: {...}, team_right: {...}, ...}
 let currentRoomSnapshot = null;
+let currentRoomsSnapshot = [];
 let currentKifuList = [];
 let currentKifuDetail = null;
 let currentKifuSteps = [];
@@ -60,6 +62,37 @@ const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
+const DEFAULT_AI_MODEL_ID = "gemini-2.5-flash-lite";
+const AI_MODEL_OPTIONS = [
+    ["gemini-2.5-flash", "gemini-2.5-flash"],
+    ["gemini-2.5-pro", "gemini-2.5-pro"],
+    ["gemini-2.0-flash", "gemini-2.0-flash"],
+    ["gemini-2.0-flash-001", "gemini-2.0-flash-001"],
+    ["gemini-2.0-flash-lite-001", "gemini-2.0-flash-lite-001"],
+    ["gemini-2.0-flash-lite", "gemini-2.0-flash-lite"],
+    ["gemini-2.5-flash-preview-tts", "gemini-2.5-flash-preview-tts"],
+    ["gemini-2.5-pro-preview-tts", "gemini-2.5-pro-preview-tts"],
+    ["gemini-flash-latest", "gemini-flash-latest"],
+    ["gemini-flash-lite-latest", "gemini-flash-lite-latest"],
+    ["gemini-pro-latest", "gemini-pro-latest"],
+    ["gemini-2.5-flash-lite", "gemini-2.5-flash-lite"],
+    ["gemini-2.5-flash-image", "gemini-2.5-flash-image"],
+    ["gemini-3-pro-preview", "gemini-3-pro-preview"],
+    ["gemini-3-flash-preview", "gemini-3-flash-preview"],
+    ["gemini-3.1-pro-preview", "gemini-3.1-pro-preview"],
+    ["gemini-3.1-pro-preview-customtools", "gemini-3.1-pro-preview-customtools"],
+    ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview"],
+    ["gemini-3-pro-image-preview", "gemini-3-pro-image-preview"],
+    ["gemini-3.1-flash-image-preview", "gemini-3.1-flash-image-preview"],
+    ["gemini-robotics-er-1.5-preview", "gemini-robotics-er-1.5-preview"],
+    ["gemini-2.5-computer-use-preview-10-2025", "gemini-2.5-computer-use-preview-10-2025"],
+    ["gemini-embedding-001", "gemini-embedding-001"],
+    ["gemini-embedding-2-preview", "gemini-embedding-2-preview"],
+    ["gemini-2.5-flash-native-audio-latest", "gemini-2.5-flash-native-audio-latest"],
+    ["gemini-2.5-flash-native-audio-preview-09-2025", "gemini-2.5-flash-native-audio-preview-09-2025"],
+    ["gemini-2.5-flash-native-audio-preview-12-2025", "gemini-2.5-flash-native-audio-preview-12-2025"],
+    ["gemini-3.1-flash-live-preview", "gemini-3.1-flash-live-preview"],
+];
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
 const QUESTIONER_VIEW_MODE_CYCLE = ["all", "team-left", "team-right"];
@@ -76,6 +109,8 @@ let previousRoomGameState = null;
 let connectionTimeoutModalShown = false;
 let isConnecting = false;
 let aiQuestionRequestPending = false;
+let aiQuestionGenerationActive = false;
+let aiQuestionGenerationOwnerId = null;
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
@@ -156,6 +191,41 @@ function debugArenaHistory(message, details = null) {
 
 function isPlayerRole(role = userRole) {
     return role === "team-left" || role === "team-right";
+}
+
+function populateAiModelSelect() {
+    if (!aiModelSelectEl || aiModelSelectEl.options.length > 0) {
+        return;
+    }
+
+    AI_MODEL_OPTIONS.forEach(([value, label]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        aiModelSelectEl.appendChild(option);
+    });
+}
+
+function updateAiQuestionButtonState(rooms = currentRoomsSnapshot) {
+    const hasActiveAiRoom = Array.isArray(rooms) && rooms.some((room) => Boolean(room?.is_ai_room));
+    const shouldDisable = aiQuestionRequestPending || aiQuestionGenerationActive || hasActiveAiRoom;
+
+    if (aiQuestionBtnEl) {
+        aiQuestionBtnEl.disabled = shouldDisable;
+        aiQuestionBtnEl.setAttribute("aria-busy", aiQuestionRequestPending ? "true" : "false");
+
+        if (aiQuestionRequestPending) {
+            aiQuestionBtnEl.title = "AI出題を送信中です";
+        } else if (aiQuestionGenerationActive) {
+            aiQuestionBtnEl.title = String(aiQuestionGenerationOwnerId || "") === String(myClientId || "")
+                ? "AI問題を生成中です"
+                : "他のAI問題を生成中です";
+        } else if (hasActiveAiRoom) {
+            aiQuestionBtnEl.title = "AI出題部屋があるため使用できません";
+        } else {
+            aiQuestionBtnEl.title = "";
+        }
+    }
 }
 
 function isGameGlobalLog(logEl) {
@@ -1623,6 +1693,7 @@ function showWaitingRoomScreen() {
     updateArenaAnswerFormVisibility();
     updateArenaCloseButtonVisibility(null);
     updateChatBoxVisibility();
+    updateAiQuestionButtonState(currentRoomsSnapshot);
 }
 
 function showGameArenaScreen() {
@@ -1645,6 +1716,7 @@ function showGameArenaScreen() {
     updateArenaAnswerFormVisibility();
     updateArenaCloseButtonVisibility(currentRoomSnapshot);
     updateChatBoxVisibility();
+    updateAiQuestionButtonState(currentRoomsSnapshot);
 }
 
 function showKifuListScreen() {
@@ -2349,10 +2421,7 @@ function showConfirmModal(message, options = {}) {
 function setAiQuestionLoading(loading) {
     aiQuestionRequestPending = Boolean(loading);
 
-    if (aiQuestionBtnEl) {
-        aiQuestionBtnEl.disabled = aiQuestionRequestPending;
-        aiQuestionBtnEl.setAttribute("aria-busy", aiQuestionRequestPending ? "true" : "false");
-    }
+    updateAiQuestionButtonState();
 
     if (aiQuestionSpinnerEl) {
         aiQuestionSpinnerEl.classList.toggle("hidden", !aiQuestionRequestPending);
@@ -2366,6 +2435,10 @@ function setAiQuestionLoading(loading) {
         aiQuestionModalCancelBtnEl.disabled = aiQuestionRequestPending;
     }
 
+    if (aiModelSelectEl) {
+        aiModelSelectEl.disabled = aiQuestionRequestPending;
+    }
+
     if (questionInputEl) {
         questionInputEl.disabled = aiQuestionRequestPending;
     }
@@ -2373,12 +2446,14 @@ function setAiQuestionLoading(loading) {
 
 function showAiGenreInputModal() {
     return new Promise((resolve) => {
-        if (!aiQuestionModalEl || !aiGenreInputEl) {
+        if (!aiQuestionModalEl || !aiGenreInputEl || !aiModelSelectEl) {
             resolve(null);
             return;
         }
 
+        populateAiModelSelect();
         aiGenreInputEl.value = "";
+        aiModelSelectEl.value = DEFAULT_AI_MODEL_ID;
         setAiQuestionLoading(false);
 
         if (!aiQuestionModalEl.open) {
@@ -2402,7 +2477,8 @@ function showAiGenreInputModal() {
 
         const onSubmit = () => {
             const genre = String(aiGenreInputEl.value || "").trim();
-            close(genre);
+            const modelId = String(aiModelSelectEl.value || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
+            close({ genre, modelId });
         };
         const onCancelClick = () => close(null);
         const onBackdropClick = (event) => {
@@ -2925,6 +3001,7 @@ function renderRooms(rooms) {
         emptyEl.className = "room-card-empty";
         emptyEl.textContent = "現在、出題中の部屋はありません";
         roomListEl.appendChild(emptyEl);
+        updateAiQuestionButtonState(rooms);
         return;
     }
 
@@ -2994,6 +3071,8 @@ function renderRooms(rooms) {
         card.appendChild(metaEl);
         roomListEl.appendChild(card);
     });
+
+    updateAiQuestionButtonState(rooms);
 }
 
 function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logMarkerId = null, eventId = null, eventRevision = 1, eventVersion = 0) {
@@ -3514,6 +3593,15 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        currentRoomsSnapshot = Array.isArray(data.rooms) ? data.rooms : currentRoomsSnapshot;
+        if (typeof data.ai_question_generation_active === "boolean") {
+            aiQuestionGenerationActive = data.ai_question_generation_active;
+        }
+        if (Object.prototype.hasOwnProperty.call(data, "ai_question_generation_owner_id")) {
+            aiQuestionGenerationOwnerId = data.ai_question_generation_owner_id || null;
+        }
+
+        updateAiQuestionButtonState(currentRoomsSnapshot);
 
         if (aiQuestionRequestPending) {
             const enteredArena = data.target_screen === "game_arena"
@@ -3726,8 +3814,8 @@ async function submitAiQuestion() {
         return;
     }
 
-    const genre = await showAiGenreInputModal();
-    if (genre === null) {
+    const selection = await showAiGenreInputModal();
+    if (selection === null) {
         return;
     }
 
@@ -3736,7 +3824,8 @@ async function submitAiQuestion() {
         return;
     }
 
-    const normalizedGenre = String(genre || "").trim().slice(0, 40);
+    const normalizedGenre = String(selection.genre || "").trim().slice(0, 40);
+    const normalizedModelId = String(selection.modelId || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
     setAiQuestionLoading(true);
     pendingArenaMode = "owner";
 
@@ -3745,6 +3834,7 @@ async function submitAiQuestion() {
             type: "question_submission",
             is_ai_mode: true,
             genre: normalizedGenre,
+            model_id: normalizedModelId,
             timestamp: Date.now(),
         })
     );

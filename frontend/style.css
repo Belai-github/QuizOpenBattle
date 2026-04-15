@@ -43,6 +43,7 @@ h1 {
 
 input,
 textarea,
+select,
 button {
     width: 100%;
     min-height: 44px;
@@ -54,6 +55,12 @@ button {
 input {
     padding: 10px 12px;
     border: 1px solid #c7d2e5;
+}
+
+select {
+    padding: 10px 12px;
+    border: 1px solid #c7d2e5;
+    background: #ffffff;
 }
 
 textarea {
@@ -1006,7 +1013,18 @@ body.modal-open #arena-question-text .arena-question-line {
     font-size: 0.86rem;
 }
 
+.ai-question-modal-label {
+    margin-top: 2px;
+    color: #334155;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
 #ai-genre-input {
+    margin-top: 0;
+}
+
+#ai-model-select {
     margin-top: 0;
 }
 

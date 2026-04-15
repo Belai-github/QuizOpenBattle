@@ -17,7 +17,44 @@ load_dotenv()
 # 新しいSDKのクライアントを初期化（環境変数 GEMINI_API_KEY が自動で使われます）
 client = genai.Client()
 
-MODEL_ID = "gemini-2.0-flash-lite"
+AVAILABLE_MODEL_IDS = (
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-2.0-flash-lite-001",
+    "gemini-2.0-flash-lite",
+    "gemini-2.5-flash-preview-tts",
+    "gemini-2.5-pro-preview-tts",
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-pro-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash-image",
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-pro-preview-customtools",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+    "gemini-robotics-er-1.5-preview",
+    "gemini-2.5-computer-use-preview-10-2025",
+    "gemini-embedding-001",
+    "gemini-embedding-2-preview",
+    "gemini-2.5-flash-native-audio-latest",
+    "gemini-2.5-flash-native-audio-preview-09-2025",
+    "gemini-2.5-flash-native-audio-preview-12-2025",
+    "gemini-3.1-flash-live-preview",
+)
+DEFAULT_MODEL_ID = "gemini-2.5-flash-lite"
+
+
+def normalize_model_id(model_id: str | None) -> str:
+    candidate = str(model_id or "").strip()
+    if candidate in AVAILABLE_MODEL_IDS:
+        return candidate
+    return DEFAULT_MODEL_ID
 
 
 _ANSWER_PREFIX_RE = re.compile(r"^(答え|こたえ)(は|:|：)?", re.IGNORECASE)
@@ -66,14 +103,15 @@ def _fallback_answer_judgement(expected_answer: str, user_answer: str) -> bool:
     return similarity >= 0.9
 
 
-async def generate_quiz_async(genre="一般常識"):
+async def generate_quiz_async(genre="一般常識", model_id: str | None = None):
     """Gemini APIを叩いてクイズを1問生成する非同期関数"""
 
     prompt = get_quiz_prompt(genre)
+    selected_model_id = normalize_model_id(model_id)
 
     try:
         # 新しいSDKの非同期メソッド (client.aio) を使用して呼び出し
-        response = await client.aio.models.generate_content(model=MODEL_ID, contents=prompt)
+        response = await client.aio.models.generate_content(model=selected_model_id, contents=prompt)
 
         response_text = response.text or ""
         raw_text = response_text.strip().replace("```json", "").replace("```", "")
@@ -86,13 +124,15 @@ async def generate_quiz_async(genre="一般常識"):
         return {"question": "AI問題の生成に失敗しました。", "answer": "エラー"}
 
 
-async def check_answer_async(expected_answer: str, user_answer: str):
+async def check_answer_async(expected_answer: str, user_answer: str, model_id: str | None = None):
     """プレイヤーの解答が正解と意味的に同じか判定する非同期関数"""
 
     prompt = get_judge_prompt(expected_answer, user_answer)
+    _ = model_id
+    selected_model_id = DEFAULT_MODEL_ID
 
     try:
-        response = await client.aio.models.generate_content(model=MODEL_ID, contents=prompt)
+        response = await client.aio.models.generate_content(model=selected_model_id, contents=prompt)
         response_text = response.text or ""
         result_text = response_text.strip().lower()
 

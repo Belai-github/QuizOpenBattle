@@ -36,6 +36,11 @@ def _normalize_event_id(raw_value):
     return event_id
 
 
+def _normalize_question_text(text: str):
+    normalized_text = unicodedata.normalize("NFC", str(text or ""))
+    return "".join(ch for ch in normalized_text if not ch.isspace())
+
+
 def _mask_answer_text_for_viewer(message: str):
     text = str(message or "")
     if text == "":
@@ -106,8 +111,8 @@ def _resolve_event_payload_for_viewer(
 
 
 def _normalized_question_chars(text: str):
-    normalized_text = unicodedata.normalize("NFC", str(text or ""))
-    return [ch for ch in normalized_text if ch not in {"\n", "\r"}]
+    normalized_text = _normalize_question_text(text)
+    return [ch for ch in normalized_text]
 
 
 def _default_yakumono_indexes_from_text(text: str) -> set[int]:
@@ -592,6 +597,7 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
     ai_genre = str(payload.get("genre", "")).strip() if is_ai_mode else ""
     questioner_name = str(payload.get("questioner_name", "")).strip() if is_ai_mode else ""
     questioner_id = str(payload.get("questioner_id", "")).strip() if is_ai_mode else ""
+    ai_model_id = str(payload.get("model_id", "")).strip() if is_ai_mode else ""
 
     if is_ai_mode:
         if questioner_name == "":
@@ -602,7 +608,7 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         questioner_name = actor_name
         questioner_id = player_id
 
-    question_text = str(payload.get("question_text", payload.get("content", ""))).strip()
+    question_text = _normalize_question_text(payload.get("question_text", payload.get("content", "")))
     if question_text == "":
         question_text = "（空欄）"
 
@@ -621,6 +627,7 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         "genre": genre,
         "is_ai_mode": is_ai_mode,
         "ai_genre": ai_genre,
+        "ai_model_id": ai_model_id,
         "game_state": "waiting",
         "left_participants": set(),
         "right_participants": set(),
