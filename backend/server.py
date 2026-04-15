@@ -156,6 +156,8 @@ class QuizGameManager:
         self.CHAT_RATE_WINDOW_MAX_MESSAGES = 5
         self.chat_message_history = {}
         self.chat_last_message = {}
+        self.lobby_chat_history = []
+        self.lobby_chat_seq = 0
 
     def _next_room_event_id(self, room_owner_id: str):
         room = self.rooms.get(room_owner_id)
@@ -290,6 +292,15 @@ class QuizGameManager:
                 log_marker_id = payload_marker_text
 
         skip_history = isinstance(event_payload, dict) and bool(event_payload.get("skip_history"))
+        if history_message and not skip_history and self._should_append_lobby_chat_history(event_type, event_chat_type, event_room_id):
+            self._append_lobby_chat_history(
+                event_type=event_type or "",
+                event_message=history_message,
+                event_chat_type=str(event_chat_type or "").strip() or "lobby",
+                event_identity=event_identity,
+                log_marker_id=log_marker_id,
+            )
+
         if event_room_id and history_message and not skip_history:
             if event_chat_type in {"team-left", "team-right", "game-global"}:
                 self._append_arena_chat_history(
@@ -361,6 +372,7 @@ class QuizGameManager:
                 "participants": participants,
                 "rooms": rooms,
                 "current_room": current_room,
+                "lobby_chat_history": self._build_lobby_chat_history_snapshot(),
                 "event_type": response_event_type,
                 "event_message": response_event_message,
                 "event_chat_type": response_event_chat_type,
@@ -594,6 +606,50 @@ class QuizGameManager:
             )
 
     # 以下、内部処理関数
+
+    def _should_append_lobby_chat_history(self, event_type: str | None, event_chat_type: str | None, event_room_id: str | None):
+        if event_room_id:
+            return False
+
+        chat_type = str(event_chat_type or "").strip()
+        event_kind = str(event_type or "").strip()
+        if chat_type == "lobby":
+            return True
+        return event_kind in {"join", "leave", "chat"}
+
+    def _append_lobby_chat_history(
+        self,
+        event_type: str,
+        event_message: str,
+        event_chat_type: str,
+        event_identity: dict | None = None,
+        log_marker_id: str | None = None,
+    ):
+        message = str(event_message or "").strip()
+        if message == "":
+            return
+
+        self.lobby_chat_seq = int(self.lobby_chat_seq) + 1
+        self.lobby_chat_history.append(
+            {
+                "seq": int(self.lobby_chat_seq),
+                "timestamp": int(time.time() * 1000),
+                "event_type": str(event_type or "").strip(),
+                "event_message": message,
+                "event_chat_type": str(event_chat_type or "").strip() or "lobby",
+                "log_marker_id": str(log_marker_id or "").strip() or None,
+                "event_id": str((event_identity or {}).get("event_id") or "").strip() or None,
+                "event_revision": int((event_identity or {}).get("event_revision") or 1),
+                "event_version": int((event_identity or {}).get("event_version") or 0),
+            }
+        )
+
+        while len(self.lobby_chat_history) > 400:
+            self.lobby_chat_history.pop(0)
+
+    def _build_lobby_chat_history_snapshot(self):
+        history = self.lobby_chat_history if isinstance(self.lobby_chat_history, list) else []
+        return [entry for entry in history if isinstance(entry, dict)]
 
     def _append_arena_chat_history(
         self,
@@ -1703,6 +1759,7 @@ class QuizGameManager:
             "participants": self.build_participants(),
             "rooms": self.build_rooms_summary(client_id),
             "current_room": self.build_current_room_for_client(client_id),
+            "lobby_chat_history": self._build_lobby_chat_history_snapshot(),
             "event_type": event_type,
             "event_message": None,
             "event_chat_type": None,

@@ -105,6 +105,7 @@ let currentArenaLogRoomId = null;
 const arenaChatHistorySeenSeqSetByRoom = new Map();
 const preGameGlobalHistorySeenSeqSetByRoom = new Map();
 const ARENA_HISTORY_DEBUG_STORAGE_KEY = "quiz_debug_arena_history";
+let lastLobbyHistorySignature = "";
 
 function isArenaHistoryDebugEnabled() {
     const runtimeFlag = typeof window !== "undefined" && window.__QUIZ_DEBUG_ARENA_HISTORY__ === true;
@@ -2736,6 +2737,53 @@ function appendEventLog(
     appendLogToContainer(waitingLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
 }
 
+function hydrateLobbyChatHistoryIfNeeded(history) {
+    if (!Array.isArray(history)) {
+        return;
+    }
+
+    const sortedHistory = [...history]
+        .filter((entry) => entry && typeof entry === "object")
+        .sort((a, b) => {
+            const timeDiff = Number(a?.timestamp || 0) - Number(b?.timestamp || 0);
+            if (timeDiff !== 0) return timeDiff;
+            return Number(a?.seq || 0) - Number(b?.seq || 0);
+        });
+
+    const historySignature = sortedHistory.length > 0
+        ? `${sortedHistory.length}:${Number(sortedHistory[sortedHistory.length - 1]?.seq || 0)}:${String(sortedHistory[sortedHistory.length - 1]?.event_id || "")}`
+        : "0";
+    if (historySignature === lastLobbyHistorySignature) {
+        return;
+    }
+    lastLobbyHistorySignature = historySignature;
+
+    const waitingLogEl = document.getElementById("event-log");
+    if (!waitingLogEl) {
+        return;
+    }
+
+    waitingLogEl.innerHTML = "";
+    sortedHistory.forEach((entry) => {
+        const eventType = String(entry?.event_type || "").trim();
+        const eventMessage = String(entry?.event_message || "").trim();
+        if (!ARENA_ALLOWED_EVENT_TYPES.has(eventType) || eventMessage === "") {
+            return;
+        }
+
+        appendLogToContainer(
+            waitingLogEl,
+            eventType,
+            eventMessage,
+            Number(entry?.timestamp || 0),
+            normalizeLogMarkerId(entry?.log_marker_id),
+            normalizeEventId(entry?.event_id),
+            Math.max(1, Number(entry?.event_revision || 1)),
+            Math.max(0, Number(entry?.event_version || 0)),
+        );
+    });
+}
+
 async function fetchWebSocketTicket(clientId, nickname) {
     const response = await fetch("/api/ws-ticket", {
         method: "POST",
@@ -2890,6 +2938,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             event_revision: incomingEventRevision,
         });
         const wasInArena = isInGameArena();
+        hydrateLobbyChatHistoryIfNeeded(data.lobby_chat_history);
         currentRoomSnapshot = data.current_room ?? null;
         userRole = data.current_room?.chat_role ?? null;
         currentRoomGameState = data.current_room?.game_state ?? null;
