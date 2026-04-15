@@ -31,6 +31,12 @@ DEFAULT_QUIZ_DIFFICULTY = 0
 MAX_QUIZ_DIFFICULTY = max(0, len(QUIZ_DIFFICULTIES) - 1)
 
 
+def _is_resource_exhausted_error(error: Exception) -> bool:
+    message = str(error)
+    upper = message.upper()
+    return "RESOURCE_EXHAUSTED" in upper or "SPENDING CAP" in upper
+
+
 def normalize_model_id(model_id: str | None) -> str:
     candidate = str(model_id or "").strip()
     if candidate in AVAILABLE_MODEL_IDS:
@@ -122,7 +128,32 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
         return quiz_data
 
     except Exception as e:
-        print(f"クイズ生成エラー: {e}")
+        if _is_resource_exhausted_error(e):
+            print(
+                "クイズ生成エラー(課金上限):",
+                {
+                    "model_id": selected_model_id,
+                    "genre": genre,
+                    "difficulty": normalized_difficulty,
+                    "error": repr(e),
+                },
+            )
+            return {
+                "question": "",
+                "answer": "",
+                "error_code": "RESOURCE_EXHAUSTED",
+                "error_message": "Your project has exceeded its spending cap.",
+            }
+
+        print(
+            "クイズ生成エラー:",
+            {
+                "model_id": selected_model_id,
+                "genre": genre,
+                "difficulty": normalized_difficulty,
+                "error": repr(e),
+            },
+        )
         return {"question": "AI問題の生成に失敗しました。", "answer": "エラー"}
 
 
@@ -148,6 +179,10 @@ async def check_answer_async(expected_answer: str, user_answer: str, model_id: s
         return "true" in result_text
 
     except Exception as e:
+        if _is_resource_exhausted_error(e):
+            print("判定エラー(課金上限): RESOURCE_EXHAUSTED -> ローカル簡易判定にフォールバックします")
+            return _fallback_answer_judgement(expected_answer, user_answer)
+
         print(f"判定エラー: {e} -> ローカル簡易判定にフォールバックします")
         return _fallback_answer_judgement(expected_answer, user_answer)
 
@@ -172,8 +207,8 @@ if __name__ == "__main__":
         for model in AVAILABLE_MODEL_IDS:
             await test_quiz_generation(model_id=model)
 
-    model_id = "gemini-3.1-flash-lite-preview"
-    genre = "雑学"
-    difficulty = 0
+    model_id = "gemini-3.1-pro-preview"
+    genre = "一般教養"
+    difficulty = 4
     # asyncio.run(alltest())
     asyncio.run(test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty))

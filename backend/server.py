@@ -2582,19 +2582,60 @@ class QuizGameManager:
             quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
             difficulty = normalize_difficulty(normalized_payload.get("difficulty", 0))
+            generation_timeout = 180.0 if model_id == "gemini-3.1-pro-preview" else 100.0
             try:
                 try:
                     quiz_data = await asyncio.wait_for(
                         generate_quiz_async(genre, model_id=model_id, difficulty=difficulty),
-                        timeout=18.0,
+                        timeout=generation_timeout,
                     )
-                except Exception:
+                except asyncio.TimeoutError as e:
+                    print(
+                        "AI問題生成タイムアウト:",
+                        {
+                            "model_id": model_id,
+                            "genre": genre,
+                            "difficulty": difficulty,
+                            "timeout": generation_timeout,
+                            "error": repr(e),
+                        },
+                    )
+                    await self.send_private_info(player_id, "AI問題の生成がタイムアウトしました。時間をおいて再試行してください。")
+                    return
+                except Exception as e:
+                    print(
+                        "AI問題生成失敗:",
+                        {
+                            "model_id": model_id,
+                            "genre": genre,
+                            "difficulty": difficulty,
+                            "error": repr(e),
+                        },
+                    )
                     await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
                     return
 
                 question_text = str((quiz_data or {}).get("question", "")).strip()
                 expected_answer = str((quiz_data or {}).get("answer", "")).strip()
+                error_code = str((quiz_data or {}).get("error_code", "")).strip()
+                if error_code == "RESOURCE_EXHAUSTED":
+                    await self.send_private_info(
+                        player_id,
+                        "AI APIの利用上限に達しているため問題生成できません。\n課金上限または請求設定を確認してください。",
+                    )
+                    return
+
                 if question_text == "" or expected_answer == "" or expected_answer == "エラー":
+                    print(
+                        "AI問題生成結果が不正:",
+                        {
+                            "model_id": model_id,
+                            "genre": genre,
+                            "difficulty": difficulty,
+                            "question_text": question_text,
+                            "expected_answer": expected_answer,
+                        },
+                    )
                     await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
                     return
 
