@@ -224,6 +224,44 @@ button:hover {
 
 .event-log-message {
     flex: 1 1 auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.event-log-message.chat {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.event-log-chat-name {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-weight: 700;
+}
+
+.event-log-chat-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.event-log-message.system {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.event-log-system-name {
+    flex: 0 0 auto;
+    font-weight: 700;
+}
+
+.event-log-system-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: pre-wrap;
     word-break: break-word;
 }
 

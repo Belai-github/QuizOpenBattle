@@ -290,7 +290,39 @@ function appendEventLog(eventType, eventMessage) {
 
     const messageEl = document.createElement("span");
     messageEl.className = "event-log-message";
-    messageEl.textContent = eventMessage;
+
+    const buildSplitMessage = (nameClass, bodyClass, matchResult) => {
+        const nameEl = document.createElement("span");
+        nameEl.className = nameClass;
+        nameEl.textContent = matchResult[1];
+
+        const bodyEl = document.createElement("span");
+        bodyEl.className = bodyClass;
+        bodyEl.textContent = matchResult[2];
+
+        messageEl.appendChild(nameEl);
+        messageEl.appendChild(bodyEl);
+    };
+
+    if (eventType === "chat") {
+        const separatorMatch = eventMessage.match(/^([^:：]+[:：]\s*)([\s\S]*)$/);
+        if (separatorMatch) {
+            messageEl.classList.add("chat");
+            buildSplitMessage("event-log-chat-name", "event-log-chat-body", separatorMatch);
+        } else {
+            messageEl.textContent = eventMessage;
+        }
+    } else if (eventType === "join" || eventType === "leave" || eventType === "question") {
+        const systemMatch = eventMessage.match(/^(.+?)(\s*が[\s\S]*)$/);
+        if (systemMatch) {
+            messageEl.classList.add("system");
+            buildSplitMessage("event-log-system-name", "event-log-system-body", systemMatch);
+        } else {
+            messageEl.textContent = eventMessage;
+        }
+    } else {
+        messageEl.textContent = eventMessage;
+    }
 
     const timestampEl = document.createElement("span");
     timestampEl.className = "event-log-time";
