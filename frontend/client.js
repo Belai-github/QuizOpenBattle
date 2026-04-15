@@ -62,7 +62,7 @@ const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
-const DEFAULT_AI_MODEL_ID = "gemini-2.5-flash-lite";
+const DEFAULT_AI_MODEL_ID = "gemini-2.0-flash-lite";
 const AI_MODEL_OPTIONS = [
     ["gemini-2.5-flash", "gemini-2.5-flash"],
     ["gemini-2.5-pro", "gemini-2.5-pro"],

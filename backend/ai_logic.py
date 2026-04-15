@@ -47,7 +47,7 @@ AVAILABLE_MODEL_IDS = (
     "gemini-2.5-flash-native-audio-preview-12-2025",
     "gemini-3.1-flash-live-preview",
 )
-DEFAULT_MODEL_ID = "gemini-2.5-flash-lite"
+DEFAULT_MODEL_ID = "gemini-2.0-flash-lite"
 
 
 def normalize_model_id(model_id: str | None) -> str:
