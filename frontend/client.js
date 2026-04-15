@@ -262,9 +262,30 @@ function clearArenaLogElements() {
     });
 }
 
-function renderArenaLogsForRoom(roomOwnerId) {
+function renderArenaLogsForRoom(roomOwnerId, options = {}) {
     const roomId = String(roomOwnerId || "").trim();
+    const forceScrollToBottom = options?.forceScrollToBottom === true;
     currentArenaLogRoomId = roomId || null;
+
+    const scrollStateByChatType = new Map();
+    ARENA_CHAT_TYPES.forEach((chatType) => {
+        const logEl = document.getElementById(`game-chat-log-${chatType}`);
+        if (!logEl) return;
+
+        const scrollContainer = resolveLogScrollContainer(logEl);
+        if (!scrollContainer) return;
+
+        const wasNearBottom = isLogNearBottom(scrollContainer);
+        const distanceFromBottom = Math.max(
+            0,
+            scrollContainer.scrollHeight - (scrollContainer.scrollTop + scrollContainer.clientHeight)
+        );
+
+        scrollStateByChatType.set(chatType, {
+            wasNearBottom,
+            distanceFromBottom,
+        });
+    });
 
     clearArenaLogElements();
     if (roomId === "") {
@@ -291,10 +312,25 @@ function renderArenaLogsForRoom(roomOwnerId) {
 
         const scrollContainer = resolveLogScrollContainer(logEl);
         if (scrollContainer) {
-            scrollContainer.scrollTop = scrollContainer.scrollHeight;
             const indicatorEl = ensureLogNewIndicator(scrollContainer);
+
+            const prevScrollState = scrollStateByChatType.get(chatType);
+            const shouldSnapToBottom = forceScrollToBottom || Boolean(prevScrollState?.wasNearBottom);
+            if (shouldSnapToBottom) {
+                scrollContainer.scrollTop = scrollContainer.scrollHeight;
+                if (indicatorEl) {
+                    indicatorEl.classList.add("hidden");
+                }
+                return;
+            }
+
+            const distanceFromBottom = Math.max(0, Number(prevScrollState?.distanceFromBottom || 0));
+            scrollContainer.scrollTop = Math.max(
+                0,
+                scrollContainer.scrollHeight - scrollContainer.clientHeight - distanceFromBottom
+            );
             if (indicatorEl) {
-                indicatorEl.classList.add("hidden");
+                indicatorEl.classList.remove("hidden");
             }
         }
     });
@@ -2383,7 +2419,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
 
         if (activeRoomId !== currentArenaLogRoomId) {
-            renderArenaLogsForRoom(activeRoomId);
+            renderArenaLogsForRoom(activeRoomId, { forceScrollToBottom: true });
         }
 
         document.body.dataset.chatRole = String(userRole || "");
