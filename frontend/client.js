@@ -1692,8 +1692,10 @@ function canRequestIntentionalDraw() {
     if ((currentRoomGameState || "waiting") !== "playing") return false;
     if (isAnswerJudgementPending()) return false;
 
-    const chatRole = String(currentRoomSnapshot?.chat_role || userRole || "").trim();
-    if (!["team-left", "team-right", "questioner", "spectator"].includes(chatRole)) {
+    if (currentRoomSnapshot?.role !== "participant") {
+        return false;
+    }
+    if (!isPlayerRole(userRole)) {
         return false;
     }
 
