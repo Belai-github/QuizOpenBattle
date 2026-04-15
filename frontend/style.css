@@ -862,6 +862,22 @@ body[data-app-mode="kifu"] .chat-compose {
     word-break: break-word;
 }
 
+.event-log-message.game-finished {
+    font-weight: 800;
+}
+
+.event-log-message.game-finished-left-win {
+    color: #b91c1c;
+}
+
+.event-log-message.game-finished-right-win {
+    color: #1d4ed8;
+}
+
+.event-log-message.game-finished-draw {
+    color: #111827;
+}
+
 .event-log-message.chat {
     display: flex;
     align-items: flex-start;

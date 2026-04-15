@@ -1842,10 +1842,11 @@ async function submitTurnEndAttempt() {
     const teamParticipantCount = getCurrentTeamParticipantCount();
     const isProposalMode = teamParticipantCount > 1;
     const hasRemainingActions = getCurrentTeamTotalActionPoints() > 0;
+    const isFinalChance = isRightFinalActionBeforeTurnEnd();
     const finalChanceWarning = isRightFinalActionBeforeTurnEnd()
         ? "\n\nこのターンを終えると先攻の勝利となります。本当にターンエンドしますか？"
         : "";
-    const warning = hasRemainingActions
+    const warning = hasRemainingActions && !isFinalChance
         ? "\n\nアクション権が残っています。本当にターンエンドしますか？"
         : "";
     const confirmed = await showConfirmModal(
@@ -4224,6 +4225,18 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
         messageEl.textContent = eventMessage;
     }
 
+    if (eventType === "game_finished") {
+        const normalizedMessage = String(eventMessage || "");
+        messageEl.classList.add("game-finished");
+        if (/勝者\s*[:：]\s*先攻|先攻の勝利|先攻勝ち/.test(normalizedMessage)) {
+            messageEl.classList.add("game-finished-left-win");
+        } else if (/勝者\s*[:：]\s*後攻|後攻の勝利|後攻勝ち/.test(normalizedMessage)) {
+            messageEl.classList.add("game-finished-right-win");
+        } else if (/引き分け|ドロー|勝者\s*[:：]\s*なし/.test(normalizedMessage)) {
+            messageEl.classList.add("game-finished-draw");
+        }
+    }
+
     const timestampEl = document.createElement("span");
     timestampEl.className = "event-log-time";
     const timestampDate = new Date(resolvedEventTimestamp);
@@ -4935,6 +4948,16 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             );
         if (reachedGameFinished || reachedLeftRevealWindow) {
             enableArenaProgressChatFilter();
+        }
+
+        if (reachedLeftRevealWindow && activeRoomId) {
+            // 先攻正解後の後攻アンサー待ちに入ったタイミングで、閲覧可能範囲が広がるため履歴を再構築する。
+            hydrateArenaChatHistoryIfNeeded(data.current_room);
+            renderArenaLogsForRoom(activeRoomId);
+            debugArenaHistory("ws.onmessage rebuilt logs for left reveal window", {
+                roomId: activeRoomId,
+                reason: "left_correct_waiting_entered",
+            });
         }
 
         if (!isKifuMode && currentRoomGameState === "finished") {

@@ -343,6 +343,9 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             "game-global": {"team-left", "team-right", "questioner", "spectator"},
         }
 
+        if left_reveal_window:
+            readable_roles_by_type["team-right"].add("team-left")
+
         if room_state == "finished":
             all_roles = {"team-left", "team-right", "questioner", "spectator"}
             readable_roles_by_type["team-left"] = all_roles
@@ -739,6 +742,8 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
 
 def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: str | None, chat_type: str):
     room_state = room.get("game_state", "waiting")
+    game = room.get("game") if isinstance(room.get("game"), dict) else None
+    left_reveal_window = bool(room_state == "playing" and game and game.get("left_correct_waiting"))
 
     role_to_ids = {
         "questioner": {room_owner_id},
@@ -759,8 +764,6 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
     # 全体チャットは待機中・終了後は全員、対戦中は出題者/観戦者のみ送受信可能
     if chat_type == "game-global":
         if room_state == "playing":
-            game = room.get("game") if isinstance(room.get("game"), dict) else None
-            left_reveal_window = bool(game and game.get("left_correct_waiting"))
             allowed_senders = {"questioner", "spectator"}
             if left_reveal_window:
                 allowed_senders.add("team-left")
@@ -788,6 +791,9 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
         "team-left": {"team-left", "questioner", "spectator"},
         "team-right": {"team-right", "questioner", "spectator"},
     }
+
+    if left_reveal_window:
+        readable_roles_by_type["team-right"].add("team-left")
 
     if chat_type not in sendable_roles_by_type:
         return {"ok": False, "error": "未対応のチャット種別です。"}
