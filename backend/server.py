@@ -321,6 +321,8 @@ class QuizGameManager:
     async def _finalize_answer_judgement(self, owner_id: str, room: dict, team: str, answer_text: str, is_correct: bool):
         game = room.get("game") or {}
         previous_turn_team = game.get("current_turn_team")
+        pending = game.get("pending_answer_judgement") if isinstance(game.get("pending_answer_judgement"), dict) else {}
+        answer_log_marker_id = str((pending or {}).get("answer_log_marker_id") or "").strip() or None
         game["pending_answer_judgement"] = None
         result = apply_submit_answer(room, team, is_correct)
 
@@ -383,6 +385,10 @@ class QuizGameManager:
             room,
             "answer_result",
             self._format_answer_result_message(team_label, is_correct),
+            event_payload={
+                "team": team,
+                "log_marker_id": answer_log_marker_id,
+            },
         )
 
         next_turn_team = (room.get("game") or {}).get("current_turn_team")
@@ -478,7 +484,19 @@ class QuizGameManager:
             "room_reconnected",
         }
         history_message = str(event_message or public_info or "").strip()
-        event_timestamp = int(time.time() * 1000)
+        payload_event_timestamp = None
+        if isinstance(event_payload, dict):
+            raw_event_timestamp = event_payload.get("event_timestamp")
+            if isinstance(raw_event_timestamp, int) and raw_event_timestamp > 0:
+                payload_event_timestamp = raw_event_timestamp
+            elif isinstance(raw_event_timestamp, str):
+                raw_event_timestamp = raw_event_timestamp.strip()
+                if raw_event_timestamp.isdigit():
+                    parsed_event_timestamp = int(raw_event_timestamp)
+                    if parsed_event_timestamp > 0:
+                        payload_event_timestamp = parsed_event_timestamp
+
+        event_timestamp = payload_event_timestamp or int(time.time() * 1000)
         event_identity = self._derive_event_identity(
             event_room_id=event_room_id,
             event_type=event_type,
@@ -818,6 +836,7 @@ class QuizGameManager:
                     **payload_map,
                     "event_id": str(entry.get("event_id") or "").strip() or None,
                     "event_revision": base_revision + 100,
+                    "event_timestamp": int(entry.get("timestamp") or 0),
                     "reveal_phase": "finished",
                     "skip_history": True,
                 },
@@ -1700,10 +1719,12 @@ class QuizGameManager:
                 )
                 return
 
+            answer_log_marker_id = str(uuid.uuid4())
             game["pending_answer_judgement"] = {
                 "team": team,
                 "answer_text": answer_text,
                 "answerer_id": requester_id,
+                "answer_log_marker_id": answer_log_marker_id,
             }
             self._append_kifu_action(
                 owner_id,
@@ -1722,13 +1743,20 @@ class QuizGameManager:
                     public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
                     event_type="answer_attempt",
                     event_room_id=owner_id,
+                    event_payload={
+                        "team": team,
+                        "log_marker_id": answer_log_marker_id,
+                    },
                 )
             await self._broadcast_team_log_message(
                 owner_id,
                 room,
                 "answer_attempt",
                 self._format_answer_attempt_message(team_label, answer_text),
-                event_payload={"team": team},
+                event_payload={
+                    "team": team,
+                    "log_marker_id": answer_log_marker_id,
+                },
             )
 
             await self.broadcast_state(
@@ -2341,10 +2369,12 @@ class QuizGameManager:
         total_voters = len(voter_ids)
 
         if total_voters == 1:
+            answer_log_marker_id = str(uuid.uuid4())
             game["pending_answer_judgement"] = {
                 "team": team,
                 "answer_text": text,
                 "answerer_id": client_id,
+                "answer_log_marker_id": answer_log_marker_id,
             }
             self._append_kifu_action(
                 owner_id,
@@ -2362,13 +2392,20 @@ class QuizGameManager:
                     public_info=f"{team_label}がアンサーしました。出題者が正誤判定中です。",
                     event_type="answer_attempt",
                     event_room_id=owner_id,
+                    event_payload={
+                        "team": team,
+                        "log_marker_id": answer_log_marker_id,
+                    },
                 )
             await self._broadcast_team_log_message(
                 owner_id,
                 room,
                 "answer_attempt",
                 self._format_answer_attempt_message(team_label, text),
-                event_payload={"team": team},
+                event_payload={
+                    "team": team,
+                    "log_marker_id": answer_log_marker_id,
+                },
             )
 
             if room.get("is_ai_mode"):
@@ -2820,6 +2857,8 @@ class QuizGameManager:
         if chat_type == "game-global" and room.get("game_state", "waiting") == "waiting":
             pre_seq = int(room.get("pre_game_global_chat_seq", 0)) + 1
             room["pre_game_global_chat_seq"] = pre_seq
+            pre_timestamp = int(time.time() * 1000)
+            pre_event_id = f"{room_owner_id}:pre:{pre_seq}"
             pre_history = room.setdefault("pre_game_global_chat_history", [])
             if not isinstance(pre_history, list):
                 pre_history = []
@@ -2827,9 +2866,13 @@ class QuizGameManager:
             pre_history.append(
                 {
                     "seq": pre_seq,
-                    "timestamp": int(time.time() * 1000),
+                    "timestamp": pre_timestamp,
                     "event_type": "chat",
                     "event_message": f"{nickname}: {message}",
+                    "event_chat_type": "game-global",
+                    "event_id": pre_event_id,
+                    "event_revision": 1,
+                    "event_version": pre_seq,
                 }
             )
             while len(pre_history) > 200:

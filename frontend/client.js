@@ -106,7 +106,7 @@ const logScrollListenerBound = new WeakSet();
 const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
-const REPLAY_PROGRESS_EVENT_TYPES = new Set(["character_opened", "answer_attempt", "turn_changed"]);
+const REPLAY_PROGRESS_EVENT_TYPES = new Set(["character_opened", "answer_attempt", "answer_result", "turn_changed"]);
 const ARENA_VOTE_EVENT_TYPES = new Set([
     "open_vote_request",
     "open_vote_resolved",
@@ -455,6 +455,26 @@ function compareArenaLogOrder(aTimestamp, aVersion, bTimestamp, bVersion) {
     return 0;
 }
 
+function resolveReplacementEventTimestamp(existingTimestamp, incomingTimestamp) {
+    const existingTs = Number(existingTimestamp || 0);
+    const incomingTs = Number(incomingTimestamp || 0);
+    const hasExistingTs = Number.isFinite(existingTs) && existingTs > 0;
+    const hasIncomingTs = Number.isFinite(incomingTs) && incomingTs > 0;
+
+    if (!hasExistingTs && !hasIncomingTs) {
+        return null;
+    }
+    if (!hasExistingTs) {
+        return Math.floor(incomingTs);
+    }
+    if (!hasIncomingTs) {
+        return Math.floor(existingTs);
+    }
+
+    // Replacement updates should not push the original log forward in time.
+    return Math.floor(Math.min(existingTs, incomingTs));
+}
+
 function insertArenaLogInOrder(logs, entry) {
     if (!Array.isArray(logs)) {
         return;
@@ -510,15 +530,17 @@ function pushArenaRoomLog(
             const currentRevision = Number(logs[existingIndex]?.eventRevision || 1);
             const nextRevision = Math.max(1, Number(eventRevision || 1));
             if (nextRevision >= currentRevision) {
-                logs[existingIndex] = {
+                const existingLog = logs[existingIndex] || {};
+                logs.splice(existingIndex, 1);
+                insertArenaLogInOrder(logs, {
                     eventType,
                     eventMessage,
-                    eventTimestamp,
+                    eventTimestamp: resolveReplacementEventTimestamp(existingLog?.eventTimestamp, eventTimestamp),
                     logMarkerId,
                     eventId,
                     eventRevision: nextRevision,
-                    eventVersion: Math.max(0, Number(eventVersion || logs[existingIndex]?.eventVersion || 0)),
-                };
+                    eventVersion: Math.max(0, Number(eventVersion || existingLog?.eventVersion || 0)),
+                });
             }
             return;
         }
@@ -528,15 +550,17 @@ function pushArenaRoomLog(
     if (logMarkerId) {
         const existingIndex = logs.findIndex(log => log.logMarkerId === logMarkerId);
         if (existingIndex !== -1) {
-            logs[existingIndex] = {
+            const existingLog = logs[existingIndex] || {};
+            logs.splice(existingIndex, 1);
+            insertArenaLogInOrder(logs, {
                 eventType,
                 eventMessage,
-                eventTimestamp,
+                eventTimestamp: resolveReplacementEventTimestamp(existingLog?.eventTimestamp, eventTimestamp),
                 logMarkerId,
-                eventId: eventId || logs[existingIndex]?.eventId || null,
-                eventRevision: Math.max(1, Number(eventRevision || logs[existingIndex]?.eventRevision || 1)),
-                eventVersion: Math.max(0, Number(eventVersion || logs[existingIndex]?.eventVersion || 0)),
-            };
+                eventId: eventId || existingLog?.eventId || null,
+                eventRevision: Math.max(1, Number(eventRevision || existingLog?.eventRevision || 1)),
+                eventVersion: Math.max(0, Number(eventVersion || existingLog?.eventVersion || 0)),
+            });
             return;
         }
     }
@@ -574,15 +598,17 @@ function upsertHydratedArenaLog(
             const currentRevision = Number(logs[existingIndex]?.eventRevision || 1);
             const nextRevision = Math.max(1, Number(eventRevision || 1));
             if (nextRevision >= currentRevision) {
-                logs[existingIndex] = {
+                const existingLog = logs[existingIndex] || {};
+                logs.splice(existingIndex, 1);
+                insertArenaLogInOrder(logs, {
                     eventType,
                     eventMessage,
-                    eventTimestamp,
+                    eventTimestamp: resolveReplacementEventTimestamp(existingLog?.eventTimestamp, eventTimestamp),
                     logMarkerId,
                     eventId,
                     eventRevision: nextRevision,
-                    eventVersion: Math.max(0, Number(eventVersion || logs[existingIndex]?.eventVersion || 0)),
-                };
+                    eventVersion: Math.max(0, Number(eventVersion || existingLog?.eventVersion || 0)),
+                });
             }
             return;
         }
@@ -591,15 +617,17 @@ function upsertHydratedArenaLog(
     if (logMarkerId) {
         const existingIndex = logs.findIndex((log) => log.logMarkerId === logMarkerId);
         if (existingIndex !== -1) {
-            logs[existingIndex] = {
+            const existingLog = logs[existingIndex] || {};
+            logs.splice(existingIndex, 1);
+            insertArenaLogInOrder(logs, {
                 eventType,
                 eventMessage,
-                eventTimestamp,
+                eventTimestamp: resolveReplacementEventTimestamp(existingLog?.eventTimestamp, eventTimestamp),
                 logMarkerId,
-                eventId: eventId || logs[existingIndex]?.eventId || null,
-                eventRevision: Math.max(1, Number(eventRevision || logs[existingIndex]?.eventRevision || 1)),
-                eventVersion: Math.max(0, Number(eventVersion || logs[existingIndex]?.eventVersion || 0)),
-            };
+                eventId: eventId || existingLog?.eventId || null,
+                eventRevision: Math.max(1, Number(eventRevision || existingLog?.eventRevision || 1)),
+                eventVersion: Math.max(0, Number(eventVersion || existingLog?.eventVersion || 0)),
+            });
             return;
         }
     }
@@ -978,7 +1006,10 @@ function hydratePreGameGlobalHistoryIfNeeded(currentRoom) {
         const eventType = String(entry?.event_type || "chat").trim() || "chat";
         let eventMessage = String(entry?.event_message || "").trim();
         const eventTimestamp = Number(entry?.timestamp || 0);
+        const eventId = normalizeEventId(entry?.event_id);
+        const eventRevision = Math.max(1, Number(entry?.event_revision || 1));
         const eventVersion = Math.max(0, Number(entry?.event_version || 0));
+        const logMarkerId = normalizeLogMarkerId(entry?.log_marker_id);
 
         if (!Number.isFinite(seq) || seenSeqSet.has(seq) || eventMessage === "") {
             return;
@@ -996,9 +1027,9 @@ function hydratePreGameGlobalHistoryIfNeeded(currentRoom) {
             eventType,
             eventMessage,
             eventTimestamp,
-            null,
-            null,
-            1,
+            logMarkerId,
+            eventId,
+            eventRevision,
             eventVersion,
         );
 
@@ -1922,14 +1953,15 @@ function highlightReplayCurrentLogFromDisplayedProgress() {
 
     const step = Array.isArray(currentKifuSteps) ? currentKifuSteps[currentKifuStepIndex] : null;
     const action = step?.action || null;
+    const payload = (action && typeof action.payload === "object" && action.payload) ? action.payload : {};
     const actionType = String(action?.action_type || "").trim();
     const actionTimestamp = Number(action?.timestamp || 0);
-    const replayEventTypeByAction = {
-        open: "character_opened",
-        answer: "answer_attempt",
-        turn_end: "turn_changed",
+    const replayEventTypesByAction = {
+        open: ["character_opened"],
+        answer: ["answer_result", "answer_attempt"],
+        turn_end: ["turn_changed"],
     };
-    const targetEventType = replayEventTypeByAction[actionType] || null;
+    const targetEventTypes = replayEventTypesByAction[actionType] || [];
 
     const globalLogEl = document.getElementById("game-chat-log-game-global");
     if (!globalLogEl) {
@@ -1946,16 +1978,54 @@ function highlightReplayCurrentLogFromDisplayedProgress() {
     }
 
     let targetItem = null;
-    if (targetEventType) {
-        const typedItems = progressItems.filter((itemEl) => String(itemEl?.dataset?.eventType || "").trim() === targetEventType);
+    if (targetEventTypes.length > 0) {
+        const typedItems = progressItems.filter((itemEl) => targetEventTypes.includes(String(itemEl?.dataset?.eventType || "").trim()));
         if (typedItems.length > 0) {
+            const getItemMessageText = (itemEl) => String(itemEl?.querySelector?.(".event-log-message")?.textContent || itemEl?.textContent || "").trim();
+
+            if (actionType === "open") {
+                const charIndex = Number(payload?.char_index);
+                if (Number.isFinite(charIndex) && charIndex >= 0) {
+                    const charLabel = `${charIndex + 1}文字目`;
+                    const matchedByCharIndex = typedItems.filter((itemEl) => getItemMessageText(itemEl).includes(charLabel));
+                    if (matchedByCharIndex.length > 0) {
+                        targetItem = matchedByCharIndex[matchedByCharIndex.length - 1];
+                    }
+                }
+            }
+
+            if (!targetItem && actionType === "answer") {
+                const answerText = String(payload?.answer_text || "").trim();
+                const team = String(action?.team || "").trim();
+                const teamLabel = team === "team-left" ? "先攻" : team === "team-right" ? "後攻" : "";
+
+                if (answerText !== "") {
+                    const answerNeedle = `「${answerText}」`;
+                    const matchedByAnswerText = typedItems.filter((itemEl) => {
+                        const message = getItemMessageText(itemEl);
+                        if (!message.includes(answerNeedle)) {
+                            return false;
+                        }
+                        if (teamLabel === "") {
+                            return true;
+                        }
+                        return message.includes(`${teamLabel}が`);
+                    });
+                    if (matchedByAnswerText.length > 0) {
+                        targetItem = matchedByAnswerText[matchedByAnswerText.length - 1];
+                    }
+                }
+            }
+
             if (Number.isFinite(actionTimestamp) && actionTimestamp > 0) {
                 const matchedByTime = typedItems.filter((itemEl) => {
                     const ts = Number(itemEl?.dataset?.eventTimestamp || 0);
                     return Number.isFinite(ts) && ts > 0 && ts <= actionTimestamp + 1000;
                 });
                 if (matchedByTime.length > 0) {
-                    targetItem = matchedByTime[matchedByTime.length - 1];
+                    if (!targetItem) {
+                        targetItem = matchedByTime[matchedByTime.length - 1];
+                    }
                 }
             }
 
@@ -3603,6 +3673,32 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
     return item;
 }
 
+function insertLogItemByOrder(logEl, itemEl) {
+    if (!logEl || !itemEl) {
+        return;
+    }
+
+    let cursor = logEl.lastElementChild;
+    while (cursor) {
+        const order = compareArenaLogOrder(
+            Number(cursor.dataset?.eventTimestamp || 0),
+            Number(cursor.dataset?.eventVersion || 0),
+            Number(itemEl.dataset?.eventTimestamp || 0),
+            Number(itemEl.dataset?.eventVersion || 0),
+        );
+        if (order <= 0) {
+            break;
+        }
+        cursor = cursor.previousElementSibling;
+    }
+
+    if (cursor) {
+        logEl.insertBefore(itemEl, cursor.nextElementSibling);
+    } else {
+        logEl.insertBefore(itemEl, logEl.firstChild);
+    }
+}
+
 function appendLogToContainer(
     logEl,
     eventType,
@@ -3630,9 +3726,11 @@ function appendLogToContainer(
                 return;
             }
 
-            const newItem = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId, eventId, nextRevision, eventVersion);
+            const replacementTimestamp = resolveReplacementEventTimestamp(existingItem.dataset.eventTimestamp, eventTimestamp);
+            const newItem = createEventLogItem(eventType, eventMessage, replacementTimestamp, logMarkerId, eventId, nextRevision, eventVersion);
             if (newItem) {
-                existingItem.replaceWith(newItem);
+                existingItem.remove();
+                insertLogItemByOrder(logEl, newItem);
                 if (logEl.classList.contains("chat-log")) {
                     applyChatLogFilterToItem(newItem, getChatLogFilterState(logEl));
                 }
@@ -3645,9 +3743,11 @@ function appendLogToContainer(
     if (logMarkerId) {
         const existingItem = logEl.querySelector(`[data-log-marker-id="${CSS.escape(String(logMarkerId))}"]`);
         if (existingItem) {
-            const newItem = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId, eventId, eventRevision, eventVersion);
+            const replacementTimestamp = resolveReplacementEventTimestamp(existingItem.dataset.eventTimestamp, eventTimestamp);
+            const newItem = createEventLogItem(eventType, eventMessage, replacementTimestamp, logMarkerId, eventId, eventRevision, eventVersion);
             if (newItem) {
-                existingItem.replaceWith(newItem);
+                existingItem.remove();
+                insertLogItemByOrder(logEl, newItem);
                 if (logEl.classList.contains("chat-log")) {
                     applyChatLogFilterToItem(newItem, getChatLogFilterState(logEl));
                 }
@@ -3661,25 +3761,7 @@ function appendLogToContainer(
         return;
     }
 
-    let cursor = logEl.lastElementChild;
-    while (cursor) {
-        const order = compareArenaLogOrder(
-            Number(cursor.dataset?.eventTimestamp || 0),
-            Number(cursor.dataset?.eventVersion || 0),
-            Number(item.dataset?.eventTimestamp || 0),
-            Number(item.dataset?.eventVersion || 0),
-        );
-        if (order <= 0) {
-            break;
-        }
-        cursor = cursor.previousElementSibling;
-    }
-
-    if (cursor) {
-        logEl.insertBefore(item, cursor.nextElementSibling);
-    } else {
-        logEl.insertBefore(item, logEl.firstChild);
-    }
+    insertLogItemByOrder(logEl, item);
     if (logEl.classList.contains("chat-log")) {
         applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
     }
