@@ -166,10 +166,12 @@ def _extract_gemini_token_usage(response: Any) -> dict[str, int | None]:
 
     prompt_tokens = getattr(usage, "prompt_token_count", None)
     completion_tokens = getattr(usage, "candidates_token_count", None)
+    thoughts_token_count = getattr(usage, "thoughts_token_count", None)
     total_tokens = getattr(usage, "total_token_count", None)
     return {
         "prompt_tokens": int(prompt_tokens) if isinstance(prompt_tokens, int) else None,
         "completion_tokens": int(completion_tokens) if isinstance(completion_tokens, int) else None,
+        "reasoning_tokens": int(thoughts_token_count) if isinstance(thoughts_token_count, int) else None,
         "total_tokens": int(total_tokens) if isinstance(total_tokens, int) else None,
     }
 
