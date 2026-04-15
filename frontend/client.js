@@ -4862,7 +4862,7 @@ function toggleArenaQuestionCharSelectionFromTarget(targetEl) {
 
 async function requestOpenVote(charIndex) {
     if (openVoteRequestPending) {
-        await showAlertModal("投票開始処理中です。少し待ってください。");
+        await showAlertModal("オープン処理中です。少し時間を空けてください。");
         return;
     }
 
