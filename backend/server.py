@@ -2,6 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 import json
 import random
+import time
 
 app = FastAPI()
 
@@ -15,6 +16,12 @@ class QuizGameManager:
         self.rooms = {}
         # 【対策1】同時に接続できる最大人数を設定
         self.MAX_CONNECTIONS = 4
+        self.CHAT_MAX_LENGTH = 200
+        self.CHAT_MIN_INTERVAL_SECONDS = 0.8
+        self.CHAT_RATE_WINDOW_SECONDS = 10.0
+        self.CHAT_RATE_WINDOW_MAX_MESSAGES = 5
+        self.chat_message_history = {}
+        self.chat_last_message = {}
 
     def build_participants(self):
         participants = []
@@ -240,6 +247,8 @@ class QuizGameManager:
         if client_id in self.active_connections:
             del self.active_connections[client_id]
             nickname = self.nicknames.pop(client_id, client_id)
+            self.chat_message_history.pop(client_id, None)
+            self.chat_last_message.pop(client_id, None)
 
             closed_room = self.rooms.pop(client_id, None)
             self.remove_client_from_all_rooms(client_id)
@@ -341,12 +350,46 @@ class QuizGameManager:
         await self.send_private_info(player_id, "", target_screen="game_arena")
 
     async def process_chat_message(self, client_id: str, payload: dict):
-        message = str(payload.get("message", "")).strip()
+        message = str(payload.get("message", "")).replace("\r\n", "\n").replace("\r", "\n").strip()
         if message == "":
             return
 
-        # 長文スパム対策としてロビー投稿文字数を制限する。
-        message = message[:200]
+        if len(message) > self.CHAT_MAX_LENGTH:
+            await self.send_private_info(
+                client_id,
+                f"チャットは{self.CHAT_MAX_LENGTH}文字以内で送信してください。",
+            )
+            return
+
+        now = time.time()
+        history = self.chat_message_history.setdefault(client_id, [])
+        valid_since = now - self.CHAT_RATE_WINDOW_SECONDS
+        history[:] = [sent_at for sent_at in history if sent_at >= valid_since]
+
+        if history and now - history[-1] < self.CHAT_MIN_INTERVAL_SECONDS:
+            wait_seconds = self.CHAT_MIN_INTERVAL_SECONDS - (now - history[-1])
+            await self.send_private_info(
+                client_id,
+                f"連続投稿が早すぎます。{wait_seconds:.1f}秒待ってください。",
+            )
+            return
+
+        if len(history) >= self.CHAT_RATE_WINDOW_MAX_MESSAGES:
+            await self.send_private_info(
+                client_id,
+                f"短時間での投稿が多すぎます。{int(self.CHAT_RATE_WINDOW_SECONDS)}秒後に再試行してください。",
+            )
+            return
+
+        last_chat = self.chat_last_message.get(client_id)
+        if last_chat is not None:
+            last_message_text, last_message_at = last_chat
+            if message == last_message_text and now - last_message_at < 6.0:
+                await self.send_private_info(client_id, "同じ内容の連投は少し時間を空けてください。")
+                return
+
+        history.append(now)
+        self.chat_last_message[client_id] = (message, now)
         nickname = self.nicknames.get(client_id, "ゲスト")
 
         await self.broadcast_state(

@@ -32,7 +32,8 @@
                     <div id="event-log"></div>
                 </div>
                 <div id="lobby-chat-box">
-                    <textarea id="lobby-chat-input" rows="1" placeholder="ロビーチャットを入力..."></textarea>
+                    <textarea id="lobby-chat-input" rows="1" maxlength="200" placeholder="ロビーチャットを入力..."></textarea>
+                    <p id="lobby-chat-length-warning" class="hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
                     <button id="lobby-chat-send-btn" type="button">送信</button>
                 </div>
             </div>

@@ -12,8 +12,19 @@ const alertOkBtn = document.getElementById("alert-ok-btn");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const lobbyChatInputEl = document.getElementById("lobby-chat-input");
 const lobbyChatSendBtnEl = document.getElementById("lobby-chat-send-btn");
+const lobbyChatLengthWarningEl = document.getElementById("lobby-chat-length-warning");
 
 let pendingArenaMode = null;
+const CHAT_MAX_LENGTH = 200;
+const CHAT_MIN_INTERVAL_MS = 800;
+let lastChatSentAt = 0;
+
+function updateLobbyChatLengthWarning() {
+    if (!lobbyChatInputEl || !lobbyChatLengthWarningEl) return;
+
+    const reachedLimit = lobbyChatInputEl.value.length >= CHAT_MAX_LENGTH;
+    lobbyChatLengthWarningEl.classList.toggle("hidden", !reachedLimit);
+}
 
 function updateArenaLeaveLabel(mode) {
     if (!leaveGameArenaEl) return;
@@ -468,6 +479,18 @@ function sendLobbyChatMessage() {
     const message = lobbyChatInputEl.value.trim();
     if (message === "") return;
 
+    if (message.length > CHAT_MAX_LENGTH) {
+        void showAlertModal(`チャットは${CHAT_MAX_LENGTH}文字以内で送信してください`);
+        return;
+    }
+
+    const now = Date.now();
+    if (now - lastChatSentAt < CHAT_MIN_INTERVAL_MS) {
+        const waitMs = CHAT_MIN_INTERVAL_MS - (now - lastChatSentAt);
+        void showAlertModal(`連続投稿が早すぎます。${(waitMs / 1000).toFixed(1)}秒待ってください`);
+        return;
+    }
+
     ws.send(
         JSON.stringify({
             type: "chat_message",
@@ -475,7 +498,9 @@ function sendLobbyChatMessage() {
             timestamp: Date.now()
         })
     );
+    lastChatSentAt = now;
     lobbyChatInputEl.value = "";
+    updateLobbyChatLengthWarning();
 }
 
 function bindLobbyChatHandlers() {
@@ -486,12 +511,18 @@ function bindLobbyChatHandlers() {
     }
 
     if (lobbyChatInputEl) {
+        lobbyChatInputEl.addEventListener("input", () => {
+            updateLobbyChatLengthWarning();
+        });
+
         lobbyChatInputEl.addEventListener("keydown", (event) => {
             if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
             event.preventDefault();
             sendLobbyChatMessage();
         });
     }
+
+    updateLobbyChatLengthWarning();
 }
 
 bindLobbyChatHandlers();
