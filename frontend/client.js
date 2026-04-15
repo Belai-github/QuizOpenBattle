@@ -47,6 +47,47 @@ const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-rig
 let lastRulebookTriggerEl = null;
 let viewportDebugEl = null;
 let previousRoomGameState = null;
+let connectionTimeoutModalShown = false;
+let isConnecting = false;
+
+function getOrCreatePersistentClientId() {
+    const storageKey = "quiz_client_id";
+    let clientId = String(localStorage.getItem(storageKey) || "").trim();
+    if (clientId !== "") {
+        return clientId;
+    }
+
+    clientId = crypto.randomUUID();
+    localStorage.setItem(storageKey, clientId);
+    return clientId;
+}
+
+async function showConnectionTimeoutReloadModal() {
+    if (connectionTimeoutModalShown) return;
+    connectionTimeoutModalShown = true;
+
+    closeAllModals();
+    await showConfirmModal(
+        "接続がタイムアウトしました。\n\nページを再読み込みしてください。",
+        {
+            hideCancel: true,
+            okLabel: "ページを再読み込み",
+        }
+    );
+
+    localStorage.setItem("quiz_auto_reconnect", "1");
+    window.location.reload();
+}
+
+function isLikelyConnectionTimeout(closeEvent) {
+    if (!closeEvent) return true;
+
+    const reason = String(closeEvent.reason || "").toLowerCase();
+    if (reason.includes("timeout")) return true;
+
+    // 1006: 異常切断, 1011: サーバー側エラーで切断されるケース
+    return closeEvent.code === 1006 || closeEvent.code === 1011;
+}
 
 function setArenaCharClickGuard() {
     // No-op: モーダル閉鎖後の1クリック破棄はUXを損なうため廃止。
@@ -1516,10 +1557,22 @@ window.onload = () => {
     if (savedNickname) {
         document.getElementById("nickname").value = savedNickname;
     }
+
+    const shouldAutoReconnect = localStorage.getItem("quiz_auto_reconnect") === "1";
+    if (shouldAutoReconnect && savedNickname) {
+        localStorage.removeItem("quiz_auto_reconnect");
+        window.setTimeout(() => {
+            document.getElementById("join-btn").click();
+        }, 0);
+    }
 };
 
 // 「ゲームに参加」ボタンを押したときの処理
 document.getElementById("join-btn").addEventListener("click", async () => {
+    if (isConnecting) {
+        return;
+    }
+
     const nicknameInput = document.getElementById("nickname").value.trim();
     if (nicknameInput === "") {
         await showAlertModal("ニックネームを入力してください");
@@ -1527,17 +1580,34 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     }
     localStorage.setItem("quiz_nickname", nicknameInput);
 
-    const clientId = crypto.randomUUID();
+    isConnecting = true;
+    const clientId = getOrCreatePersistentClientId();
     myClientId = clientId;
 
     const wsUrl = buildWebSocketUrl(clientId, nicknameInput);
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+        isConnecting = false;
+        connectionTimeoutModalShown = false;
+        localStorage.removeItem("quiz_auto_reconnect");
         console.log("サーバーに接続しました");
         document.getElementById("login-screen").style.display = "none";
         showWaitingRoomScreen();
         document.getElementById("my-name").textContent = nicknameInput;
+    };
+
+    ws.onerror = () => {
+        isConnecting = false;
+        if (!ws || ws.readyState === WebSocket.OPEN) return;
+        void showConnectionTimeoutReloadModal();
+    };
+
+    ws.onclose = (event) => {
+        isConnecting = false;
+        if (event.code === 1000) return;
+        if (!isLikelyConnectionTimeout(event)) return;
+        void showConnectionTimeoutReloadModal();
     };
 
     ws.onmessage = (event) => {

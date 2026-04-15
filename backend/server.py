@@ -31,8 +31,10 @@ class QuizGameManager:
         self.active_connections = {}
         self.nicknames = {}
         self.rooms = {}
+        self.reconnect_reservations = {}
         # 【対策1】同時に接続できる最大人数を設定
         self.MAX_CONNECTIONS = 4
+        self.RECONNECT_RESERVATION_SECONDS = 120
         self.CHAT_MAX_LENGTH = 200
         self.CHAT_MIN_INTERVAL_SECONDS = 0.8
         self.CHAT_RATE_WINDOW_SECONDS = 10.0
@@ -119,6 +121,64 @@ class QuizGameManager:
         if team == "team-right":
             return set(room["right_participants"])
         return set()
+
+    def _purge_expired_reconnect_reservations(self):
+        now = time.time()
+        for reserved_client_id, reservation in list(self.reconnect_reservations.items()):
+            if reservation.get("expires_at", 0) <= now:
+                self.reconnect_reservations.pop(reserved_client_id, None)
+
+    def _clear_room_reconnect_reservations(self, room_owner_id: str):
+        for reserved_client_id, reservation in list(self.reconnect_reservations.items()):
+            if reservation.get("room_owner_id") == room_owner_id:
+                self.reconnect_reservations.pop(reserved_client_id, None)
+
+    def _reserve_participant_reconnect(self, client_id: str, ctx: dict | None):
+        if not ctx or ctx.get("role") != "participant":
+            return
+
+        room = ctx.get("room") or {}
+        if room.get("game_state") != "playing":
+            return
+
+        team = ctx.get("chat_role")
+        if team not in {"team-left", "team-right"}:
+            return
+
+        self.reconnect_reservations[client_id] = {
+            "room_owner_id": ctx.get("room_owner_id"),
+            "team": team,
+            "expires_at": time.time() + self.RECONNECT_RESERVATION_SECONDS,
+        }
+
+    def _try_restore_participant_reconnect(self, client_id: str):
+        self._purge_expired_reconnect_reservations()
+
+        reservation = self.reconnect_reservations.get(client_id)
+        if not reservation:
+            return None
+
+        room_owner_id = reservation.get("room_owner_id")
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            self.reconnect_reservations.pop(client_id, None)
+            return None
+
+        team = reservation.get("team")
+        room["left_participants"].discard(client_id)
+        room["right_participants"].discard(client_id)
+        room["spectators"].discard(client_id)
+
+        if team == "team-left":
+            room["left_participants"].add(client_id)
+        elif team == "team-right":
+            room["right_participants"].add(client_id)
+        else:
+            self.reconnect_reservations.pop(client_id, None)
+            return None
+
+        self.reconnect_reservations.pop(client_id, None)
+        return room_owner_id
 
     async def _broadcast_team_log_message(self, owner_id: str, room: dict, event_type: str, message: str):
         for chat_type, default_ids in (
@@ -756,6 +816,7 @@ class QuizGameManager:
         remove_client_from_all_rooms_logic(self.rooms, client_id)
 
     async def join_room(self, client_id: str, room_owner_id: str, role: str):
+        self.reconnect_reservations.pop(client_id, None)
         result = apply_join_room(self.rooms, client_id, room_owner_id, role)
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "部屋への入室に失敗しました。"))
@@ -1171,6 +1232,7 @@ class QuizGameManager:
 
         self.active_connections[client_id] = websocket
         self.nicknames[client_id] = nickname
+        restored_room_owner_id = self._try_restore_participant_reconnect(client_id)
         print(f"プレイヤー接続: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
 
         await self.broadcast_state(
@@ -1179,10 +1241,21 @@ class QuizGameManager:
             event_type="join",
             event_message=f"{nickname} が入室しました",
         )
+
+        if restored_room_owner_id:
+            await self.send_private_info(
+                client_id,
+                "再接続して部屋に復帰しました。",
+                target_screen="game_arena",
+                event_type="room_reconnected",
+            )
         return True
 
     async def disconnect(self, client_id: str):
         if client_id in self.active_connections:
+            ctx_before_disconnect = resolve_client_room_context(self.rooms, client_id)
+            self._reserve_participant_reconnect(client_id, ctx_before_disconnect)
+
             del self.active_connections[client_id]
             nickname = self.nicknames.pop(client_id, client_id)
             self.chat_message_history.pop(client_id, None)
@@ -1192,6 +1265,7 @@ class QuizGameManager:
             remove_client_from_all_rooms_logic(self.rooms, client_id)
 
             if closed_room is not None:
+                self._clear_room_reconnect_reservations(client_id)
                 affected_client_ids = set(closed_room["left_participants"]) | set(closed_room["right_participants"]) | set(closed_room["spectators"])
                 for target_client_id in affected_client_ids:
                     await self.send_private_info(
@@ -1217,6 +1291,7 @@ class QuizGameManager:
                 )
 
     async def exit_room(self, client_id: str):
+        self.reconnect_reservations.pop(client_id, None)
         nickname = self.nicknames.get(client_id, "ゲスト")
 
         result = apply_exit_room(self.rooms, client_id)
