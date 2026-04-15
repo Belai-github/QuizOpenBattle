@@ -841,35 +841,54 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-answer-compose {
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 #arena-answer-input {
     margin-top: 0;
     min-height: 48px;
-    padding-right: 88px;
+    padding-right: 12px;
 }
 
+.arena-answer-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+#arena-turn-end-btn,
 #arena-answer-submit-btn {
-    position: absolute;
-    right: 8px;
-    top: 50%;
-    transform: translateY(-50%);
     width: auto;
     min-height: 34px;
     margin-top: 0;
     padding: 6px 14px;
     border-radius: 999px;
-    background: #dc2626;
-    color: #ffffff;
     font-size: 0.82rem;
     line-height: 1;
+}
+
+#arena-turn-end-btn {
+    background: #475569;
+    color: #ffffff;
+}
+
+#arena-turn-end-btn:hover {
+    background: #334155;
+}
+
+#arena-answer-submit-btn {
+    background: #dc2626;
+    color: #ffffff;
 }
 
 #arena-answer-submit-btn:hover {
     background: #b91c1c;
 }
 
+#arena-turn-end-btn:disabled,
+#arena-turn-end-btn:disabled:hover,
 #arena-answer-submit-btn:disabled,
 #arena-answer-submit-btn:disabled:hover {
     background: #94a3b8;

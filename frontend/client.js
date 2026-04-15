@@ -16,6 +16,7 @@ const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-v
 const arenaAnswerBoxEl = document.getElementById("arena-answer-box");
 const arenaAnswerInputEl = document.getElementById("arena-answer-input");
 const arenaAnswerSubmitBtnEl = document.getElementById("arena-answer-submit-btn");
+const arenaTurnEndBtnEl = document.getElementById("arena-turn-end-btn");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
@@ -28,7 +29,9 @@ let currentGameState = null; // game中の詳細状態: {current_turn_team, team
 let currentRoomSnapshot = null;
 const handledOpenVoteIds = new Set();
 const handledAnswerVoteIds = new Set();
+const handledTurnEndVoteIds = new Set();
 let openVoteRequestPending = false;
+let turnEndRequestPending = false;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const ARENA_MASK_CHAR = "■";
@@ -292,6 +295,28 @@ function canSubmitArenaAnswer() {
     return currentGameState?.current_turn_team === userRole;
 }
 
+function canRequestTurnEnd() {
+    if (!isInGameArena()) return false;
+    if ((currentRoomGameState || "waiting") !== "playing") return false;
+    if (isAnswerJudgementPending()) return false;
+    if (userRole !== "team-left" && userRole !== "team-right") return false;
+    return currentGameState?.current_turn_team === userRole;
+}
+
+function getCurrentTeamActionPoints() {
+    if (userRole === "team-left") {
+        const state = currentGameState?.team_left || {};
+        return state.action_points || 0;
+    }
+
+    if (userRole === "team-right") {
+        const state = currentGameState?.team_right || {};
+        return state.action_points || 0;
+    }
+
+    return 0;
+}
+
 function canViewArenaAnswerForm() {
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
@@ -319,17 +344,73 @@ function getCurrentTeamParticipantCount() {
 }
 
 function updateArenaAnswerFormVisibility() {
-    if (!arenaAnswerBoxEl || !arenaAnswerInputEl || !arenaAnswerSubmitBtnEl) return;
+    if (!arenaAnswerBoxEl || !arenaAnswerInputEl || !arenaAnswerSubmitBtnEl || !arenaTurnEndBtnEl) return;
 
     const canView = canViewArenaAnswerForm();
-    const canUse = canSubmitArenaAnswer();
+    const canSubmit = canSubmitArenaAnswer();
+    const canEndTurn = canRequestTurnEnd();
+    const teamParticipantCount = getCurrentTeamParticipantCount();
+    const isProposalMode = teamParticipantCount > 1;
     arenaAnswerBoxEl.classList.toggle("hidden", !canView);
-    arenaAnswerInputEl.disabled = !canUse;
-    arenaAnswerSubmitBtnEl.disabled = !canUse;
+    arenaAnswerInputEl.disabled = !canSubmit;
+    arenaAnswerSubmitBtnEl.disabled = !canSubmit;
+    arenaTurnEndBtnEl.disabled = !canEndTurn;
+    arenaAnswerSubmitBtnEl.textContent = isProposalMode ? "提案" : "解答";
+    arenaAnswerSubmitBtnEl.setAttribute("aria-label", isProposalMode ? "解答提案" : "解答送信");
 
     if (!canView) {
         arenaAnswerInputEl.value = "";
     }
+}
+
+async function submitTurnEndAttempt() {
+    if (!canRequestTurnEnd()) return;
+
+    if (turnEndRequestPending) {
+        await showAlertModal("ターンエンド処理中です。少し待ってください。");
+        return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    const teamParticipantCount = getCurrentTeamParticipantCount();
+    const isProposalMode = teamParticipantCount > 1;
+    const hasRemainingActions = getCurrentTeamActionPoints() > 0;
+    const warning = hasRemainingActions
+        ? "\n\nアクション権が残っています。本当にターンエンドしますか？"
+        : "";
+    const confirmed = await showConfirmModal(
+        isProposalMode
+            ? `ターンエンドを提案しますか？${warning}`
+            : `ターンエンドしますか？${warning}`,
+        {
+            okLabel: isProposalMode ? "提案する" : "ターンエンドする",
+            cancelLabel: "キャンセル",
+        }
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    turnEndRequestPending = true;
+    ws.send(
+        JSON.stringify({
+            type: "turn_end_attempt",
+            timestamp: Date.now(),
+        })
+    );
+
+    window.setTimeout(() => {
+        turnEndRequestPending = false;
+    }, 800);
 }
 
 async function submitArenaAnswer() {
@@ -1339,6 +1420,8 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
         "open_vote_resolved",
         "answer_vote_request",
         "answer_vote_resolved",
+        "turn_end_vote_request",
+        "turn_end_vote_resolved",
     ]);
     if (!allowedTypes.has(eventType) || !eventMessage) {
         return;
@@ -1358,6 +1441,8 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
         "open_vote_resolved",
         "answer_vote_request",
         "answer_vote_resolved",
+        "turn_end_vote_request",
+        "turn_end_vote_resolved",
     ]);
     if (arenaOnlyTypes.has(eventType)) {
         return;
@@ -1434,6 +1519,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
         if (data.event_type === "answer_vote_request" && data.event_payload) {
             void handleAnswerVoteRequest(data.event_payload);
+        }
+        if (data.event_type === "turn_end_vote_request" && data.event_payload) {
+            void handleTurnEndVoteRequest(data.event_payload);
         }
         if (data.event_type === "answer_judgement_request" && data.event_payload) {
             void handleAnswerJudgementRequest(data.event_payload);
@@ -1740,6 +1828,40 @@ async function handleAnswerVoteRequest(payload) {
     );
 }
 
+async function handleTurnEndVoteRequest(payload) {
+    const voteId = String(payload?.vote_id || "");
+    const teamLabel = String(payload?.team_label || "");
+    const totalVoters = Number(payload?.total_voters || 0);
+    if (!voteId) return;
+    if (handledTurnEndVoteIds.has(voteId)) return;
+
+    handledTurnEndVoteIds.add(voteId);
+
+    const majorityNote = totalVoters > 1
+        ? "\n（陣営の過半数OKで実行されます）"
+        : "";
+    const confirmed = await showConfirmModal(
+        `${teamLabel}陣営でターンエンドしますか？${majorityNote}`,
+        {
+            okLabel: "OK",
+            cancelLabel: "キャンセル",
+        }
+    );
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "turn_end_vote_response",
+            vote_id: voteId,
+            approve: Boolean(confirmed),
+            timestamp: Date.now(),
+        })
+    );
+}
+
 async function handleAnswerJudgementRequest(payload) {
     if (userRole !== "questioner") {
         return;
@@ -1858,6 +1980,10 @@ toggleQuestionVisibilityBtnEl?.addEventListener("click", () => {
 
 arenaAnswerSubmitBtnEl?.addEventListener("click", () => {
     void submitArenaAnswer();
+});
+
+arenaTurnEndBtnEl?.addEventListener("click", () => {
+    void submitTurnEndAttempt();
 });
 
 arenaAnswerInputEl?.addEventListener("keydown", (event) => {

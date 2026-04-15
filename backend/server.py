@@ -148,6 +148,11 @@ class QuizGameManager:
             await self.send_private_info(client_id, "進行中の解答送信投票があります。")
             return
 
+        pending_turn_end_vote = room.get("pending_turn_end_vote")
+        if pending_turn_end_vote and pending_turn_end_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "進行中のターンエンド投票があります。")
+            return
+
         if game.get("current_turn_team") != team:
             await self.send_private_info(client_id, "あなたの陣営のターンではありません。")
             return
@@ -438,6 +443,206 @@ class QuizGameManager:
             )
             return
 
+    async def request_turn_end_attempt(self, client_id: str):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        if room.get("game_state") != "playing":
+            await self.send_private_info(client_id, "対戦中のみターンエンドできます。")
+            return
+
+        game = room.get("game") or {}
+        if game.get("pending_answer_judgement") is not None:
+            await self.send_private_info(client_id, "正誤判定中は行動できません。")
+            return
+
+        pending_open_vote = room.get("pending_open_vote")
+        if pending_open_vote and pending_open_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "文字オープン投票中はターンエンドできません。")
+            return
+
+        pending_answer_vote = room.get("pending_answer_vote")
+        if pending_answer_vote and pending_answer_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "解答送信投票中はターンエンドできません。")
+            return
+
+        pending_turn_end_vote = room.get("pending_turn_end_vote")
+        if pending_turn_end_vote and pending_turn_end_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "進行中のターンエンド投票があります。")
+            return
+
+        team = self._resolve_team_for_client(room, client_id)
+        if team is None:
+            await self.send_private_info(client_id, "参加者のみターンエンドできます。")
+            return
+
+        if game.get("current_turn_team") != team:
+            await self.send_private_info(client_id, "自分のターンでのみターンエンドできます。")
+            return
+
+        voter_ids = self._get_team_participant_ids(room, team)
+        if not voter_ids:
+            await self.send_private_info(client_id, "投票対象の陣営参加者がいません。")
+            return
+
+        total_voters = len(voter_ids)
+        if total_voters == 1:
+            result = apply_end_turn(room, team)
+            if not result.get("ok"):
+                await self.send_private_info(client_id, result.get("error", "ターン終了に失敗しました。"))
+                return
+
+            next_team = result.get("current_turn_team")
+            next_label = "先攻" if next_team == "team-left" else "後攻"
+            await self.broadcast_state(
+                public_info=f"ターン終了。{next_label}のターンになりました。",
+                event_type="turn_changed",
+                event_room_id=owner_id,
+            )
+            await self.send_private_info(client_id, "ターンエンドしました。")
+            return
+
+        vote_id = str(uuid.uuid4())
+        required_approvals = (total_voters // 2) + 1
+        room["pending_turn_end_vote"] = {
+            "vote_id": vote_id,
+            "requester_id": client_id,
+            "team": team,
+            "voter_ids": voter_ids,
+            "approved_ids": {client_id},
+            "rejected_ids": set(),
+            "required_approvals": required_approvals,
+            "status": "pending",
+        }
+
+        team_label = "先攻" if team == "team-left" else "後攻"
+        requester_name = self.nicknames.get(client_id, "ゲスト")
+        await self.broadcast_state(
+            public_info=f"{team_label}陣営でターンエンド投票を開始しました。",
+            event_type="turn_end_vote_request",
+            event_message=f"{requester_name} がターンエンド投票を開始しました。",
+            event_chat_type=team,
+            event_room_id=owner_id,
+            event_recipient_ids=voter_ids - {client_id},
+            event_payload={
+                "vote_id": vote_id,
+                "team": team,
+                "team_label": team_label,
+                "required_approvals": required_approvals,
+                "total_voters": total_voters,
+            },
+        )
+
+        await self.send_private_info(client_id, "提案しました。")
+
+    async def respond_turn_end_vote(self, client_id: str, vote_id: str, approve: bool):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        pending_vote = room.get("pending_turn_end_vote")
+
+        if not pending_vote or pending_vote.get("status") != "pending":
+            await self.send_private_info(client_id, "進行中のターンエンド投票がありません。")
+            return
+
+        if pending_vote.get("vote_id") != vote_id:
+            await self.send_private_info(client_id, "投票IDが一致しません。")
+            return
+
+        voter_ids = pending_vote["voter_ids"]
+        if client_id not in voter_ids:
+            await self.send_private_info(client_id, "この投票には参加できません。")
+            return
+
+        if client_id in pending_vote["approved_ids"] or client_id in pending_vote["rejected_ids"]:
+            await self.send_private_info(client_id, "この投票にはすでに回答済みです。")
+            return
+
+        if approve:
+            pending_vote["approved_ids"].add(client_id)
+        else:
+            pending_vote["rejected_ids"].add(client_id)
+
+        approvals = len(pending_vote["approved_ids"])
+        rejections = len(pending_vote["rejected_ids"])
+        required = pending_vote["required_approvals"]
+        team = pending_vote["team"]
+        team_label = "先攻" if team == "team-left" else "後攻"
+
+        team_chat_recipients = set(voter_ids)
+        team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
+        if team_chat_result.get("ok"):
+            team_chat_recipients = team_chat_result["event_recipient_ids"]
+
+        if approvals >= required:
+            pending_vote["status"] = "approved"
+            room["pending_turn_end_vote"] = None
+
+            result = apply_end_turn(room, team)
+            if not result.get("ok"):
+                await self.broadcast_state(
+                    public_info="ターンエンド投票は可決されましたが、ターン終了処理に失敗しました。",
+                    event_type="turn_end_vote_resolved",
+                    event_chat_type=team,
+                    event_room_id=owner_id,
+                    event_recipient_ids=team_chat_recipients,
+                    event_payload={
+                        "vote_id": vote_id,
+                        "approved": False,
+                        "reason": result.get("error", "end_turn_failed"),
+                    },
+                )
+                return
+
+            await self.broadcast_state(
+                public_info=f"{team_label}陣営のターンエンド投票が可決されました。",
+                event_type="turn_end_vote_resolved",
+                event_message="ターンエンド投票可決",
+                event_chat_type=team,
+                event_room_id=owner_id,
+                event_recipient_ids=team_chat_recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": True,
+                },
+            )
+
+            next_team = result.get("current_turn_team")
+            next_label = "先攻" if next_team == "team-left" else "後攻"
+            await self.broadcast_state(
+                public_info=f"ターン終了。{next_label}のターンになりました。",
+                event_type="turn_changed",
+                event_room_id=owner_id,
+            )
+            return
+
+        max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
+        if max_possible_approvals < required:
+            pending_vote["status"] = "rejected"
+            room["pending_turn_end_vote"] = None
+            await self.broadcast_state(
+                public_info=f"{team_label}陣営のターンエンド投票は否決されました。",
+                event_type="turn_end_vote_resolved",
+                event_message="ターンエンド投票否決",
+                event_chat_type=team,
+                event_room_id=owner_id,
+                event_recipient_ids=team_chat_recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": False,
+                    "reason": "rejected",
+                },
+            )
+            return
+
     async def send_private_info(
         self,
         client_id: str,
@@ -635,41 +840,8 @@ class QuizGameManager:
             )
 
     async def end_turn(self, client_id: str):
-        """ターンを終了するアクション"""
-        ctx = resolve_client_room_context(self.rooms, client_id)
-        if ctx is None:
-            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
-            return
-
-        room = ctx["room"]
-        owner_id = ctx["room_owner_id"]
-        if (room.get("game") or {}).get("pending_answer_judgement") is not None:
-            await self.send_private_info(client_id, "正誤判定中は行動できません。")
-            return
-
-        # チームを特定
-        team = None
-        if client_id in room["left_participants"]:
-            team = "team-left"
-        elif client_id in room["right_participants"]:
-            team = "team-right"
-        else:
-            await self.send_private_info(client_id, "参加チームが見つかりません。")
-            return
-
-        result = apply_end_turn(room, team)
-        if not result.get("ok"):
-            await self.send_private_info(client_id, result.get("error", "ターン終了に失敗しました。"))
-            return
-
-        next_team = result.get("current_turn_team")
-        next_label = "先攻" if next_team == "team-left" else "後攻"
-
-        await self.broadcast_state(
-            public_info=f"ターン終了。{next_label}のターンになりました。",
-            event_type="turn_changed",
-            event_room_id=owner_id,
-        )
+        """互換のため残す: 実体はターンエンド提案処理"""
+        await self.request_turn_end_attempt(client_id)
 
     async def submit_answer_attempt(self, client_id: str, answer_text: str):
         """参加者が解答内容を提出するアクション"""
@@ -693,6 +865,11 @@ class QuizGameManager:
         pending_answer_vote = room.get("pending_answer_vote")
         if pending_answer_vote and pending_answer_vote.get("status") == "pending":
             await self.send_private_info(client_id, "現在、別の解答送信投票が進行中です。")
+            return
+
+        pending_turn_end_vote = room.get("pending_turn_end_vote")
+        if pending_turn_end_vote and pending_turn_end_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "ターンエンド投票中は解答を送信できません。")
             return
 
         pending_open_vote = room.get("pending_open_vote")
@@ -1140,6 +1317,15 @@ class QuizGameManager:
             await self.respond_answer_vote(client_id, vote_id, approve)
             return
 
+        if payload_type == "turn_end_vote_response":
+            vote_id = str(payload.get("vote_id", "")).strip()
+            approve = bool(payload.get("approve", False))
+            if vote_id == "":
+                await self.send_private_info(client_id, "投票IDが不正です。")
+                return
+            await self.respond_turn_end_vote(client_id, vote_id, approve)
+            return
+
         if payload_type == "submit_answer":
             is_correct = payload.get("is_correct", False)
             await self.submit_answer(client_id, is_correct)
@@ -1155,8 +1341,8 @@ class QuizGameManager:
             await self.judge_answer(client_id, is_correct)
             return
 
-        if payload_type == "end_turn":
-            await self.end_turn(client_id)
+        if payload_type == "end_turn" or payload_type == "turn_end_attempt":
+            await self.request_turn_end_attempt(client_id)
             return
 
         if payload_type == "room_entry":
