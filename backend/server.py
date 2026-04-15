@@ -9,7 +9,11 @@ from backend.game_logic import (
     apply_join_room,
     apply_shuffle_participants,
     apply_start_game,
+    apply_open_character,
+    apply_submit_answer,
+    apply_end_turn,
     build_current_room_for_client,
+    build_game_state_for_client,
     remove_client_from_all_rooms as remove_client_from_all_rooms_logic,
     resolve_chat_recipients,
     resolve_client_room_context,
@@ -210,6 +214,119 @@ class QuizGameManager:
             event_type="room_shuffle",
             event_message=f"{questioner_name} が参加者をシャッフルしました",
             event_room_id=client_id,
+        )
+
+    async def open_character(self, client_id: str, char_index):
+        """文字をオープンするアクション"""
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+
+        # チームを特定
+        team = None
+        if client_id in room["left_participants"]:
+            team = "team-left"
+        elif client_id in room["right_participants"]:
+            team = "team-right"
+        else:
+            await self.send_private_info(client_id, "参加チームが見つかりません。")
+            return
+
+        # インデックスの型確認
+        if not isinstance(char_index, int):
+            await self.send_private_info(client_id, "無効な文字インデックスです。")
+            return
+
+        result = apply_open_character(room, team, char_index)
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "文字をオープンできません。"))
+            return
+
+        is_yakumono = result.get("is_yakumono", False)
+        message = f"{self.nicknames.get(client_id, '？')} が文字をオープンしました。{'（約物）' if is_yakumono else ''}"
+
+        await self.broadcast_state(
+            public_info=message,
+            event_type="character_opened",
+            event_room_id=owner_id,
+        )
+
+    async def submit_answer(self, client_id: str, is_correct: bool):
+        """解答を提出するアクション"""
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+
+        # 出題者のみが正誤を判定できる
+        if ctx["role"] != "owner":
+            await self.send_private_info(client_id, "解答の正誤判定は出題者のみ実行できます。")
+            return
+
+        result = apply_submit_answer(room, room["game"]["current_turn_team"], is_correct)
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "解答の提出に失敗しました。"))
+            return
+
+        current_team_name = room["game"]["current_turn_team"]
+        team_label = "先攻" if current_team_name == "team-left" else "後攻"
+        status_text = "正解！" if is_correct else "誤答。"
+
+        await self.broadcast_state(
+            public_info=f"{team_label}が解答を提出しました。{status_text}",
+            event_type="answer_submitted",
+            event_room_id=owner_id,
+        )
+
+        # ゲーム終了判定
+        if result.get("game_status") == "finished":
+            winner = result.get("winner")
+            winner_label = "先攻" if winner == "team-left" else "後攻"
+            await self.broadcast_state(
+                public_info=f"ゲーム終了！{winner_label}が勝利しました！",
+                event_type="game_finished",
+                event_room_id=owner_id,
+            )
+
+    async def end_turn(self, client_id: str):
+        """ターンを終了するアクション"""
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+
+        # チームを特定
+        team = None
+        if client_id in room["left_participants"]:
+            team = "team-left"
+        elif client_id in room["right_participants"]:
+            team = "team-right"
+        else:
+            await self.send_private_info(client_id, "参加チームが見つかりません。")
+            return
+
+        result = apply_end_turn(room, team)
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "ターン終了に失敗しました。"))
+            return
+
+        next_team = result.get("current_turn_team")
+        next_label = "先攻" if next_team == "team-left" else "後攻"
+
+        await self.broadcast_state(
+            public_info=f"ターン終了。{next_label}のターンになりました。",
+            event_type="turn_changed",
+            event_room_id=owner_id,
         )
 
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
@@ -422,6 +539,20 @@ class QuizGameManager:
 
         if payload_type == "shuffle_participants":
             await self.shuffle_participants(client_id)
+            return
+
+        if payload_type == "open_character":
+            char_index = payload.get("char_index")
+            await self.open_character(client_id, char_index)
+            return
+
+        if payload_type == "submit_answer":
+            is_correct = payload.get("is_correct", False)
+            await self.submit_answer(client_id, is_correct)
+            return
+
+        if payload_type == "end_turn":
+            await self.end_turn(client_id)
             return
 
         if payload_type == "room_entry":

@@ -187,6 +187,28 @@ def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
     room["yakumono_indexes"] = selected_indexes
 
     room["game_state"] = "playing"
+
+    # ゲーム状態の初期化
+    room["game"] = {
+        "current_turn_team": "team-left",  # 先攻から開始
+        "game_status": "playing",  # "playing" | "finished"
+        "winner": None,  # None | "team-left" | "team-right"
+        # チームごとのアクション権
+        "team_left": {
+            "action_points": 1,  # ターン中のアクション権
+            "bonus_action_points": 0,  # ＋アクション権（持ち越し可能）
+            "correct_answer": None,  # False=誤答, True=正解, None=未답
+        },
+        "team_right": {
+            "action_points": 1,
+            "bonus_action_points": 0,
+            "correct_answer": None,
+        },
+        # オープン状態（ゲーム全体で共有）
+        "opened_char_indexes": set(),  # どの文字がオープンされたか
+        "opened_by_team": {},  # インデックス -> "team-left" | "team-right" | "yakumono"
+    }
+
     return {"ok": True, "questioner_name": room["questioner_name"]}
 
 
@@ -301,3 +323,212 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
         event_recipient_ids |= role_to_ids.get(role_name, set())
 
     return {"ok": True, "event_recipient_ids": event_recipient_ids}
+
+
+# ==================== ゲーム中のアクション処理 ====================
+
+
+def apply_open_character(room: dict, team: str, char_index: int):
+    """
+    指定されたチームが文字をオープンします。
+
+    Args:
+        room: ゲームルーム
+        team: "team-left" | "team-right"
+        char_index: オープンする文字のインデックス
+
+    Returns:
+        {"ok": bool, "error": str | None, "is_yakumono": bool}
+    """
+    game = room.get("game", {})
+
+    # ゲーム中かどうか確認
+    if game.get("game_status") != "playing":
+        return {"ok": False, "error": "ゲーム中ではありません。"}
+
+    # ターンが正しいかどうか確認
+    if game.get("current_turn_team") != team:
+        return {"ok": False, "error": "あなたのターンではありません。"}
+
+    # アクション権があるかどうか確認
+    team_state = game.get(team, {})
+    total_actions = team_state.get("action_points", 0) + team_state.get("bonus_action_points", 0)
+    if total_actions <= 0:
+        return {"ok": False, "error": "アクション権がありません。"}
+
+    # インデックスが有効か確認
+    question_length = len(str(room.get("question_text", "")))
+    if not (0 <= char_index < question_length):
+        return {"ok": False, "error": "無効な文字インデックスです。"}
+
+    # すでにオープンされているか確認
+    if char_index in game.get("opened_char_indexes", set()):
+        return {"ok": False, "error": "すでにオープンされています。"}
+
+    # 文字をオープン
+    game["opened_char_indexes"].add(char_index)
+
+    # 約物かどうかを判定
+    is_yakumono = char_index in room.get("yakumono_indexes", set())
+
+    if is_yakumono:
+        # 約物の場合：相手にも公開、アクション権を1獲得
+        game["opened_by_team"][char_index] = "yakumono"
+        team_state["action_points"] += 1
+    else:
+        # 通常の文字：自分だけに公開
+        game["opened_by_team"][char_index] = team
+
+    # アクション権を消費
+    if team_state.get("action_points", 0) > 0:
+        team_state["action_points"] -= 1
+    else:
+        team_state["bonus_action_points"] -= 1
+
+    return {
+        "ok": True,
+        "is_yakumono": is_yakumono,
+        "opened_char_indexes": sorted(list(game["opened_char_indexes"])),
+    }
+
+
+def apply_submit_answer(room: dict, team: str, is_correct: bool):
+    """
+    指定されたチームが解答を提出します。
+
+    Args:
+        room: ゲームルーム
+        team: "team-left" | "team-right"
+        is_correct: 解答が正解かどうかの判定（出題者が判定）
+
+    Returns:
+        {"ok": bool, "error": str | None, "game_status": str, "winner": str | None}
+    """
+    game = room.get("game", {})
+
+    # ゲーム中かどうか確認
+    if game.get("game_status") != "playing":
+        return {"ok": False, "error": "ゲーム中ではありません。"}
+
+    # ターンが正しいかどうか確認
+    if game.get("current_turn_team") != team:
+        return {"ok": False, "error": "あなたのターンではありません。"}
+
+    team_state = game.get(team, {})
+    other_team = "team-right" if team == "team-left" else "team-left"
+    other_team_state = game.get(other_team, {})
+
+    if is_correct:
+        # 正解
+        team_state["correct_answer"] = True
+
+        # 先攻が正解した場合、後攻が正解すれば引き分け、そうでなければ先攻の勝利
+        if team == "team-left":
+            if other_team_state.get("correct_answer") is None:
+                # まだ後攻が解答していない → 先攻の勝利
+                game["winner"] = "team-left"
+                game["game_status"] = "finished"
+            else:
+                # 後攻も正解している → 引き分けはないので、先に正解した方が勝利
+                pass
+        else:
+            # 後攻が正解した場合、その時点で後攻の勝利
+            game["winner"] = "team-right"
+            game["game_status"] = "finished"
+    else:
+        # 誤答
+        team_state["correct_answer"] = False
+        # 相手に＋アクション権を付与
+        other_team_state["bonus_action_points"] += 1
+
+        # ターン終了時に次のターンへ（自動的に遷移）
+        yield_turn(game)
+
+    return {
+        "ok": True,
+        "game_status": game.get("game_status"),
+        "winner": game.get("winner"),
+    }
+
+
+def apply_end_turn(room: dict, team: str):
+    """
+    指定されたチームがターンを終了します。
+    """
+    game = room.get("game", {})
+
+    # ゲーム中かどうか確認
+    if game.get("game_status") != "playing":
+        return {"ok": False, "error": "ゲーム中ではありません。"}
+
+    # ターンが正しいかどうか確認
+    if game.get("current_turn_team") != team:
+        return {"ok": False, "error": "あなたのターンではありません。"}
+
+    # ターン中のアクション権をリセット
+    team_state = game.get(team, {})
+    team_state["action_points"] = 1
+
+    # 次のターンへ
+    yield_turn(game)
+
+    # 新しいターンのチームのアクション権を1付与
+    new_turn_team = game.get("current_turn_team")
+    new_team_state = game.get(new_turn_team, {})
+    # action_pointsはすでにリセットされているので追加不要
+
+    return {
+        "ok": True,
+        "current_turn_team": new_turn_team,
+    }
+
+
+def yield_turn(game: dict):
+    """ターンを相手に譲渡します。"""
+    current = game.get("current_turn_team")
+    next_team = "team-right" if current == "team-left" else "team-left"
+    game["current_turn_team"] = next_team
+
+    # 次のターンのチームにアクション権を付与（＋アクション権は持ち越し）
+    next_team_state = game.get(next_team, {})
+    if next_team_state.get("action_points", 0) == 0:
+        next_team_state["action_points"] = 1
+
+
+def build_game_state_for_client(room: dict, client_id: str, viewer_team: str):
+    """
+    クライアント向けのゲーム状態を構築します。
+    viewer_team: "team-left" | "team-right" | "spectator" | "questioner"
+    """
+    game = room.get("game", {})
+
+    if game.get("game_status") != "playing":
+        return None
+
+    # 各チームのアクション権情報
+    team_left_state = game.get("team_left", {})
+    team_right_state = game.get("team_right", {})
+
+    opened_indexes = sorted(list(game.get("opened_char_indexes", set())))
+    opened_by_team = game.get("opened_by_team", {})
+
+    return {
+        "current_turn_team": game.get("current_turn_team"),
+        "game_status": game.get("game_status"),
+        "winner": game.get("winner"),
+        # チームごとの状態
+        "team_left": {
+            "action_points": team_left_state.get("action_points", 0),
+            "bonus_action_points": team_left_state.get("bonus_action_points", 0),
+            "correct_answer": team_left_state.get("correct_answer"),
+        },
+        "team_right": {
+            "action_points": team_right_state.get("action_points", 0),
+            "bonus_action_points": team_right_state.get("bonus_action_points", 0),
+            "correct_answer": team_right_state.get("correct_answer"),
+        },
+        # オープン状態
+        "opened_char_indexes": opened_indexes,
+        # viewer_teamでフィルタリング
+        "visible_opened_chars": {idx: ("yakumono" if opened_by_team.get(idx) == "yakumono" else viewer_team) if opened_by_team.get(idx) in [viewer_team, "yakumono"] else None for idx in opened_indexes},  # 自分のチームがオープンした場合は自分が見える
+    }
