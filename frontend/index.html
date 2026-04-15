@@ -17,7 +17,12 @@
     </div>
 
     <div id="waiting-room-screen" style="display: none;">
-        <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
+        <div class="waiting-room-header">
+            <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
+            <button id="rulebook-btn" class="rulebook-btn" aria-label="ルールブック" title="ルールを見る">
+                <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
+            </button>
+        </div>
 
         <div class="question-input-row">
             <span class="question-prefix">Q.</span>
@@ -55,7 +60,7 @@
 
         <div id="arena-board-layout">
             <div id="arena-player-left" class="arena-player-box left">
-                <div class="arena-player-label">先行</div>
+                <div class="arena-player-label">先攻</div>
                 <ul id="arena-player-left-list"></ul>
             </div>
 
@@ -90,6 +95,44 @@
             <p id="alert-message"></p>
             <div class="modal-actions single">
                 <button id="alert-ok-btn" type="button">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="rulebook-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="rulebook-title">
+        <div class="modal-card rulebook-modal-card">
+            <h2 id="rulebook-title">QuizOpenBattle ルールブック</h2>
+            <div id="rulebook-content" class="rulebook-content">
+                <h3>簡単なルール説明 </h3>
+                <p style="margin-bottom: 20px;">伏せ字になっている問題文を交互に１文字ずつ見ていき、先に正解できたほうが勝利です。</p>
+                <hr>
+                <h3>基本ルール </h3>
+                <p>
+                    <span class="red-bold">先攻</span>と<span class="blue-bold">後攻</span>の2人（または2チーム）のターン制ゲームです。
+                </p>
+                <p>自分のターンが回ってきたら<b>「アクション権」</b>を1つ獲得します。ここで<b>「アクション」</b>とは、以下の2種類の行動のうちいずれかを行うことです。</p>
+                <ul>
+                    <li><b>オープン</b>：<br>問題文の開示されていない文字を1つ選び、自分だけに公開する。</li>
+                    <li><b>アンサー</b>：<br>問題に解答する。（ただし、解答の内容は相手に通知されない。）</li>
+                </ul>
+                <p>また、<b>オープンした文字は相手にその旨が表示され、以降相手はその文字をオープンすることはできません。</b></p>
+                <p>ターンエンドを宣言するか、所持している<b>「アクション権」</b>と<span class="red-bold">「＋アクション権」</span>をすべて使い切ったら相手のターンに回ります。</p>
+                <p>また、<b>「アクション権」は次のターン以降に持ち越すことはできません。</b></p>
+                <hr>
+                <h3><span class="red-bold">「＋アクション権」</span>について</h3>
+                <p>アンサーアクションで誤答すると、相手は<span class="red-bold">「＋アクション権」</span>を1つ獲得します。</p>
+                この<span class="red-bold">「＋アクション権」</span>は<b>ターン終了後でも失われず</b>、自分のターンであればいつでも使えます。
+                <hr>
+                <h3>勝利条件</h3>
+                <p>解答の正誤判定は出題者が行います。表記ゆれなどの判定は出題者の裁量で判断してください。</p>
+                <p>先攻が正解した場合、次のターンで後攻が正解すれば引き分け、そうでなければ先攻の勝利です。</p>
+                <p>後攻が正解した場合、その時点で後攻の勝利です。</p>
+                <hr>
+                <h3>約物について</h3>
+                <p>約物（句読点や記号などの読み上げられない文字）がオープンされた場合、その文字は相手にも公開される代わりに、<b>「アクション権」</b>を1回獲得します。</p>
+            </div>
+            <div class="modal-actions single">
+                <button id="rulebook-close-btn" type="button">閉じる</button>
             </div>
         </div>
     </div>

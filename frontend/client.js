@@ -13,11 +13,32 @@ const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const lobbyChatInputEl = document.getElementById("lobby-chat-input");
 const lobbyChatSendBtnEl = document.getElementById("lobby-chat-send-btn");
 const lobbyChatLengthWarningEl = document.getElementById("lobby-chat-length-warning");
+const rulebookBtnEl = document.getElementById("rulebook-btn");
+const rulebookModalEl = document.getElementById("rulebook-modal");
+const rulebookContentEl = document.getElementById("rulebook-content");
+const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
 
 let pendingArenaMode = null;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 let lastChatSentAt = 0;
+
+function removeWhitespaceTextNodes(rootEl) {
+    if (!rootEl) return;
+
+    const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+    const nodesToRemove = [];
+
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.nodeValue || node.nodeValue.trim() !== "") continue;
+        nodesToRemove.push(node);
+    }
+
+    nodesToRemove.forEach((node) => {
+        node.parentNode?.removeChild(node);
+    });
+}
 
 function updateLobbyChatLengthWarning() {
     if (!lobbyChatInputEl || !lobbyChatLengthWarningEl) return;
@@ -534,3 +555,43 @@ leaveGameArenaEl?.addEventListener("keydown", (event) => {
         requestRoomExit();
     }
 });
+
+function showRulebookModal() {
+    if (!rulebookModalEl) return;
+    rulebookModalEl.classList.remove("hidden");
+    rulebookCloseBtnEl?.focus();
+}
+
+function closeRulebookModal() {
+    if (!rulebookModalEl) return;
+    rulebookModalEl.classList.add("hidden");
+    rulebookBtnEl?.focus();
+}
+
+function bindRulebookHandlers() {
+    removeWhitespaceTextNodes(rulebookContentEl);
+
+    if (rulebookBtnEl) {
+        rulebookBtnEl.addEventListener("click", showRulebookModal);
+    }
+
+    if (rulebookCloseBtnEl) {
+        rulebookCloseBtnEl.addEventListener("click", closeRulebookModal);
+    }
+
+    if (rulebookModalEl) {
+        rulebookModalEl.addEventListener("click", (event) => {
+            if (event.target === rulebookModalEl) {
+                closeRulebookModal();
+            }
+        });
+    }
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !rulebookModalEl.classList.contains("hidden")) {
+            closeRulebookModal();
+        }
+    });
+}
+
+bindRulebookHandlers();
