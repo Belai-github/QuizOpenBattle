@@ -8,3 +8,4 @@ __pycache__/
 memo/
 kifu/
 .env
+check_models.py

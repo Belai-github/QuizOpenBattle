@@ -17,7 +17,7 @@ load_dotenv()
 # 新しいSDKのクライアントを初期化（環境変数 GEMINI_API_KEY が自動で使われます）
 client = genai.Client()
 
-MODEL_ID = "gemini-1.5-flash"
+MODEL_ID = "gemini-2.0-flash-lite"
 
 
 _ANSWER_PREFIX_RE = re.compile(r"^(答え|こたえ)(は|:|：)?", re.IGNORECASE)
@@ -110,10 +110,7 @@ if __name__ == "__main__":
     async def test():
         print("クイズを生成中...")
         quiz = await generate_quiz_async("歴史")
-        print(quiz)
-
-        print("\n判定テスト...")
-        is_correct = await check_answer_async(quiz["answer"], quiz["answer"] + "です")
-        print(f"想定:{quiz['answer']} / 解答:{quiz['answer']}です -> 判定: {is_correct}")
+        print(f"問題: {quiz['question']}")
+        print(f"答え: {quiz['answer']}")
 
     asyncio.run(test())
