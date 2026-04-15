@@ -32,12 +32,24 @@ def _normalize_models(raw_models: Any) -> list[dict[str, Any]]:
         model_id = str(raw.get("id") or "").strip()
         if model_id == "":
             continue
+        api_model = str(raw.get("model") or model_id).strip()
+        label = str(raw.get("label") or model_id).strip() or model_id
+        time_value = raw.get("time")
+        normalized_time: int | None
+        try:
+            normalized_time = int(str(time_value).strip())
+            if normalized_time < 0:
+                normalized_time = None
+        except (TypeError, ValueError):
+            normalized_time = None
         reasoning = str(raw.get("reasoning") or "").strip().lower()
         normalized_reasoning = reasoning if reasoning in _ALLOWED_REASONING_LEVELS else None
         normalized.append(
             {
                 "id": model_id,
-                "label": str(raw.get("label") or model_id),
+                "model": api_model,
+                "label": label,
+                "time": normalized_time,
                 "provider": str(raw.get("provider") or "google").strip().lower(),
                 "reasoning": normalized_reasoning,
                 "enabled": bool(raw.get("enabled", True)),
@@ -59,6 +71,16 @@ def _active_models() -> list[dict[str, Any]]:
 
 def get_available_models() -> list[dict[str, Any]]:
     return _active_models()
+
+
+def get_model_config_by_id(model_id: str | None) -> dict[str, Any] | None:
+    target = str(model_id or "").strip()
+    if target == "":
+        return None
+    for model in _active_models():
+        if model.get("id") == target:
+            return model
+    return None
 
 
 def get_available_model_ids() -> tuple[str, ...]:
@@ -94,25 +116,46 @@ def normalize_model_id(model_id: str | None) -> str:
     return get_default_model_id()
 
 
+def get_model_api_model(model_id: str | None) -> str:
+    config = get_model_config_by_id(model_id)
+    if config is None:
+        return normalize_model_id(model_id)
+    return str(config.get("model") or config.get("id") or "").strip() or normalize_model_id(model_id)
+
+
+def get_model_provider(model_id: str | None) -> str | None:
+    config = get_model_config_by_id(model_id)
+    if config is None:
+        return None
+    provider = str(config.get("provider") or "").strip().lower()
+    return provider or None
+
+
 def is_openai_model(model_id: str) -> bool:
-    target = str(model_id or "").strip()
-    if target == "":
-        return False
-    for model in _active_models():
-        if model.get("id") == target and model.get("provider") == "openai":
-            return True
-    return False
+    return get_model_provider(model_id) == "openai"
 
 
 def get_model_reasoning_effort(model_id: str | None) -> str | None:
-    target = str(model_id or "").strip()
-    if target == "":
+    config = get_model_config_by_id(model_id)
+    if config is None:
         return None
-    for model in _active_models():
-        if model.get("id") == target:
-            reasoning = str(model.get("reasoning") or "").strip().lower()
-            return reasoning if reasoning in _ALLOWED_REASONING_LEVELS else None
-    return None
+    reasoning = str(config.get("reasoning") or "").strip().lower()
+    return reasoning if reasoning in _ALLOWED_REASONING_LEVELS else None
+
+
+def get_model_display_label(model_id: str | None) -> str:
+    config = get_model_config_by_id(model_id)
+    if config is None:
+        return str(model_id or "").strip()
+    return str(config.get("label") or config.get("id") or "").strip()
+
+
+def get_model_time_seconds(model_id: str | None) -> int | None:
+    config = get_model_config_by_id(model_id)
+    if config is None:
+        return None
+    time_value = config.get("time")
+    return time_value if isinstance(time_value, int) and time_value >= 0 else None
 
 
 def get_frontend_model_payload() -> dict[str, Any]:
@@ -123,7 +166,9 @@ def get_frontend_model_payload() -> dict[str, Any]:
         "models": [
             {
                 "id": str(model.get("id") or "").strip(),
+                "model": str(model.get("model") or model.get("id") or "").strip(),
                 "label": str(model.get("label") or model.get("id") or "").strip(),
+                "time": model.get("time"),
                 "provider": str(model.get("provider") or "google").strip(),
                 "reasoning": model.get("reasoning"),
             }

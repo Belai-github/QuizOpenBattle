@@ -73,6 +73,7 @@ const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 let aiModelOptions = [];
+let aiModelOptionsById = new Map();
 let defaultAiModelId = "";
 let aiModelsLoaded = false;
 const DEFAULT_AI_ACCURACY_RATE = 50;
@@ -197,6 +198,43 @@ function getRoleDisplayLabel(role) {
     return labels[normalizedRole] || normalizedRole || "-";
 }
 
+function formatAiModelTime(timeValue) {
+    const numericTime = Number(timeValue);
+    if (!Number.isFinite(numericTime) || numericTime <= 0) {
+        return "";
+    }
+
+    return `生成時間目安:${Math.trunc(numericTime)}秒`;
+}
+
+function formatAiModelDisplayText(model) {
+    if (!model) {
+        return "";
+    }
+
+    const label = String(model.label || model.id || "").trim();
+    const timeText = formatAiModelTime(model.time);
+    if (!label) {
+        return timeText;
+    }
+
+    return timeText ? `${label} (${timeText})` : label;
+}
+
+function getAiModelDisplayText(modelId) {
+    const normalizedModelId = String(modelId || "").trim();
+    if (!normalizedModelId) {
+        return "未設定";
+    }
+
+    const model = aiModelOptionsById.get(normalizedModelId);
+    if (!model) {
+        return normalizedModelId;
+    }
+
+    return formatAiModelDisplayText(model) || normalizedModelId;
+}
+
 function populateAiModelSelect() {
     if (!aiModelSelectEl) {
         return;
@@ -204,10 +242,10 @@ function populateAiModelSelect() {
 
     aiModelSelectEl.innerHTML = "";
 
-    aiModelOptions.forEach(([value, label]) => {
+    aiModelOptions.forEach((model) => {
         const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label;
+        option.value = model.id;
+        option.textContent = formatAiModelDisplayText(model) || model.id;
         aiModelSelectEl.appendChild(option);
     });
 }
@@ -228,17 +266,27 @@ async function loadAiModelOptions() {
         const normalizedOptions = models
             .map((model) => {
                 const modelId = String(model?.id || "").trim();
+                const apiModel = String(model?.model || modelId).trim();
                 const label = String(model?.label || modelId).trim();
+                const time = Number(model?.time || 0);
                 if (!modelId) return null;
-                return [modelId, label];
+                return {
+                    id: modelId,
+                    model: apiModel,
+                    label,
+                    time: Number.isFinite(time) && time > 0 ? Math.trunc(time) : null,
+                    provider: String(model?.provider || "").trim().toLowerCase(),
+                    reasoning: String(model?.reasoning || "").trim().toLowerCase() || null,
+                };
             })
             .filter(Boolean);
 
         if (normalizedOptions.length > 0) {
             aiModelOptions = normalizedOptions;
+            aiModelOptionsById = new Map(normalizedOptions.map((item) => [item.id, item]));
             const defaultFromApi = String(payload?.default_model_id || "").trim();
-            const allIds = new Set(normalizedOptions.map(([id]) => id));
-            defaultAiModelId = allIds.has(defaultFromApi) ? defaultFromApi : normalizedOptions[0][0];
+            const allIds = new Set(normalizedOptions.map((item) => item.id));
+            defaultAiModelId = allIds.has(defaultFromApi) ? defaultFromApi : normalizedOptions[0].id;
             aiModelsLoaded = true;
             return true;
         }
@@ -3705,7 +3753,7 @@ function renderArena(currentRoom) {
     const difficultyLabel = currentRoom.is_ai_mode
         ? `${normalizeAiAccuracyRate(currentRoom.difficulty)}%`
         : "未設定";
-    const modelLabel = String(currentRoom.ai_model_id || "").trim() || "未設定";
+    const modelLabel = getAiModelDisplayText(currentRoom.ai_model_id);
     const shouldShowGenre = String(currentRoom.genre || "").trim() !== "";
     const shouldShowDifficulty = Boolean(currentRoom.is_ai_mode) && difficultyLabel !== "未設定";
     const shouldShowModel = Boolean(currentRoom.is_ai_mode) && modelLabel !== "未設定";

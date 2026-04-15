@@ -22,6 +22,7 @@ try:
         get_answer_judgement_model_id,
         get_available_model_ids,
         get_default_model_id,
+        get_model_api_model,
         get_model_reasoning_effort,
         is_openai_model,
         normalize_model_id as normalize_model_id_from_catalog,
@@ -39,6 +40,7 @@ except ImportError:
         get_answer_judgement_model_id,
         get_available_model_ids,
         get_default_model_id,
+        get_model_api_model,
         get_model_reasoning_effort,
         is_openai_model,
         normalize_model_id as normalize_model_id_from_catalog,
@@ -77,6 +79,12 @@ def _is_openai_resource_exhausted_error(error: Exception) -> bool:
         return True
 
     return False
+
+
+def _is_openai_unsupported_temperature_error(error: Exception) -> bool:
+    message = str(error)
+    upper = message.upper()
+    return "UNSUPPORTED PARAMETER" in upper and "TEMPERATURE" in upper
 
 
 def normalize_model_id(model_id: str | None) -> str:
@@ -192,6 +200,50 @@ def _extract_openai_token_usage(response: Any) -> dict[str, int | None]:
     }
 
 
+def _extract_openai_reasoning_info(response: Any, requested_effort: str | None) -> dict[str, Any]:
+    reasoning_obj = getattr(response, "reasoning", None)
+
+    applied_effort: str | None = None
+    if isinstance(reasoning_obj, dict):
+        effort = reasoning_obj.get("effort")
+        if isinstance(effort, str) and effort.strip() != "":
+            applied_effort = effort.strip().lower()
+    else:
+        effort = getattr(reasoning_obj, "effort", None)
+        if isinstance(effort, str) and effort.strip() != "":
+            applied_effort = effort.strip().lower()
+
+    usage = getattr(response, "usage", None)
+    reasoning_tokens = None
+    if usage is not None:
+        output_details = getattr(usage, "output_tokens_details", None)
+        if output_details is not None:
+            value = getattr(output_details, "reasoning_tokens", None)
+            if isinstance(value, int):
+                reasoning_tokens = value
+
+    return {
+        "requested_effort": requested_effort,
+        "applied_effort": applied_effort,
+        "reasoning_tokens": reasoning_tokens,
+    }
+
+
+async def _create_openai_response_with_temperature_fallback(request_options: dict[str, Any]) -> tuple[Any, bool]:
+    temperature_fallback_used = False
+    try:
+        response = await openai_client.responses.create(**request_options)
+    except Exception as error:
+        if not _is_openai_unsupported_temperature_error(error):
+            raise
+        request_options = dict(request_options)
+        request_options.pop("temperature", None)
+        temperature_fallback_used = True
+        response = await openai_client.responses.create(**request_options)
+
+    return response, temperature_fallback_used
+
+
 async def generate_quiz_async(genre="一般常識", model_id: str | None = None, difficulty: int | str | None = 0):
     """生成AIのAPIを叩いてクイズを1問生成する非同期関数"""
 
@@ -199,13 +251,14 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
     system_prompt = get_quiz_system_prompt
     user_prompt = get_quiz_user_prompt(genre, normalized_difficulty)
     selected_model_id = normalize_model_id(model_id)
+    selected_api_model = get_model_api_model(selected_model_id)
     selected_reasoning_effort = get_model_reasoning_effort(selected_model_id)
     request_started_at = time.time()
 
     if is_openai_model(selected_model_id):
         try:
             request_options: dict[str, Any] = {
-                "model": selected_model_id,
+                "model": selected_api_model,
                 "input": [
                     {
                         "role": "system",
@@ -222,9 +275,8 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
             if selected_reasoning_effort is not None:
                 request_options["reasoning"] = {"effort": selected_reasoning_effort}
 
-            response = await openai_client.responses.create(
-                **request_options,
-            )
+            response, temperature_fallback_used = await _create_openai_response_with_temperature_fallback(request_options)
+
             response_text = str(getattr(response, "output_text", "") or "").strip()
             parsed_quiz = json.loads(response_text)
             append_api_history(
@@ -232,6 +284,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                     "api_name": "generate_quiz_async",
                     "provider": "openai",
                     "model_id": selected_model_id,
+                    "api_model": selected_api_model,
                     "status": "success",
                     "duration_ms": int((time.time() - request_started_at) * 1000),
                     "prompt": {
@@ -241,12 +294,14 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                     "request": {
                         "genre": genre,
                         "difficulty": normalized_difficulty,
-                        "temperature": QUIZ_GENERATION_TEMPERATURE,
+                        "temperature": None if temperature_fallback_used else QUIZ_GENERATION_TEMPERATURE,
+                        "temperature_fallback_used": temperature_fallback_used,
                         "reasoning": {"effort": selected_reasoning_effort} if selected_reasoning_effort else None,
                     },
                     "response_text": response_text,
                     "response_json": parsed_quiz,
                     "token_usage": _extract_openai_token_usage(response),
+                    "reasoning": _extract_openai_reasoning_info(response, selected_reasoning_effort),
                     "source": "openai",
                 }
             )
@@ -257,6 +312,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                     "api_name": "generate_quiz_async",
                     "provider": "openai",
                     "model_id": selected_model_id,
+                    "api_model": selected_api_model,
                     "status": "error",
                     "duration_ms": int((time.time() - request_started_at) * 1000),
                     "prompt": {
@@ -267,7 +323,13 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                         "genre": genre,
                         "difficulty": normalized_difficulty,
                         "temperature": QUIZ_GENERATION_TEMPERATURE,
+                        "temperature_fallback_used": False,
                         "reasoning": {"effort": selected_reasoning_effort} if selected_reasoning_effort else None,
+                    },
+                    "reasoning": {
+                        "requested_effort": selected_reasoning_effort,
+                        "applied_effort": None,
+                        "reasoning_tokens": None,
                     },
                     "error": {
                         "type": type(e).__name__,
@@ -307,7 +369,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
     try:
         # 新しいSDKの非同期メソッド (client.aio) を使用して呼び出し
         response = await gemini_client.aio.models.generate_content(
-            model=selected_model_id,
+            model=selected_api_model,
             contents=user_prompt,
             config={
                 "temperature": QUIZ_GENERATION_TEMPERATURE,
@@ -337,6 +399,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                 "api_name": "generate_quiz_async",
                 "provider": "google",
                 "model_id": selected_model_id,
+                "api_model": selected_api_model,
                 "status": "success",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
                 "prompt": {
@@ -364,6 +427,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                 "api_name": "generate_quiz_async",
                 "provider": "google",
                 "model_id": selected_model_id,
+                "api_model": selected_api_model,
                 "status": "error",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
                 "prompt": {
@@ -417,10 +481,12 @@ async def check_answer_async(expected_answer: str, user_answer: str):
 
     request_started_at = time.time()
     system_prompt = get_judge_system_prompt
+    selected_model_id = get_answer_judgement_model_id()
+    selected_api_model = get_model_api_model(selected_model_id)
+    selected_reasoning_effort = get_model_reasoning_effort(selected_model_id)
     if expected_answer == user_answer:
         return True
 
-    selected_model_id = get_answer_judgement_model_id()
     user_prompt = get_judge_user_prompt(expected_answer, user_answer)
     cached_result = get_cached_answer_judgement(
         expected_answer,
@@ -431,9 +497,163 @@ async def check_answer_async(expected_answer: str, user_answer: str):
     if cached_result is not None:
         return cached_result
 
+    if is_openai_model(selected_model_id):
+        try:
+            request_options: dict[str, Any] = {
+                "model": selected_api_model,
+                "input": [
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                    },
+                ],
+                "temperature": ANSWER_JUDGEMENT_TEMPERATURE,
+            }
+            if selected_reasoning_effort is not None:
+                request_options["reasoning"] = {"effort": selected_reasoning_effort}
+
+            response, temperature_fallback_used = await _create_openai_response_with_temperature_fallback(request_options)
+            response_text = str(getattr(response, "output_text", "") or "").strip()
+            result_text = response_text.lower()
+            is_correct = result_text == "true"
+
+            store_answer_judgement(
+                expected_answer,
+                user_answer,
+                selected_model_id,
+                ANSWER_JUDGEMENT_CACHE_VERSION,
+                is_correct,
+                source="openai",
+            )
+            append_api_history(
+                {
+                    "api_name": "check_answer_async",
+                    "provider": "openai",
+                    "model_id": selected_model_id,
+                    "api_model": selected_api_model,
+                    "status": "success",
+                    "duration_ms": int((time.time() - request_started_at) * 1000),
+                    "prompt": {
+                        "system": system_prompt,
+                        "user": user_prompt,
+                    },
+                    "request": {
+                        "expected_answer": expected_answer,
+                        "user_answer": user_answer,
+                        "cache_hit": False,
+                        "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                        "temperature": None if temperature_fallback_used else ANSWER_JUDGEMENT_TEMPERATURE,
+                        "temperature_fallback_used": temperature_fallback_used,
+                        "reasoning": {"effort": selected_reasoning_effort} if selected_reasoning_effort else None,
+                    },
+                    "response_text": response_text,
+                    "response_json": is_correct,
+                    "token_usage": _extract_openai_token_usage(response),
+                    "reasoning": _extract_openai_reasoning_info(response, selected_reasoning_effort),
+                    "source": "openai",
+                }
+            )
+            return is_correct
+        except Exception as e:
+            append_api_history(
+                {
+                    "api_name": "check_answer_async",
+                    "provider": "openai",
+                    "model_id": selected_model_id,
+                    "api_model": selected_api_model,
+                    "status": "error",
+                    "duration_ms": int((time.time() - request_started_at) * 1000),
+                    "prompt": {
+                        "system": system_prompt,
+                        "user": user_prompt,
+                    },
+                    "request": {
+                        "expected_answer": expected_answer,
+                        "user_answer": user_answer,
+                        "cache_hit": False,
+                        "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                        "temperature": ANSWER_JUDGEMENT_TEMPERATURE,
+                        "temperature_fallback_used": False,
+                        "reasoning": {"effort": selected_reasoning_effort} if selected_reasoning_effort else None,
+                    },
+                    "reasoning": {
+                        "requested_effort": selected_reasoning_effort,
+                        "applied_effort": None,
+                        "reasoning_tokens": None,
+                    },
+                    "error": {
+                        "type": type(e).__name__,
+                        "message": str(e),
+                    },
+                    "source": "openai",
+                }
+            )
+            if _is_openai_resource_exhausted_error(e):
+                fallback_result = _fallback_answer_judgement(expected_answer, user_answer)
+                append_api_history(
+                    {
+                        "api_name": "check_answer_async",
+                        "provider": "local",
+                        "model_id": "local-fallback",
+                        "status": "fallback",
+                        "duration_ms": int((time.time() - request_started_at) * 1000),
+                        "prompt": {
+                            "system": system_prompt,
+                            "user": user_prompt,
+                        },
+                        "request": {
+                            "expected_answer": expected_answer,
+                            "user_answer": user_answer,
+                            "cache_hit": False,
+                            "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                        },
+                        "response_json": fallback_result,
+                        "token_usage": {
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0,
+                        },
+                        "source": "local-fallback",
+                    }
+                )
+                return fallback_result
+
+            fallback_result = _fallback_answer_judgement(expected_answer, user_answer)
+            append_api_history(
+                {
+                    "api_name": "check_answer_async",
+                    "provider": "local",
+                    "model_id": "local-fallback",
+                    "status": "fallback",
+                    "duration_ms": int((time.time() - request_started_at) * 1000),
+                    "prompt": {
+                        "system": system_prompt,
+                        "user": user_prompt,
+                    },
+                    "request": {
+                        "expected_answer": expected_answer,
+                        "user_answer": user_answer,
+                        "cache_hit": False,
+                        "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
+                    },
+                    "response_json": fallback_result,
+                    "token_usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "source": "local-fallback",
+                }
+            )
+            return fallback_result
+
     try:
         response = await gemini_client.aio.models.generate_content(
-            model=selected_model_id,
+            model=selected_api_model,
             contents=user_prompt,
             config={
                 "temperature": ANSWER_JUDGEMENT_TEMPERATURE,
@@ -457,6 +677,7 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                 "api_name": "check_answer_async",
                 "provider": "google",
                 "model_id": selected_model_id,
+                "api_model": selected_api_model,
                 "status": "success",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
                 "prompt": {
@@ -484,6 +705,7 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                 "api_name": "check_answer_async",
                 "provider": "google",
                 "model_id": selected_model_id,
+                "api_model": selected_api_model,
                 "status": "error",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
                 "prompt": {
@@ -590,9 +812,9 @@ if __name__ == "__main__":
             await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
     async def main():
-        genre = "2020年以降のソシャゲ"
+        genre = "一般常識"
         difficulty = 50
-        model_id = "gemini-2.5-flash"
+        model_id = "gpt-5.4"
         await test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty)
 
     asyncio.run(main())
