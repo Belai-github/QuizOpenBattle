@@ -873,12 +873,13 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-player-box .chat-box:not(.hidden) {
-    margin-top: 8px;
+    margin-top: auto;
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
     min-height: 0;
     overflow: visible;
+    gap: 8px;
 }
 
 .arena-player-box .log-scroll-shell {
@@ -961,16 +962,8 @@ body.modal-open #arena-question-text .arena-question-line {
     border-color: #f59e0b;
 }
 
-#game-chat-log-team-left,
-#game-chat-log-team-right {
-    height: 100%;
-    min-height: 100%;
-    max-height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
 
-#arena-global-chat-box #game-chat-log-game-global {
+#game-chat-log-game-global {
     height: 240px;
     min-height: 240px;
     max-height: 240px;
@@ -988,11 +981,13 @@ body.modal-open #arena-question-text .arena-question-line {
 .arena-player-box.left {
     background: #fee2e2;
     border: 1px solid #fca5a5;
+    gap: 8px;
 }
 
 .arena-player-box.right {
     background: #dbeafe;
     border: 1px solid #93c5fd;
+    gap: 8px;
 }
 
 /* ターン時のボックスの光の効果 */
@@ -1463,7 +1458,7 @@ body[data-room-role="spectator"] #arena-answer-box {
         grid-template-areas:
             "question question"
             "left right";
-        align-items: start;
+        align-items: stretch;
         justify-content: stretch;
         gap: 6px;
     }
@@ -1506,6 +1501,7 @@ body[data-room-role="spectator"] #arena-answer-box {
     #arena-player-left,
     #arena-player-right {
         padding: 8px;
+        height: 100%;
     }
 
     #arena-player-left-list,
