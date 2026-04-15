@@ -1500,6 +1500,7 @@ body.modal-open #arena-question-text .arena-question-line {
 .arena-turn-end-row {
     display: flex;
     justify-content: flex-end;
+    gap: 8px;
 }
 
 .arena-answer-compose {
@@ -1512,6 +1513,7 @@ body.modal-open #arena-question-text .arena-question-line {
     padding-right: 88px;
 }
 
+#arena-intentional-draw-btn,
 #arena-turn-end-btn,
 #arena-answer-submit-btn {
     width: auto;
@@ -1521,6 +1523,15 @@ body.modal-open #arena-question-text .arena-question-line {
     border-radius: 999px;
     font-size: 0.82rem;
     line-height: 1;
+}
+
+#arena-intentional-draw-btn {
+    background: #0f766e;
+    color: #ffffff;
+}
+
+#arena-intentional-draw-btn:hover {
+    background: #0d9488;
 }
 
 #arena-turn-end-btn {
@@ -1545,19 +1556,14 @@ body.modal-open #arena-question-text .arena-question-line {
     background: #b91c1c;
 }
 
+#arena-intentional-draw-btn:disabled,
+#arena-intentional-draw-btn:disabled:hover,
 #arena-turn-end-btn:disabled,
 #arena-turn-end-btn:disabled:hover,
 #arena-answer-submit-btn:disabled,
 #arena-answer-submit-btn:disabled:hover {
     background: #94a3b8;
     cursor: not-allowed;
-}
-
-body[data-chat-role="questioner"] #arena-answer-box,
-body[data-chat-role="spectator"] #arena-answer-box,
-body[data-room-role="owner"] #arena-answer-box,
-body[data-room-role="spectator"] #arena-answer-box {
-    display: none !important;
 }
 
 .arena-question-line {

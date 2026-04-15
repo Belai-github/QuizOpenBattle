@@ -21,6 +21,7 @@ const arenaAnswerBoxEl = document.getElementById("arena-answer-box");
 const arenaAnswerInputEl = document.getElementById("arena-answer-input");
 const arenaAnswerLengthWarningEl = document.getElementById("arena-answer-length-warning");
 const arenaAnswerSubmitBtnEl = document.getElementById("arena-answer-submit-btn");
+const arenaIntentionalDrawBtnEl = document.getElementById("arena-intentional-draw-btn");
 const arenaTurnEndBtnEl = document.getElementById("arena-turn-end-btn");
 const openKifuListBtnEl = document.getElementById("open-kifu-list-btn");
 const aiQuestionBtnEl = document.getElementById("ai-question-btn");
@@ -60,8 +61,10 @@ let arenaReplayLoadToken = 0;
 const handledOpenVoteIds = new Set();
 const handledAnswerVoteIds = new Set();
 const handledTurnEndVoteIds = new Set();
+const handledIntentionalDrawVoteIds = new Set();
 let openVoteRequestPending = false;
 let turnEndRequestPending = false;
+let intentionalDrawVoteRequestPending = false;
 const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
@@ -106,7 +109,7 @@ const logScrollListenerBound = new WeakSet();
 const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
-const REPLAY_PROGRESS_EVENT_TYPES = new Set(["character_opened", "answer_attempt", "answer_result", "turn_changed"]);
+const REPLAY_PROGRESS_EVENT_TYPES = new Set(["character_opened", "answer_attempt", "answer_result", "turn_changed", "intentional_draw"]);
 const ARENA_VOTE_EVENT_TYPES = new Set([
     "open_vote_request",
     "open_vote_resolved",
@@ -114,6 +117,8 @@ const ARENA_VOTE_EVENT_TYPES = new Set([
     "answer_vote_resolved",
     "turn_end_vote_request",
     "turn_end_vote_resolved",
+    "intentional_draw_vote_request",
+    "intentional_draw_vote_resolved",
 ]);
 const HIDDEN_ARENA_EVENT_TYPES = new Set([
     "open_vote_request",
@@ -122,6 +127,8 @@ const HIDDEN_ARENA_EVENT_TYPES = new Set([
     "answer_vote_resolved",
     "turn_end_vote_request",
     "turn_end_vote_resolved",
+    "intentional_draw_vote_request",
+    "intentional_draw_vote_resolved",
 ]);
 const ARENA_ALLOWED_EVENT_TYPES = new Set([
     "join",
@@ -144,6 +151,9 @@ const ARENA_ALLOWED_EVENT_TYPES = new Set([
     "answer_vote_resolved",
     "turn_end_vote_request",
     "turn_end_vote_resolved",
+    "intentional_draw_vote_request",
+    "intentional_draw_vote_resolved",
+    "intentional_draw",
     "turn_changed",
 ]);
 const arenaRoomLogStore = new Map();
@@ -1049,6 +1059,7 @@ function resetArenaChatCaches() {
     handledOpenVoteIds.clear();
     handledAnswerVoteIds.clear();
     handledTurnEndVoteIds.clear();
+    handledIntentionalDrawVoteIds.clear();
     currentArenaLogRoomId = null;
     clearArenaLogElements();
 }
@@ -1439,6 +1450,33 @@ function canRequestTurnEnd() {
     return currentGameState?.current_turn_team === userRole;
 }
 
+function canRequestIntentionalDraw() {
+    if (isKifuMode) return false;
+    if (!isInGameArena()) return false;
+    if ((currentRoomGameState || "waiting") !== "playing") return false;
+    if (isAnswerJudgementPending()) return false;
+
+    const chatRole = String(currentRoomSnapshot?.chat_role || userRole || "").trim();
+    if (!["team-left", "team-right", "questioner", "spectator"].includes(chatRole)) {
+        return false;
+    }
+
+    const questionLength = Number(currentRoomSnapshot?.question_length || 0);
+    if (!Number.isFinite(questionLength) || questionLength <= 0) {
+        return false;
+    }
+
+    const openedCount = Array.isArray(currentGameState?.opened_char_indexes)
+        ? currentGameState.opened_char_indexes.length
+        : 0;
+    const openedRatio = openedCount / questionLength;
+
+    const leftWrongCount = Number(currentGameState?.team_left?.wrong_answer_count || 0);
+    const rightWrongCount = Number(currentGameState?.team_right?.wrong_answer_count || 0);
+
+    return openedRatio >= 0.7 && leftWrongCount >= 1 && rightWrongCount >= 1;
+}
+
 function getCurrentTeamActionPoints() {
     if (userRole === "team-left") {
         const state = currentGameState?.team_left || {};
@@ -1487,11 +1525,22 @@ function updateArenaAnswerFormVisibility() {
     const canView = canViewArenaAnswerForm();
     const canSubmit = canSubmitArenaAnswer();
     const canEndTurn = canRequestTurnEnd();
-    const teamParticipantCount = getCurrentTeamParticipantCount();
-    arenaAnswerBoxEl.classList.toggle("hidden", !canView);
+    const canUseIntentionalDraw = canRequestIntentionalDraw();
+    const answerComposeEl = arenaAnswerInputEl.closest(".arena-answer-compose");
+    const shouldShowBox = canView || canUseIntentionalDraw;
+    arenaAnswerBoxEl.classList.toggle("hidden", !shouldShowBox);
+    if (answerComposeEl) {
+        answerComposeEl.classList.toggle("hidden", !canView);
+    }
+    arenaTurnEndBtnEl.classList.toggle("hidden", !canView);
     arenaAnswerInputEl.disabled = !canSubmit;
     arenaAnswerSubmitBtnEl.disabled = !canSubmit;
+    arenaAnswerSubmitBtnEl.classList.toggle("hidden", !canView);
     arenaTurnEndBtnEl.disabled = !canEndTurn;
+    if (arenaIntentionalDrawBtnEl) {
+        arenaIntentionalDrawBtnEl.classList.toggle("hidden", !canUseIntentionalDraw);
+        arenaIntentionalDrawBtnEl.disabled = !canUseIntentionalDraw;
+    }
     arenaAnswerSubmitBtnEl.textContent = "アンサー";
     arenaAnswerSubmitBtnEl.setAttribute("aria-label", "アンサー");
 
@@ -1549,6 +1598,49 @@ async function submitTurnEndAttempt() {
 
     window.setTimeout(() => {
         turnEndRequestPending = false;
+    }, 800);
+}
+
+async function submitIntentionalDrawProposal() {
+    if (!canRequestIntentionalDraw()) return;
+
+    if (intentionalDrawVoteRequestPending) {
+        await showAlertModal("ID(インテンショナルドロー)提案処理中です。少し待ってください。");
+        return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    const confirmed = await showConfirmModal(
+        "ID(インテンショナルドロー)は、ゲームが膠着状態になったときの救済措置として、全員の同意のもとこのゲームを引き分けにするルールです。IDを提案しますか？",
+        {
+            okLabel: "はい",
+            cancelLabel: "いいえ",
+        }
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    intentionalDrawVoteRequestPending = true;
+    ws.send(
+        JSON.stringify({
+            type: "intentional_draw_vote_request",
+            timestamp: Date.now(),
+        })
+    );
+
+    window.setTimeout(() => {
+        intentionalDrawVoteRequestPending = false;
     }, 800);
 }
 
@@ -2027,6 +2119,7 @@ function highlightReplayCurrentLogFromDisplayedProgress() {
         open: ["character_opened"],
         answer: ["answer_result", "answer_attempt"],
         turn_end: ["turn_changed"],
+        intentional_draw: ["intentional_draw"],
     };
     const targetEventTypes = replayEventTypesByAction[actionType] || [];
 
@@ -2345,13 +2438,20 @@ function applyReplayAction(state, action) {
         }
     }
 
+    if (action?.action_type === "intentional_draw") {
+        state.winner = "draw";
+        state.game_status = "finished";
+        state.left_correct_waiting = false;
+        state.is_judging_answer = false;
+    }
+
     state[teamKey] = teamState;
 }
 
 function buildKifuReplaySteps(detail) {
     const actions = Array.isArray(detail?.actions) ? detail.actions.filter((action) => {
         const actionType = String(action?.action_type || "");
-        return actionType === "open" || actionType === "answer" || actionType === "turn_end";
+        return actionType === "open" || actionType === "answer" || actionType === "turn_end" || actionType === "intentional_draw";
     }) : [];
 
     const steps = [];
@@ -2449,6 +2549,9 @@ function renderKifuStep() {
                     const message = `${subjectLabel}がターンエンドしました。`;
                     pushArenaRoomLog(replayRoomId, team || "game-global", "turn_changed", message, action.timestamp || Date.now());
                     pushArenaRoomLog(replayRoomId, "game-global", "turn_changed", message, action.timestamp || Date.now());
+                } else if (actionType === "intentional_draw") {
+                    const message = "IDが成立しました。";
+                    pushArenaRoomLog(replayRoomId, "game-global", "intentional_draw", message, action.timestamp || Date.now());
                 }
             });
         }
@@ -3989,6 +4092,9 @@ function appendEventLog(
         "answer_vote_resolved",
         "turn_end_vote_request",
         "turn_end_vote_resolved",
+        "intentional_draw_vote_request",
+        "intentional_draw_vote_resolved",
+        "intentional_draw",
         "turn_changed",
     ]);
     if (arenaOnlyTypes.has(record.eventType)) {
@@ -4344,6 +4450,12 @@ document.getElementById("join-btn").addEventListener("click", async () => {
                 handledTurnEndVoteIds.delete(resolvedVoteId);
             }
         }
+        if (data.event_type === "intentional_draw_vote_resolved") {
+            const resolvedVoteId = String(data.event_payload?.vote_id || "");
+            if (resolvedVoteId !== "") {
+                handledIntentionalDrawVoteIds.delete(resolvedVoteId);
+            }
+        }
 
         if (data.event_type === "open_vote_request" && data.event_payload) {
             void handleOpenVoteRequest(data.event_payload);
@@ -4353,6 +4465,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
         if (data.event_type === "turn_end_vote_request" && data.event_payload) {
             void handleTurnEndVoteRequest(data.event_payload);
+        }
+        if (data.event_type === "intentional_draw_vote_request" && data.event_payload) {
+            void handleIntentionalDrawVoteRequest(data.event_payload);
         }
         if (data.event_type === "answer_judgement_request" && data.event_payload) {
             void handleAnswerJudgementRequest(data.event_payload);
@@ -4366,7 +4481,8 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             let logMarkerId = incomingEventRecord.logMarkerId;
             if ((incomingEventRecord.eventType === "answer_vote_request" || incomingEventRecord.eventType === "answer_vote_resolved"
                 || incomingEventRecord.eventType === "open_vote_request" || incomingEventRecord.eventType === "open_vote_resolved"
-                || incomingEventRecord.eventType === "turn_end_vote_request" || incomingEventRecord.eventType === "turn_end_vote_resolved")
+                || incomingEventRecord.eventType === "turn_end_vote_request" || incomingEventRecord.eventType === "turn_end_vote_resolved"
+                || incomingEventRecord.eventType === "intentional_draw_vote_request" || incomingEventRecord.eventType === "intentional_draw_vote_resolved")
                 && data.event_payload?.vote_id) {
                 logMarkerId = normalizeLogMarkerId(data.event_payload.vote_id);
             }
@@ -4878,6 +4994,50 @@ async function handleTurnEndVoteRequest(payload) {
     }
 }
 
+async function handleIntentionalDrawVoteRequest(payload) {
+    const voteId = String(payload?.vote_id || "");
+    const totalVoters = Number(payload?.total_voters || 0);
+    const requesterName = String(payload?.requester_name || "参加者");
+    const isResend = payload?.resend === true;
+    if (!voteId) return;
+    if (isResend) {
+        handledIntentionalDrawVoteIds.delete(voteId);
+    }
+    if (handledIntentionalDrawVoteIds.has(voteId)) return;
+    handledIntentionalDrawVoteIds.add(voteId);
+
+    const unanimityNote = totalVoters > 1
+        ? "\n（全員のOKで成立します）"
+        : "";
+    const confirmed = await showConfirmModal(
+        `${requesterName}によりIDが提案されました。\nID(インテンショナルドロー)に同意しますか？${unanimityNote}`,
+        {
+            okLabel: "同意する",
+            cancelLabel: "同意しない",
+        }
+    );
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        handledIntentionalDrawVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。再接続後にもう一度回答してください。");
+        return;
+    }
+
+    try {
+        ws.send(
+            JSON.stringify({
+                type: "intentional_draw_vote_response",
+                vote_id: voteId,
+                approve: Boolean(confirmed),
+                timestamp: Date.now(),
+            })
+        );
+    } catch {
+        handledIntentionalDrawVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
+    }
+}
+
 async function handleAnswerJudgementRequest(payload) {
     if (userRole !== "questioner") {
         return;
@@ -5016,6 +5176,10 @@ arenaAnswerSubmitBtnEl?.addEventListener("click", () => {
 
 arenaTurnEndBtnEl?.addEventListener("click", () => {
     void submitTurnEndAttempt();
+});
+
+arenaIntentionalDrawBtnEl?.addEventListener("click", () => {
+    void submitIntentionalDrawProposal();
 });
 
 arenaAnswerInputEl?.addEventListener("keydown", (event) => {

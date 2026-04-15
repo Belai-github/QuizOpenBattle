@@ -480,6 +480,9 @@ class QuizGameManager:
             "answer_vote_resolved",
             "turn_end_vote_request",
             "turn_end_vote_resolved",
+            "intentional_draw_vote_request",
+            "intentional_draw_vote_resolved",
+            "intentional_draw",
             "turn_changed",
             "room_reconnected",
         }
@@ -687,6 +690,9 @@ class QuizGameManager:
     def _format_turn_end_vote_resolution_message(self, approved: bool):
         return "ターンエンド投票可決" if approved else "ターンエンド投票否決"
 
+    def _format_intentional_draw_vote_resolution_message(self, approved: bool):
+        return "ID(インテンショナルドロー)が成立し、引き分けになりました。" if approved else "ID(インテンショナルドロー)は否決されました。"
+
     def _format_answer_result_message(self, team_label: str, is_correct: bool):
         result_label = "正解" if is_correct else "誤答"
         return f"{team_label}の解答は{result_label}でした。"
@@ -704,6 +710,29 @@ class QuizGameManager:
         if text == "":
             return ""
         return re.sub(r"が「[^」]*」と", "が", text)
+
+    def _is_intentional_draw_eligible(self, room: dict):
+        if not isinstance(room, dict):
+            return False
+
+        if room.get("game_state") != "playing":
+            return False
+
+        game = room.get("game") or {}
+        if game.get("game_status") != "playing":
+            return False
+
+        question_length = len(_normalized_question_chars(room.get("question_text", "")))
+        if question_length <= 0:
+            return False
+
+        opened_count = len(game.get("opened_char_indexes", set()) or set())
+        if (opened_count / question_length) < 0.7:
+            return False
+
+        left_wrong_count = int(((game.get("team_left") or {}).get("wrong_answer_count") or 0))
+        right_wrong_count = int(((game.get("team_right") or {}).get("wrong_answer_count") or 0))
+        return left_wrong_count >= 1 and right_wrong_count >= 1
 
     def _resolve_event_message_for_client(
         self,
@@ -1091,6 +1120,7 @@ class QuizGameManager:
         room["pending_open_vote"] = None
         room["pending_answer_vote"] = None
         room["pending_turn_end_vote"] = None
+        room["pending_intentional_draw_vote"] = None
 
         recipients = {room_owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
         private_map = {target_id: notice_message for target_id in recipients}
@@ -1324,6 +1354,36 @@ class QuizGameManager:
                         },
                     )
 
+        pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
+        if isinstance(pending_intentional_draw_vote, dict) and pending_intentional_draw_vote.get("status") == "pending":
+            voter_ids = set(pending_intentional_draw_vote.get("voter_ids", set()))
+            approved_ids = set(pending_intentional_draw_vote.get("approved_ids", set()))
+            rejected_ids = set(pending_intentional_draw_vote.get("rejected_ids", set()))
+            if client_id in voter_ids and client_id not in approved_ids and client_id not in rejected_ids:
+                vote_id = str(pending_intentional_draw_vote.get("vote_id") or "").strip()
+                required_approvals = int(pending_intentional_draw_vote.get("required_approvals") or 0)
+                total_voters = len(voter_ids)
+                requester_id = str(pending_intentional_draw_vote.get("requester_id") or "").strip()
+                requester_name = self.nicknames.get(requester_id, "ゲスト")
+                if vote_id:
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="intentional_draw_vote_request",
+                        event_message="",
+                        event_chat_type="game-global",
+                        event_room_id=room_owner_id,
+                        event_recipient_ids=recipient_ids,
+                        event_payload={
+                            "vote_id": vote_id,
+                            "required_approvals": required_approvals,
+                            "total_voters": total_voters,
+                            "requester_name": requester_name,
+                            "log_marker_id": vote_id,
+                            "skip_history": True,
+                            "resend": True,
+                        },
+                    )
+
     async def request_open_vote(self, client_id: str, char_index):
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
@@ -1355,6 +1415,11 @@ class QuizGameManager:
         pending_turn_end_vote = room.get("pending_turn_end_vote")
         if pending_turn_end_vote and pending_turn_end_vote.get("status") == "pending":
             await self.send_private_info(client_id, "進行中のターンエンド投票があります。")
+            return
+
+        pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
+        if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "ID(インテンショナルドロー)投票中はオープンを申請できません。")
             return
 
         if game.get("current_turn_team") != team:
@@ -1857,6 +1922,11 @@ class QuizGameManager:
             await self.send_private_info(client_id, "進行中のターンエンド投票があります。")
             return
 
+        pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
+        if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "ID(インテンショナルドロー)投票中はターンエンドできません。")
+            return
+
         team = self._resolve_team_for_client(room, client_id)
         if team is None:
             await self.send_private_info(client_id, "参加者のみターンエンドできます。")
@@ -1940,6 +2010,212 @@ class QuizGameManager:
         )
 
         await self.send_private_info(client_id, "提案しました。")
+
+    async def request_intentional_draw_vote(self, client_id: str):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+
+        if room.get("game_state") != "playing":
+            await self.send_private_info(client_id, "対戦中のみID(インテンショナルドロー)を提案できます。")
+            return
+
+        game = room.get("game") or {}
+        if game.get("pending_answer_judgement") is not None:
+            await self.send_private_info(client_id, "正誤判定中はID(インテンショナルドロー)を提案できません。")
+            return
+
+        pending_open_vote = room.get("pending_open_vote")
+        if pending_open_vote and pending_open_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "文字オープン投票中はID(インテンショナルドロー)を提案できません。")
+            return
+
+        pending_answer_vote = room.get("pending_answer_vote")
+        if pending_answer_vote and pending_answer_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "アンサー投票中はID(インテンショナルドロー)を提案できません。")
+            return
+
+        pending_turn_end_vote = room.get("pending_turn_end_vote")
+        if pending_turn_end_vote and pending_turn_end_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "ターンエンド投票中はID(インテンショナルドロー)を提案できません。")
+            return
+
+        pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
+        if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "進行中のID(インテンショナルドロー)投票があります。")
+            return
+
+        if not self._is_intentional_draw_eligible(room):
+            await self.send_private_info(client_id, "ID(インテンショナルドロー)を提案できる条件を満たしていません。")
+            return
+
+        voter_ids = set(room.get("left_participants", set())) | set(room.get("right_participants", set()))
+        if not voter_ids:
+            await self.send_private_info(client_id, "投票対象の参加者がいません。")
+            return
+
+        vote_id = str(uuid.uuid4())
+        required_approvals = len(voter_ids)
+        requester_name = self.nicknames.get(client_id, "ゲスト")
+        room["pending_intentional_draw_vote"] = {
+            "vote_id": vote_id,
+            "requester_id": client_id,
+            "voter_ids": voter_ids,
+            "approved_ids": ({client_id} if client_id in voter_ids else set()),
+            "rejected_ids": set(),
+            "required_approvals": required_approvals,
+            "status": "pending",
+        }
+
+        await self.broadcast_state(
+            public_info="",
+            event_type="intentional_draw_vote_request",
+            event_message="",
+            event_chat_type="game-global",
+            event_room_id=owner_id,
+            event_recipient_ids=voter_ids - {client_id},
+            event_payload={
+                "vote_id": vote_id,
+                "required_approvals": required_approvals,
+                "total_voters": len(voter_ids),
+                "requester_name": requester_name,
+                "log_marker_id": vote_id,
+            },
+        )
+
+        await self.send_private_info(client_id, "ID(インテンショナルドロー)を提案しました。")
+
+    async def respond_intentional_draw_vote(self, client_id: str, vote_id: str, approve: bool):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        pending_vote = room.get("pending_intentional_draw_vote")
+
+        if not pending_vote or pending_vote.get("status") != "pending":
+            await self.send_private_info(client_id, "進行中のID(インテンショナルドロー)投票がありません。")
+            return
+
+        if pending_vote.get("vote_id") != vote_id:
+            await self.send_private_info(client_id, "投票IDが一致しません。")
+            return
+
+        voter_ids = set(pending_vote.get("voter_ids", set()))
+        if client_id not in voter_ids:
+            await self.send_private_info(client_id, "この投票には参加できません。")
+            return
+
+        approved_ids = set(pending_vote.get("approved_ids", set()))
+        rejected_ids = set(pending_vote.get("rejected_ids", set()))
+        if client_id in approved_ids or client_id in rejected_ids:
+            await self.send_private_info(client_id, "この投票にはすでに回答済みです。")
+            return
+
+        if approve:
+            approved_ids.add(client_id)
+        else:
+            rejected_ids.add(client_id)
+
+        pending_vote["approved_ids"] = approved_ids
+        pending_vote["rejected_ids"] = rejected_ids
+
+        approvals = len(approved_ids)
+        required = int(pending_vote.get("required_approvals") or 0)
+        recipients = {owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
+
+        if approvals >= required:
+            pending_vote["status"] = "approved"
+            room["pending_intentional_draw_vote"] = None
+
+            game = room.get("game") or {}
+            self._append_kifu_action(
+                owner_id,
+                "intentional_draw",
+                "game-global",
+                pending_vote.get("requester_id"),
+                {
+                    "proposed_by_vote": True,
+                    "vote_id": vote_id,
+                },
+            )
+            game["winner"] = "draw"
+            game["game_status"] = "finished"
+            game["left_correct_waiting"] = False
+            game["pending_answer_judgement"] = None
+            room["game_state"] = "finished"
+            room["pending_open_vote"] = None
+            room["pending_answer_vote"] = None
+            room["pending_turn_end_vote"] = None
+
+            await self.broadcast_state(
+                public_info="",
+                event_type="intentional_draw_vote_resolved",
+                event_message="",
+                event_chat_type="game-global",
+                event_room_id=owner_id,
+                event_recipient_ids=recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": True,
+                    "log_marker_id": vote_id,
+                },
+            )
+
+            await self.broadcast_state(
+                public_info="ID(インテンショナルドロー)が成立しました。",
+                event_type="intentional_draw",
+                event_message="IDが成立しました。",
+                event_chat_type="game-global",
+                event_room_id=owner_id,
+                event_recipient_ids=recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "log_marker_id": vote_id,
+                },
+            )
+
+            game_finished_message = self._format_game_finished_message("draw")
+            await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
+            self._finalize_kifu_if_tracking(owner_id, room, "intentional_draw")
+            return
+
+        if len(rejected_ids) > 0:
+            pending_vote["status"] = "rejected"
+            room["pending_intentional_draw_vote"] = None
+            await self.broadcast_state(
+                public_info="",
+                event_type="intentional_draw_vote_resolved",
+                event_message="",
+                event_chat_type="game-global",
+                event_room_id=owner_id,
+                event_recipient_ids=recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": False,
+                    "reason": "rejected",
+                    "log_marker_id": vote_id,
+                },
+            )
+
+            requester_id = pending_vote.get("requester_id")
+            notify_targets = set(approved_ids)
+            if requester_id:
+                notify_targets.add(str(requester_id))
+            private_map = {target_id: "ID(インテンショナルドロー)の提案が否決されました。" for target_id in notify_targets}
+            await self.broadcast_state(
+                public_info="",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
+            return
 
     async def respond_turn_end_vote(self, client_id: str, vote_id: str, approve: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -2325,6 +2601,11 @@ class QuizGameManager:
         pending_open_vote = room.get("pending_open_vote")
         if pending_open_vote and pending_open_vote.get("status") == "pending":
             await self.send_private_info(client_id, "文字オープン投票中は解答を送信できません。")
+            return
+
+        pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
+        if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "ID(インテンショナルドロー)投票中は解答を送信できません。")
             return
 
         if client_id in room["left_participants"]:
@@ -2959,6 +3240,19 @@ class QuizGameManager:
                 await self.send_private_info(client_id, "投票IDが不正です。")
                 return
             await self.respond_turn_end_vote(client_id, vote_id, approve)
+            return
+
+        if payload_type == "intentional_draw_vote_request":
+            await self.request_intentional_draw_vote(client_id)
+            return
+
+        if payload_type == "intentional_draw_vote_response":
+            vote_id = str(payload.get("vote_id", "")).strip()
+            approve = bool(payload.get("approve", False))
+            if vote_id == "":
+                await self.send_private_info(client_id, "投票IDが不正です。")
+                return
+            await self.respond_intentional_draw_vote(client_id, vote_id, approve)
             return
 
         if payload_type == "submit_answer":

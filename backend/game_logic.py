@@ -553,11 +553,13 @@ def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
             "action_points": 1,  # ターン中のアクション権
             "bonus_action_points": 0,  # ＋アクション権（持ち越し可能）
             "correct_answer": None,  # False=誤答, True=正解, None=未답
+            "wrong_answer_count": 0,
         },
         "team_right": {
             "action_points": 0,
             "bonus_action_points": 0,
             "correct_answer": None,
+            "wrong_answer_count": 0,
         },
         # オープン状態（ゲーム全体で共有）
         "opened_char_indexes": set(),  # どの文字がオープンされたか
@@ -950,6 +952,7 @@ def apply_submit_answer(room: dict, team: str, is_correct: bool):
     else:
         # 誤答
         team_state["correct_answer"] = False
+        team_state["wrong_answer_count"] = int(team_state.get("wrong_answer_count", 0) or 0) + 1
         # 相手に＋アクション権を付与
         other_team_state["bonus_action_points"] += 1
 
