@@ -142,7 +142,7 @@ class TestReconnectContracts(unittest.TestCase):
 
         reservation = reserve_participant_reconnect(manager, "c1", ctx)
         self.assertIsNotNone(reservation)
-        self.assertEqual(reservation["kind"], "participant")
+        self.assertEqual(reservation["kind"], "participant")  # type: ignore
 
         set_room_pending_disconnect(manager, "owner1", "c1", "Alice", "team-left", 9999999999)
         restored = try_restore_participant_reconnect(manager, "c1")
