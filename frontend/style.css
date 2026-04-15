@@ -505,7 +505,11 @@ body[data-app-mode="kifu"] .chat-compose {
 
 #participants-list {
     margin: 8px 0 0;
-    padding-left: 20px;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 #waiting-panels {
@@ -1278,7 +1282,11 @@ body.modal-open #arena-question-text .arena-question-line {
 #arena-player-right-list,
 #arena-spectator-list {
     margin: 0;
-    padding-left: 18px;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     min-width: 0;
     width: 100%;
     max-height: 120px;
@@ -1294,6 +1302,85 @@ body.modal-open #arena-question-text .arena-question-line {
 #arena-spectator-list li {
     overflow-wrap: anywhere;
     word-break: break-word;
+}
+
+.player-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #1e293b;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.player-list-item.player-list-item-me {
+    border-width: 2px;
+    border-color: #0f766e;
+    background: #ecfeff;
+    box-shadow: 0 3px 10px rgba(15, 118, 110, 0.2);
+}
+
+#arena-player-left-list .player-list-item {
+    border-color: #fca5a5;
+    background: #fff1f2;
+}
+
+#arena-player-left-list .player-list-item.player-list-item-me {
+    border-color: #e11d48;
+    background: #ffe4e6;
+    box-shadow: 0 3px 10px rgba(225, 29, 72, 0.18);
+}
+
+#arena-player-right-list .player-list-item {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+#arena-player-right-list .player-list-item.player-list-item-me {
+    border-color: #1d4ed8;
+    background: #dbeafe;
+    box-shadow: 0 3px 10px rgba(29, 78, 216, 0.18);
+}
+
+#arena-spectator-list .player-list-item,
+#participants-list .player-list-item {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+}
+
+.player-list-item-empty {
+    justify-content: center;
+    color: #64748b;
+    font-weight: 500;
+    background: #f8fafc;
+    border-style: dashed;
+}
+
+.player-list-item-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.player-list-item-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #0f766e;
+    color: #ffffff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
 }
 
 #arena-question-board {

@@ -2774,6 +2774,7 @@ function renderParticipants(participants) {
 
     if (!Array.isArray(participants) || participants.length === 0) {
         const emptyItem = document.createElement("li");
+        emptyItem.className = "player-list-item player-list-item-empty";
         emptyItem.textContent = "参加者はいません";
         listEl.appendChild(emptyItem);
         return;
@@ -2781,9 +2782,23 @@ function renderParticipants(participants) {
 
     participants.forEach((participant) => {
         const item = document.createElement("li");
+        item.className = "player-list-item";
         const nickname = participant.nickname || "ゲスト";
         const isMe = participant.client_id === myClientId;
-        item.textContent = isMe ? `${nickname} (You)` : nickname;
+
+        const nameEl = document.createElement("span");
+        nameEl.className = "player-list-item-name";
+        nameEl.textContent = nickname;
+        item.appendChild(nameEl);
+
+        if (isMe) {
+            item.classList.add("player-list-item-me");
+            const meTagEl = document.createElement("span");
+            meTagEl.className = "player-list-item-tag";
+            meTagEl.textContent = "You";
+            item.appendChild(meTagEl);
+        }
+
         listEl.appendChild(item);
     });
 }
@@ -2792,6 +2807,7 @@ function renderNameList(listEl, names) {
     listEl.innerHTML = "";
     if (!Array.isArray(names) || names.length === 0) {
         const emptyItem = document.createElement("li");
+        emptyItem.className = "player-list-item player-list-item-empty";
         emptyItem.textContent = "なし";
         listEl.appendChild(emptyItem);
         return;
@@ -2799,15 +2815,32 @@ function renderNameList(listEl, names) {
 
     names.forEach((entry) => {
         const item = document.createElement("li");
+        item.className = "player-list-item";
         if (typeof entry === "string") {
-            item.textContent = entry;
+            const nameEl = document.createElement("span");
+            nameEl.className = "player-list-item-name";
+            nameEl.textContent = entry;
+            item.appendChild(nameEl);
             listEl.appendChild(item);
             return;
         }
 
         const nickname = entry?.nickname || "ゲスト";
         const isMe = entry?.client_id === myClientId;
-        item.textContent = isMe ? `${nickname} (You)` : nickname;
+
+        const nameEl = document.createElement("span");
+        nameEl.className = "player-list-item-name";
+        nameEl.textContent = nickname;
+        item.appendChild(nameEl);
+
+        if (isMe) {
+            item.classList.add("player-list-item-me");
+            const meTagEl = document.createElement("span");
+            meTagEl.className = "player-list-item-tag";
+            meTagEl.textContent = "You";
+            item.appendChild(meTagEl);
+        }
+
         listEl.appendChild(item);
     });
 }
