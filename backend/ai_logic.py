@@ -52,7 +52,7 @@ openai_client = AsyncOpenAI()
 
 AVAILABLE_MODEL_IDS = (*get_available_model_ids(),)
 DEFAULT_MODEL_ID = get_default_model_id()
-QUIZ_GENERATION_TEMPERATURE = 1.0
+QUIZ_GENERATION_TEMPERATURE = 1.2
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
 DEFAULT_QUIZ_DIFFICULTY = 50
 MAX_QUIZ_DIFFICULTY = 100
@@ -611,7 +611,7 @@ if __name__ == "__main__":
     import time
 
     async def test_quiz_generation(model_id: str | None = None, genre: str = "一般常識", difficulty: int | str | None = 0):
-        print(f"モデル: {model_id or DEFAULT_MODEL_ID}", f"ジャンル: {genre}", f"正答率目安: {normalize_difficulty(difficulty)}%")
+        print(f"モデル: {normalize_model_id(model_id)}", f"ジャンル: {genre}", f"正答率目安: {normalize_difficulty(difficulty)}%")
         print("クイズを生成中...")
         t = time.time()
         quiz = await generate_quiz_async(genre, model_id, difficulty)
@@ -629,8 +629,9 @@ if __name__ == "__main__":
             await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
     async def main():
-        genre = "アニメ・マンガ"
-        difficulty = 30
-        await test_quiz_generation(model_id="gpt-4o-mini", genre=genre, difficulty=difficulty)
+        genre = "2020年以降のソシャゲ"
+        difficulty = 50
+        model_id = "gemini-2.5-flash"
+        await test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty)
 
     asyncio.run(main())
