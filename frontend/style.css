@@ -969,6 +969,24 @@ body.modal-open #arena-question-text .arena-question-line {
     white-space: pre-wrap;
 }
 
+.question-confirm-genre-wrap {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.question-confirm-genre-label {
+    color: #334155;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.question-confirm-genre-input {
+    width: 100%;
+    margin-top: 0;
+}
+
 #alert-message {
     white-space: pre-wrap;
 }

@@ -103,6 +103,8 @@ def begin_kifu_record(room_owner_id: str, room: dict[str, Any], nicknames: dict[
         "finished_at": None,
         "question_text": str(room.get("question_text", "")),
         "question_length": len(str(room.get("question_text", ""))),
+        "genre": str(room.get("genre", "")).strip(),
+        "difficulty": int(room.get("difficulty", 0) or 0),
         "yakumono_indexes": sorted([int(v) for v in room.get("yakumono_indexes", set()) if isinstance(v, int)]),
         "questioner": {
             "client_id": room_owner_id,

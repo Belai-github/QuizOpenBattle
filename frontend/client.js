@@ -2163,6 +2163,9 @@ function buildReplayRoomSnapshot(detail, step) {
         question_text: String(detail?.question_text || ""),
         question_visible_text: String(detail?.question_text || ""),
         question_length: Number(detail?.question_length || 0),
+        genre: String(detail?.genre || "").trim(),
+        difficulty: Number.isFinite(Number(detail?.difficulty)) ? Number(detail?.difficulty) : 0,
+        is_ai_mode: Boolean(detail?.is_ai_mode),
         yakumono_indexes: Array.isArray(detail?.yakumono_indexes) ? detail.yakumono_indexes : [],
         game_state: step?.game?.game_status === "finished" ? "finished" : "playing",
         game: step?.game || null,
@@ -2528,10 +2531,35 @@ function buildGameFinishedAlertMessage(data) {
 function showQuestionConfirmModal(questionText) {
     return new Promise((resolve) => {
         confirmMessageEl.textContent = `以下の問題文で出題しますか？\n\nQ. ${questionText}`;
+
+        const cardEl = confirmMessageEl.closest(".modal-card");
+        const genreWrapEl = document.createElement("div");
+        genreWrapEl.className = "question-confirm-genre-wrap";
+        const genreLabelEl = document.createElement("label");
+        genreLabelEl.className = "question-confirm-genre-label";
+        genreLabelEl.setAttribute("for", "question-confirm-genre-input");
+        genreLabelEl.textContent = "ジャンル（任意）";
+        const genreInputEl = document.createElement("input");
+        genreInputEl.id = "question-confirm-genre-input";
+        genreInputEl.className = "question-confirm-genre-input";
+        genreInputEl.type = "text";
+        genreInputEl.maxLength = 40;
+        genreInputEl.placeholder = "例: 歴史、音楽、アニメ";
+        genreWrapEl.appendChild(genreLabelEl);
+        genreWrapEl.appendChild(genreInputEl);
+        if (cardEl && confirmActionsEl) {
+            cardEl.insertBefore(genreWrapEl, confirmActionsEl);
+        }
+
+        confirmOkBtn.textContent = "出題する";
+        confirmCancelBtn.textContent = "キャンセル";
+        confirmCancelBtn.style.display = "";
+        confirmActionsEl.classList.remove("single");
+
         if (!confirmModal.open) {
             confirmModal.showModal();
         }
-        confirmOkBtn.focus();
+        genreInputEl.focus();
         setArenaCharClickGuard();
         updateArenaInteractionLock();
 
@@ -2540,15 +2568,24 @@ function showQuestionConfirmModal(questionText) {
             if (confirmModal.open) {
                 confirmModal.close();
             }
+            genreWrapEl.remove();
+            confirmOkBtn.textContent = "送信する";
+            confirmCancelBtn.textContent = "キャンセル";
+            confirmCancelBtn.style.display = "";
+            confirmActionsEl.classList.remove("single");
             confirmOkBtn.removeEventListener("click", onOk);
             confirmCancelBtn.removeEventListener("click", onCancelClick);
             confirmModal.removeEventListener("click", onBackdropClick);
             confirmModal.removeEventListener("cancel", onCancel);
+            genreInputEl.removeEventListener("keydown", onGenreKeydown);
             updateArenaInteractionLock();
             resolve(result);
         };
 
-        const onOk = () => close(true);
+        const onOk = () => close({
+            confirmed: true,
+            genre: String(genreInputEl.value || "").trim().slice(0, 40),
+        });
         const onCancelClick = () => close(false);
         const onBackdropClick = (event) => {
             if (event.target === confirmModal) {
@@ -2559,11 +2596,17 @@ function showQuestionConfirmModal(questionText) {
             event.preventDefault();
             close(false);
         };
+        const onGenreKeydown = (event) => {
+            if (event.key !== "Enter" || event.isComposing) return;
+            event.preventDefault();
+            onOk();
+        };
 
         confirmOkBtn.addEventListener("click", onOk, { once: true });
         confirmCancelBtn.addEventListener("click", onCancelClick, { once: true });
         confirmModal.addEventListener("click", onBackdropClick);
         confirmModal.addEventListener("cancel", onCancel);
+        genreInputEl.addEventListener("keydown", onGenreKeydown);
     });
 }
 
@@ -3165,6 +3208,8 @@ function renderArena(currentRoom) {
     const difficultyLabel = currentRoom.is_ai_mode
         ? (AI_DIFFICULTY_OPTIONS.find(([value]) => value === Math.max(0, Math.min(5, Number(currentRoom.difficulty))))?.[1] || "未設定")
         : "未設定";
+    const shouldShowGenre = String(currentRoom.genre || "").trim() !== "";
+    const shouldShowDifficulty = Boolean(currentRoom.is_ai_mode) && difficultyLabel !== "未設定";
     titleEl.textContent = "";
     const questionerSpanEl = document.createElement("span");
     questionerSpanEl.className = "arena-title-questioner";
@@ -3175,14 +3220,17 @@ function renderArena(currentRoom) {
     genreSpanEl.style.marginLeft = "20px";
     genreSpanEl.textContent = `ジャンル:${genreLabel}`;
 
-    const difficultySpanEl = document.createElement("span");
-    difficultySpanEl.className = "arena-title-difficulty";
-    difficultySpanEl.style.marginLeft = "20px";
-    difficultySpanEl.textContent = `難易度:${difficultyLabel}`;
-
     titleEl.appendChild(questionerSpanEl);
-    titleEl.appendChild(genreSpanEl);
-    titleEl.appendChild(difficultySpanEl);
+    if (shouldShowGenre) {
+        titleEl.appendChild(genreSpanEl);
+    }
+    if (shouldShowDifficulty) {
+        const difficultySpanEl = document.createElement("span");
+        difficultySpanEl.className = "arena-title-difficulty";
+        difficultySpanEl.style.marginLeft = "20px";
+        difficultySpanEl.textContent = `難易度:${difficultyLabel}`;
+        titleEl.appendChild(difficultySpanEl);
+    }
 
     const serverQuestionText = String(currentRoom.question_text || "");
     const serverQuestionVisibleText = String(currentRoom.question_visible_text || "");
@@ -4040,14 +4088,16 @@ async function submitQuestion() {
         return;
     }
 
-    const confirmed = await showQuestionConfirmModal(questionText);
-    if (!confirmed) {
+    const confirmResult = await showQuestionConfirmModal(questionText);
+    if (!confirmResult || !confirmResult.confirmed) {
         return;
     }
+    const normalizedGenre = String(confirmResult.genre || "").trim().slice(0, 40);
 
     const questionPayload = {
         type: "question_submission",
         question_text: questionText,
+        genre: normalizedGenre,
         timestamp: Date.now()
     };
 
