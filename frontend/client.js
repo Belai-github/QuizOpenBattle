@@ -403,6 +403,23 @@ function refreshChatLogFilterControls() {
     });
 }
 
+function enableArenaProgressChatFilter() {
+    const globalLogEl = document.getElementById("game-chat-log-game-global");
+    if (!globalLogEl) {
+        return;
+    }
+
+    const state = getChatLogFilterState(globalLogEl);
+    state.showChat = true;
+    state.showLog = true;
+    applyChatLogFilters(globalLogEl);
+
+    const controls = chatLogFilterControlById.get(globalLogEl.id);
+    if (controls) {
+        controls.renderButtons();
+    }
+}
+
 function getOrCreateArenaRoomLogState(roomOwnerId) {
     const roomId = String(roomOwnerId || "").trim();
     if (roomId === "") return null;
@@ -3610,7 +3627,35 @@ function appendLogToContainer(
             logEl.appendChild(item);
         }
     } else {
-        logEl.appendChild(item);
+        const nextTimestamp = Number(item.dataset.eventTimestamp || 0);
+        const lastItem = logEl.lastElementChild;
+        const lastTimestamp = Number(lastItem?.dataset?.eventTimestamp || 0);
+
+        // 通常は末尾追加し、時刻が逆転したときだけ末尾側を局所走査して差し込む。
+        if (
+            Number.isFinite(nextTimestamp)
+            && nextTimestamp > 0
+            && Number.isFinite(lastTimestamp)
+            && lastTimestamp > 0
+            && nextTimestamp < lastTimestamp
+        ) {
+            let cursor = lastItem;
+            while (cursor) {
+                const cursorTimestamp = Number(cursor.dataset?.eventTimestamp || 0);
+                if (!Number.isFinite(cursorTimestamp) || cursorTimestamp <= 0 || cursorTimestamp <= nextTimestamp) {
+                    break;
+                }
+                cursor = cursor.previousElementSibling;
+            }
+
+            if (cursor) {
+                logEl.insertBefore(item, cursor.nextElementSibling);
+            } else {
+                logEl.insertBefore(item, logEl.firstChild);
+            }
+        } else {
+            logEl.appendChild(item);
+        }
     }
     if (logEl.classList.contains("chat-log")) {
         applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
@@ -3641,6 +3686,7 @@ function appendEventLog(
     eventMessage,
     eventChatType = null,
     eventRoomId = null,
+    eventTimestamp = null,
     logMarkerId = null,
     eventId = null,
     eventRevision = 1,
@@ -3651,6 +3697,7 @@ function appendEventLog(
         event_chat_type: eventChatType,
         event_message: eventMessage,
         event_room_id: eventRoomId,
+        timestamp: eventTimestamp,
         event_id: eventId,
         event_revision: eventRevision,
         event_version: eventVersion,
@@ -3677,7 +3724,7 @@ function appendEventLog(
                 record.eventChatType,
                 record.eventType,
                 record.eventMessage,
-                null,
+                record.eventTimestamp,
                 record.logMarkerId,
                 record.eventId,
                 record.eventRevision,
@@ -3690,7 +3737,7 @@ function appendEventLog(
                     oppositeChatType,
                     record.eventType,
                     record.eventMessage,
-                    null,
+                    record.eventTimestamp,
                     record.logMarkerId,
                     record.eventId,
                     record.eventRevision,
@@ -3703,7 +3750,7 @@ function appendEventLog(
                     "game-global",
                     record.eventType,
                     displayMessage,
-                    null,
+                    record.eventTimestamp,
                     record.logMarkerId,
                     record.eventId,
                     record.eventRevision,
@@ -3723,15 +3770,15 @@ function appendEventLog(
         }
 
         const roomLogEl = document.getElementById(`game-chat-log-${record.eventChatType}`);
-        appendLogToContainer(roomLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+        appendLogToContainer(roomLogEl, record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
         if (shouldDuplicateOpenResolvedToBothTeamLogs(record)) {
             const oppositeChatType = record.eventChatType === "team-left" ? "team-right" : "team-left";
             const oppositeLogEl = document.getElementById(`game-chat-log-${oppositeChatType}`);
-            appendLogToContainer(oppositeLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+            appendLogToContainer(oppositeLogEl, record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
         }
         if (shouldMirrorToGlobal) {
             const globalLogEl = document.getElementById("game-chat-log-game-global");
-            appendLogToContainer(globalLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+            appendLogToContainer(globalLogEl, record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
         }
         return;
     }
@@ -3740,12 +3787,12 @@ function appendEventLog(
     if ((record.eventType === "room_entry" || record.eventType === "room_exit") && isInGameArena()) {
         const resolvedRoomId = record.roomId;
         if (resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, "game-global", record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+            pushArenaRoomLog(resolvedRoomId, "game-global", record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
         }
 
         if (resolvedRoomId === "" || currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
             const globalLogEl = document.getElementById("game-chat-log-game-global");
-            appendLogToContainer(globalLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+            appendLogToContainer(globalLogEl, record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
         }
         return;
     }
@@ -3775,17 +3822,17 @@ function appendEventLog(
     if (arenaOnlyTypes.has(record.eventType)) {
         const resolvedRoomId = record.roomId;
         if (isInGameArena() && resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, "game-global", record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+            pushArenaRoomLog(resolvedRoomId, "game-global", record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
             if (currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
                 const globalLogEl = document.getElementById("game-chat-log-game-global");
-                appendLogToContainer(globalLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+                appendLogToContainer(globalLogEl, record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
             }
         }
         return;
     }
 
     const waitingLogEl = document.getElementById("event-log");
-    appendLogToContainer(waitingLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
+    appendLogToContainer(waitingLogEl, record.eventType, displayMessage, record.eventTimestamp, record.logMarkerId, record.eventId, record.eventRevision, record.eventVersion);
 }
 
 function hydrateLobbyChatHistoryIfNeeded(history) {
@@ -3981,6 +4028,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        const prevChatRole = userRole;
+        const prevRoomState = currentRoomGameState;
+        const prevLeftCorrectWaiting = Boolean(currentGameState?.left_correct_waiting);
         currentRoomsSnapshot = Array.isArray(data.rooms) ? data.rooms : currentRoomsSnapshot;
         if (typeof data.ai_question_generation_active === "boolean") {
             aiQuestionGenerationActive = data.ai_question_generation_active;
@@ -4140,6 +4190,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
                 displayMessage,
                 incomingEventRecord.eventChatType,
                 incomingEventRecord.roomId,
+                incomingEventRecord.eventTimestamp,
                 logMarkerId,
                 incomingEventId,
                 incomingEventRevision,
@@ -4157,6 +4208,27 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
         updateArenaAnswerFormVisibility();
         updateChatBoxVisibility();
+
+        const isPlayingParticipantJoin = isEnteringArena
+            && String(data.current_room?.role || "") === "participant"
+            && String(currentRoomGameState || "") === "playing";
+        if (isEnteringArena && !isPlayingParticipantJoin) {
+            enableArenaProgressChatFilter();
+        }
+
+        const reachedGameFinished = String(currentRoomGameState || "") === "finished"
+            && String(prevRoomState || "") !== "finished";
+        const reachedLeftRevealWindow = String(currentRoomGameState || "") === "playing"
+            && String(userRole || "") === "team-left"
+            && Boolean(currentGameState?.left_correct_waiting)
+            && (
+                String(prevRoomState || "") !== "playing"
+                || String(prevChatRole || "") !== "team-left"
+                || !prevLeftCorrectWaiting
+            );
+        if (reachedGameFinished || reachedLeftRevealWindow) {
+            enableArenaProgressChatFilter();
+        }
 
         if (!isKifuMode && currentRoomGameState === "finished") {
             if (isArenaReplayMode && activeRoomId === currentArenaReplayRoomId && Array.isArray(currentKifuSteps) && currentKifuSteps.length > 0) {
@@ -4272,11 +4344,17 @@ async function requestRoomExit() {
         return;
     }
 
-    const isQuestioner = userRole === "questioner";
-    const confirmMessage = isQuestioner
+    const snapshot = currentRoomSnapshot;
+    const ownerId = String(snapshot?.room_owner_id || "");
+    const me = String(myClientId || "");
+    const isOwner = ownerId !== "" && me !== "" && ownerId === me;
+    const isAiRoom = Boolean(snapshot?.is_ai_mode);
+    const shouldCloseRoom = isOwner && !isAiRoom;
+
+    const confirmMessage = shouldCloseRoom
         ? "部屋を閉じると参加者と観戦者は全員退室になります。\n\n本当に部屋を閉じますか？"
         : "本当に退室しますか？";
-    const okLabel = isQuestioner ? "部屋を閉じる" : "退室する";
+    const okLabel = shouldCloseRoom ? "部屋を閉じる" : "退室する";
 
     const confirmed = await showConfirmModal(confirmMessage, {
         okLabel,
