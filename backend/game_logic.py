@@ -609,8 +609,9 @@ def apply_submit_answer(room: dict, team: str, is_correct: bool):
             game["winner"] = "team-left"
             game["game_status"] = "finished"
             game["left_correct_waiting"] = False
-        else:
-            # 通常はターン終了時に次のターンへ（自動的に遷移）
+        elif _is_no_action_remaining(team_state):
+            # 誤答したチームがアクション権をまだ持っていれば、ターンは継続
+            # アクション権がなければ、ターン終了時に次のターンへ（相手にターンを譲る）
             yield_turn(game)
 
     _sync_room_game_state_with_game_status(room)
