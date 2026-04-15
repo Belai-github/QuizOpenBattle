@@ -1800,7 +1800,12 @@ function showQuestionConfirmModal(questionText) {
 }
 
 function showConfirmModal(message, options = {}) {
-    const { hideCancel = false, okLabel = "送信する", cancelLabel = "キャンセル" } = options;
+    const {
+        hideCancel = false,
+        okLabel = "送信する",
+        cancelLabel = "キャンセル",
+        requireExplicitChoice = false,
+    } = options;
     return new Promise((resolve) => {
         confirmMessageEl.textContent = message;
         confirmOkBtn.textContent = okLabel;
@@ -1835,11 +1840,17 @@ function showConfirmModal(message, options = {}) {
         const onCancelClick = () => close(false);
         const onBackdropClick = (event) => {
             if (event.target === confirmModal) {
+                if (requireExplicitChoice) {
+                    return;
+                }
                 close(hideCancel ? true : false);
             }
         };
         const onCancel = (event) => {
             event.preventDefault();
+            if (requireExplicitChoice) {
+                return;
+            }
             close(hideCancel ? true : false);
         };
 
@@ -3353,6 +3364,7 @@ async function handleAnswerJudgementRequest(payload) {
         {
             okLabel: "正解",
             cancelLabel: "誤答",
+            requireExplicitChoice: true,
         }
     );
 
