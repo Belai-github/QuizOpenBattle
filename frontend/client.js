@@ -37,8 +37,10 @@ const kifuListScreenEl = document.getElementById("kifu-list-screen");
 const kifuListEl = document.getElementById("kifu-list");
 const kifuListBackLinkEl = document.getElementById("kifu-list-back-link");
 const kifuReplayControlsEl = document.getElementById("kifu-replay-controls");
+const kifuStepFirstBtnEl = document.getElementById("kifu-step-first-btn");
 const kifuStepPrevBtnEl = document.getElementById("kifu-step-prev-btn");
 const kifuStepNextBtnEl = document.getElementById("kifu-step-next-btn");
+const kifuStepLastBtnEl = document.getElementById("kifu-step-last-btn");
 const kifuStepLabelEl = document.getElementById("kifu-step-label");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
@@ -2321,6 +2323,7 @@ function initializeReplayGameState() {
         current_turn_team: "team-left",
         game_status: "playing",
         winner: null,
+        draw_reason: null,
         is_judging_answer: false,
         left_correct_waiting: false,
         team_left: {
@@ -2403,6 +2406,7 @@ function applyReplayAction(state, action) {
         if (noAction) {
             if (team === "team-right" && state.left_correct_waiting) {
                 state.winner = "team-left";
+                state.draw_reason = null;
                 state.game_status = "finished";
                 state.left_correct_waiting = false;
             } else {
@@ -2421,10 +2425,12 @@ function applyReplayAction(state, action) {
                 replayYieldTurn(state);
             } else if (state.left_correct_waiting) {
                 state.winner = "draw";
+                state.draw_reason = "double_correct";
                 state.game_status = "finished";
                 state.left_correct_waiting = false;
             } else {
                 state.winner = "team-right";
+                state.draw_reason = null;
                 state.game_status = "finished";
             }
         } else if (isCorrect === false) {
@@ -2435,6 +2441,7 @@ function applyReplayAction(state, action) {
             const noAction = Number(teamState.action_points || 0) <= 0 && Number(teamState.bonus_action_points || 0) <= 0;
             if (team === "team-right" && state.left_correct_waiting) {
                 state.winner = "team-left";
+                state.draw_reason = null;
                 state.game_status = "finished";
                 state.left_correct_waiting = false;
             } else if (noAction) {
@@ -2447,6 +2454,7 @@ function applyReplayAction(state, action) {
         teamState.action_points = 0;
         if (team === "team-right" && state.left_correct_waiting) {
             state.winner = "team-left";
+            state.draw_reason = null;
             state.game_status = "finished";
             state.left_correct_waiting = false;
         } else {
@@ -2456,6 +2464,7 @@ function applyReplayAction(state, action) {
 
     if (action?.action_type === "intentional_draw") {
         state.winner = "draw";
+        state.draw_reason = "intentional_draw";
         state.game_status = "finished";
         state.left_correct_waiting = false;
         state.is_judging_answer = false;
@@ -2533,6 +2542,12 @@ function renderKifuStep() {
     }
     if (kifuStepNextBtnEl) {
         kifuStepNextBtnEl.disabled = currentKifuStepIndex >= currentKifuSteps.length - 1;
+    }
+    if (kifuStepFirstBtnEl) {
+        kifuStepFirstBtnEl.disabled = currentKifuStepIndex <= 0;
+    }
+    if (kifuStepLastBtnEl) {
+        kifuStepLastBtnEl.disabled = currentKifuStepIndex >= currentKifuSteps.length - 1;
     }
 
     const shouldReplayLog = !isArenaReplayMode;
@@ -3639,6 +3654,10 @@ function renderArena(currentRoom) {
 
     const isMeQuestioner = currentRoom.questioner_id === myClientId;
     const questionerName = String(currentRoom.questioner_name || "ゲスト");
+    const isIntentionalDrawReplay = isReplayMode()
+        && !kifuReplayControlsEl?.classList.contains("hidden")
+        && String(currentRoom?.game?.winner || "").trim() === "draw"
+        && String(currentRoom?.game?.draw_reason || "").trim() === "intentional_draw";
     const genreLabel = String(currentRoom.genre || "").trim() || "未設定";
     const difficultyLabel = currentRoom.is_ai_mode
         ? `${normalizeAiAccuracyRate(currentRoom.difficulty)}%`
@@ -3656,6 +3675,13 @@ function renderArena(currentRoom) {
         questionerNameEl.className = "player-list-item-name";
         questionerNameEl.textContent = `出題者: ${questionerName}`;
         questionerItemEl.appendChild(questionerNameEl);
+
+        if (isIntentionalDrawReplay) {
+            const loseTagEl = document.createElement("span");
+            loseTagEl.className = "arena-result-badge questioner-result-badge is-lose";
+            loseTagEl.textContent = "敗北";
+            questionerItemEl.appendChild(loseTagEl);
+        }
 
         if (isMeQuestioner) {
             questionerItemEl.classList.add("player-list-item-me", "questioner-list-item-me");
@@ -5310,6 +5336,16 @@ kifuStepPrevBtnEl?.addEventListener("click", () => {
 
 kifuStepNextBtnEl?.addEventListener("click", () => {
     currentKifuStepIndex = Math.min(Math.max(0, currentKifuSteps.length - 1), currentKifuStepIndex + 1);
+    renderKifuStep();
+});
+
+kifuStepFirstBtnEl?.addEventListener("click", () => {
+    currentKifuStepIndex = 0;
+    renderKifuStep();
+});
+
+kifuStepLastBtnEl?.addEventListener("click", () => {
+    currentKifuStepIndex = Math.max(0, currentKifuSteps.length - 1);
     renderKifuStep();
 });
 

@@ -1341,6 +1341,7 @@ body.modal-open #arena-question-text .arena-question-line {
     padding: 0 12px;
     border-radius: 999px;
     font-size: 0.8rem;
+    line-height: 1;
     letter-spacing: 0.03em;
     font-weight: 800;
     border: 1px solid transparent;
@@ -1494,6 +1495,10 @@ body.modal-open #arena-question-text .arena-question-line {
     white-space: nowrap;
     letter-spacing: 0.02em;
     margin-left: auto;
+}
+
+.player-list-item-tag.questioner-result-badge {
+    margin-left: 0;
 }
 
 .player-swap-btn {
