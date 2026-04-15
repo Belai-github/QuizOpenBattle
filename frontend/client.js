@@ -5,9 +5,26 @@ const confirmModal = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
 const confirmOkBtn = document.getElementById("confirm-ok-btn");
 const confirmCancelBtn = document.getElementById("confirm-cancel-btn");
+const confirmActionsEl = confirmModal.querySelector(".modal-actions");
 const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
+const leaveGameArenaEl = document.getElementById("leave-game-arena");
+
+let pendingArenaMode = null;
+
+function updateArenaLeaveLabel(mode) {
+    if (!leaveGameArenaEl) return;
+
+    if (mode === "owner") {
+        leaveGameArenaEl.textContent = "☓部屋を閉じる";
+        leaveGameArenaEl.setAttribute("aria-label", "部屋を閉じる");
+        return;
+    }
+
+    leaveGameArenaEl.textContent = "←退室";
+    leaveGameArenaEl.setAttribute("aria-label", "退室");
+}
 
 function showWaitingRoomScreen() {
     document.getElementById("waiting-room-screen").style.display = "block";
@@ -93,12 +110,14 @@ function showConfirmModal(message, options = {}) {
         confirmOkBtn.textContent = okLabel;
         confirmCancelBtn.textContent = cancelLabel;
         confirmCancelBtn.style.display = hideCancel ? "none" : "";
+        confirmActionsEl.classList.toggle("single", hideCancel);
         confirmModal.classList.remove("hidden");
         confirmOkBtn.focus();
 
         const close = (result) => {
             confirmModal.classList.add("hidden");
             confirmCancelBtn.style.display = "";
+            confirmActionsEl.classList.remove("single");
             confirmOkBtn.textContent = "送信する";
             confirmCancelBtn.textContent = "キャンセル";
             confirmOkBtn.removeEventListener("click", onOk);
@@ -150,6 +169,8 @@ function renderParticipants(participants) {
 
 function requestRoomEntry(roomOwnerId, role) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    pendingArenaMode = "guest";
 
     const payload = {
         type: "room_entry",
@@ -287,8 +308,11 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.target_screen === "game_arena") {
+            updateArenaLeaveLabel(pendingArenaMode === "owner" ? "owner" : "guest");
             showGameArenaScreen();
         } else if (data.target_screen === "waiting_room") {
+            pendingArenaMode = null;
+            updateArenaLeaveLabel("guest");
             showWaitingRoomScreen();
         }
 
@@ -331,6 +355,7 @@ async function submitQuestion() {
         timestamp: Date.now()
     };
 
+    pendingArenaMode = "owner";
     ws.send(JSON.stringify(questionPayload));
     questionInput.value = "";
 }
@@ -345,12 +370,12 @@ document.getElementById("question-box").addEventListener("keydown", (event) => {
     submitQuestion();
 });
 
-const leaveGameArenaEl = document.getElementById("leave-game-arena");
-
 function requestRoomExit() {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "room_exit" }));
     }
+    pendingArenaMode = null;
+    updateArenaLeaveLabel("guest");
     showWaitingRoomScreen();
 }
 

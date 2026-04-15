@@ -184,6 +184,16 @@ class QuizGameManager:
             closed_room = self.rooms.pop(client_id, None)
             self.remove_client_from_all_rooms(client_id)
 
+            if closed_room is not None:
+                affected_client_ids = set(closed_room["participants"]) | set(closed_room["spectators"])
+                for target_client_id in affected_client_ids:
+                    await self.send_private_info(
+                        target_client_id,
+                        "出題者が退室したため、部屋から退室しました。",
+                        target_screen="waiting_room",
+                        event_type="forced_exit_notice",
+                    )
+
             print(f"プレイヤー切断: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
             await self.broadcast_state(
                 public_info=f"{nickname} が退出しました",
