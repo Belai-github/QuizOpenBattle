@@ -3157,9 +3157,10 @@ class QuizGameManager:
                     )
                     return
 
-                question_text = str((quiz_data or {}).get("question", "")).strip()
-                expected_answer = str((quiz_data or {}).get("answer", "")).strip()
-                error_code = str((quiz_data or {}).get("error_code", "")).strip()
+                quiz_payload = quiz_data if isinstance(quiz_data, dict) else {}
+                question_text = str(quiz_payload.get("question", "")).strip()
+                expected_answer = str(quiz_payload.get("answer", "")).strip()
+                error_code = str(quiz_payload.get("error_code", "")).strip()
                 if error_code == "RESOURCE_EXHAUSTED":
                     await self.send_private_info(
                         player_id,
@@ -3217,7 +3218,7 @@ class QuizGameManager:
                     room["is_ai_mode"] = True
                     room["ai_genre"] = str(normalized_payload.get("genre", "")).strip() or "一般常識"
                     room["ai_difficulty"] = difficulty
-                    room["ai_expected_answer"] = str((quiz_data or {}).get("answer", "")).strip()
+                    room["ai_expected_answer"] = str(quiz_payload.get("answer", "")).strip()
                     room["ai_model_id"] = model_id
 
                 await self.broadcast_state(
