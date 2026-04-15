@@ -29,7 +29,8 @@ const aiQuestionSpinnerEl = document.getElementById("ai-question-spinner");
 const aiQuestionModalEl = document.getElementById("ai-question-modal");
 const aiGenreInputEl = document.getElementById("ai-genre-input");
 const aiModelSelectEl = document.getElementById("ai-model-select");
-const aiDifficultySelectEl = document.getElementById("ai-difficulty-select");
+const aiAccuracyRateRangeEl = document.getElementById("ai-accuracy-rate-range");
+const aiAccuracyRateValueEl = document.getElementById("ai-accuracy-rate-value");
 const aiQuestionModalCancelBtnEl = document.getElementById("ai-question-cancel-btn");
 const aiQuestionModalSubmitBtnEl = document.getElementById("ai-question-submit-btn");
 const kifuListScreenEl = document.getElementById("kifu-list-screen");
@@ -77,15 +78,8 @@ const AI_MODEL_OPTIONS = [
     ["gemini-3-flash-preview", "gemini-3-flash-preview (生成時間目安:約60秒)"],
     ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview (生成時間:約2秒)"],
 ];
-const DEFAULT_AI_DIFFICULTY = 3;
-const AI_DIFFICULTY_OPTIONS = [
-    [0, "小1レベル"],
-    [1, "小3レベル"],
-    [2, "小6レベル"],
-    [3, "中学卒業レベル"],
-    [4, "高校卒業レベル"],
-    [5, "学生競技クイズレベル"],
-];
+const DEFAULT_AI_ACCURACY_RATE = 50;
+const MIN_AI_ACCURACY_RATE = 10;
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
 const QUESTIONER_VIEW_MODE_CYCLE = ["all", "team-left", "team-right"];
@@ -219,17 +213,38 @@ function populateAiModelSelect() {
     });
 }
 
-function populateAiDifficultySelect() {
-    if (!aiDifficultySelectEl || aiDifficultySelectEl.options.length > 0) {
+function normalizeAiAccuracyRate(rawValue) {
+    const numericValue = Number(rawValue);
+    if (!Number.isFinite(numericValue)) {
+        return DEFAULT_AI_ACCURACY_RATE;
+    }
+
+    const clampedValue = Math.max(MIN_AI_ACCURACY_RATE, Math.min(100, numericValue));
+    if (clampedValue <= 5 && Number.isInteger(clampedValue)) {
+        return Math.max(MIN_AI_ACCURACY_RATE, Math.min(100, clampedValue * 20));
+    }
+
+    return Math.max(MIN_AI_ACCURACY_RATE, Math.min(100, Math.round(clampedValue / 10) * 10));
+}
+
+function updateAiAccuracyRateDisplay(rawValue) {
+    if (!aiAccuracyRateValueEl) {
         return;
     }
 
-    AI_DIFFICULTY_OPTIONS.forEach(([value, label]) => {
-        const option = document.createElement("option");
-        option.value = String(value);
-        option.textContent = label;
-        aiDifficultySelectEl.appendChild(option);
-    });
+    aiAccuracyRateValueEl.textContent = `${normalizeAiAccuracyRate(rawValue)}%`;
+}
+
+function initializeAiAccuracyRateControl() {
+    if (!aiAccuracyRateRangeEl) {
+        return;
+    }
+
+    aiAccuracyRateRangeEl.min = String(MIN_AI_ACCURACY_RATE);
+    aiAccuracyRateRangeEl.max = "100";
+    aiAccuracyRateRangeEl.step = "10";
+    aiAccuracyRateRangeEl.value = String(DEFAULT_AI_ACCURACY_RATE);
+    updateAiAccuracyRateDisplay(aiAccuracyRateRangeEl.value);
 }
 
 function updateAiQuestionButtonState(rooms = currentRoomsSnapshot) {
@@ -3012,8 +3027,8 @@ function setAiQuestionLoading(loading) {
         aiModelSelectEl.disabled = aiQuestionRequestPending;
     }
 
-    if (aiDifficultySelectEl) {
-        aiDifficultySelectEl.disabled = aiQuestionRequestPending;
+    if (aiAccuracyRateRangeEl) {
+        aiAccuracyRateRangeEl.disabled = aiQuestionRequestPending;
     }
 
     if (questionInputEl) {
@@ -3023,16 +3038,17 @@ function setAiQuestionLoading(loading) {
 
 function showAiGenreInputModal() {
     return new Promise((resolve) => {
-        if (!aiQuestionModalEl || !aiGenreInputEl || !aiModelSelectEl || !aiDifficultySelectEl) {
+        if (!aiQuestionModalEl || !aiGenreInputEl || !aiModelSelectEl || !aiAccuracyRateRangeEl) {
             resolve(null);
             return;
         }
 
         populateAiModelSelect();
-        populateAiDifficultySelect();
+        initializeAiAccuracyRateControl();
         aiGenreInputEl.value = "";
         aiModelSelectEl.value = DEFAULT_AI_MODEL_ID;
-        aiDifficultySelectEl.value = String(DEFAULT_AI_DIFFICULTY);
+        aiAccuracyRateRangeEl.value = String(DEFAULT_AI_ACCURACY_RATE);
+        updateAiAccuracyRateDisplay(aiAccuracyRateRangeEl.value);
         setAiQuestionLoading(false);
 
         if (!aiQuestionModalEl.open) {
@@ -3050,6 +3066,7 @@ function showAiGenreInputModal() {
             aiQuestionModalEl.removeEventListener("click", onBackdropClick);
             aiQuestionModalEl.removeEventListener("cancel", onCancel);
             aiGenreInputEl.removeEventListener("keydown", onKeydown);
+            aiAccuracyRateRangeEl.removeEventListener("input", onRateInput);
             updateArenaInteractionLock();
             resolve(value);
         };
@@ -3057,11 +3074,8 @@ function showAiGenreInputModal() {
         const onSubmit = () => {
             const genre = String(aiGenreInputEl.value || "").trim();
             const modelId = String(aiModelSelectEl.value || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
-            const difficultyValue = Number.parseInt(String(aiDifficultySelectEl.value || DEFAULT_AI_DIFFICULTY), 10);
-            const difficulty = Number.isFinite(difficultyValue)
-                ? Math.max(0, Math.min(5, difficultyValue))
-                : DEFAULT_AI_DIFFICULTY;
-            close({ genre, modelId, difficulty });
+            const accuracyRate = normalizeAiAccuracyRate(aiAccuracyRateRangeEl.value);
+            close({ genre, modelId, accuracyRate });
         };
         const onCancelClick = () => close(null);
         const onBackdropClick = (event) => {
@@ -3078,12 +3092,14 @@ function showAiGenreInputModal() {
             event.preventDefault();
             onSubmit();
         };
+        const onRateInput = () => updateAiAccuracyRateDisplay(aiAccuracyRateRangeEl.value);
 
         aiQuestionModalSubmitBtnEl?.addEventListener("click", onSubmit, { once: true });
         aiQuestionModalCancelBtnEl?.addEventListener("click", onCancelClick, { once: true });
         aiQuestionModalEl.addEventListener("click", onBackdropClick);
         aiQuestionModalEl.addEventListener("cancel", onCancel);
         aiGenreInputEl.addEventListener("keydown", onKeydown);
+        aiAccuracyRateRangeEl.addEventListener("input", onRateInput);
     });
 }
 
@@ -3613,7 +3629,7 @@ function renderArena(currentRoom) {
         : currentRoom.questioner_name;
     const genreLabel = String(currentRoom.genre || "").trim() || "未設定";
     const difficultyLabel = currentRoom.is_ai_mode
-        ? (AI_DIFFICULTY_OPTIONS.find(([value]) => value === Math.max(0, Math.min(5, Number(currentRoom.difficulty))))?.[1] || "未設定")
+        ? `${normalizeAiAccuracyRate(currentRoom.difficulty)}%`
         : "未設定";
     const shouldShowGenre = String(currentRoom.genre || "").trim() !== "";
     const shouldShowDifficulty = Boolean(currentRoom.is_ai_mode) && difficultyLabel !== "未設定";
@@ -4604,9 +4620,7 @@ async function submitAiQuestion() {
 
     const normalizedGenre = String(selection.genre || "").trim().slice(0, 40);
     const normalizedModelId = String(selection.modelId || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
-    const normalizedDifficulty = Number.isFinite(Number(selection.difficulty))
-        ? Math.max(0, Math.min(5, Number(selection.difficulty)))
-        : DEFAULT_AI_DIFFICULTY;
+    const normalizedAccuracyRate = normalizeAiAccuracyRate(selection.accuracyRate);
     setAiQuestionLoading(true);
     pendingArenaMode = "owner";
 
@@ -4616,7 +4630,8 @@ async function submitAiQuestion() {
             is_ai_mode: true,
             genre: normalizedGenre,
             model_id: normalizedModelId,
-            difficulty: normalizedDifficulty,
+            difficulty: normalizedAccuracyRate,
+            accuracy_rate: normalizedAccuracyRate,
             timestamp: Date.now(),
         })
     );

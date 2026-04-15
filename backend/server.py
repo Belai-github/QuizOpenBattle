@@ -430,7 +430,7 @@ class QuizGameManager:
             return
 
         try:
-            answer_judgement_task = check_answer_async(expected_answer, answer_text, model_id=model_id)
+            answer_judgement_task = asyncio.create_task(check_answer_async(expected_answer, answer_text, model_id=model_id))
             is_correct = await asyncio.wait_for(answer_judgement_task, timeout=12.0)
         except Exception:
             game["pending_answer_judgement"] = None
@@ -2951,14 +2951,12 @@ class QuizGameManager:
 
             quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
-            difficulty = normalize_difficulty(normalized_payload.get("difficulty", 0))
+            difficulty = normalize_difficulty(normalized_payload.get("accuracy_rate", normalized_payload.get("difficulty", 0)))
             generation_timeout = 100.0
             try:
                 try:
-                    quiz_data = await asyncio.wait_for(
-                        generate_quiz_async(genre, model_id=model_id, difficulty=difficulty),
-                        timeout=generation_timeout,
-                    )
+                    quiz_task = asyncio.create_task(generate_quiz_async(genre, model_id=model_id, difficulty=difficulty))
+                    quiz_data = await asyncio.wait_for(quiz_task, timeout=generation_timeout)
                 except asyncio.TimeoutError as e:
                     print(
                         "AI問題生成タイムアウト:",
@@ -3014,6 +3012,7 @@ class QuizGameManager:
                 normalized_payload["questioner_id"] = "ai-questioner"
                 normalized_payload["genre"] = genre
                 normalized_payload["difficulty"] = difficulty
+                normalized_payload["accuracy_rate"] = difficulty
                 normalized_payload["model_id"] = model_id
 
                 result = apply_create_question_room(self.rooms, self.nicknames, player_id, normalized_payload)

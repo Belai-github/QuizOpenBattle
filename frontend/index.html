@@ -271,8 +271,15 @@
             <input id="ai-genre-input" type="text" maxlength="40" placeholder="例: 歴史、化学、アニメ" aria-label="ジャンル入力">
             <label class="ai-question-modal-label" for="ai-model-select">モデルを選択</label>
             <select id="ai-model-select" aria-label="AIモデル選択"></select>
-            <label class="ai-question-modal-label" for="ai-difficulty-select">難易度を選択</label>
-            <select id="ai-difficulty-select" aria-label="AI難易度選択"></select>
+            <label class="ai-question-modal-label" for="ai-accuracy-rate-range">目標正答率</label>
+            <div class="ai-accuracy-rate-control">
+                <input id="ai-accuracy-rate-range" type="range" min="10" max="100" step="10" value="50"
+                    aria-label="AI目標正答率">
+                <div class="ai-accuracy-rate-readout" aria-live="polite">
+                    <span>目標正答率</span>
+                    <strong id="ai-accuracy-rate-value">50%</strong>
+                </div>
+            </div>
             <div class="modal-actions">
                 <button id="ai-question-cancel-btn" type="button">キャンセル</button>
                 <button id="ai-question-submit-btn" type="button">生成する</button>

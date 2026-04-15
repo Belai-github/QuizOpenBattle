@@ -7,9 +7,9 @@ from google import genai
 from dotenv import load_dotenv
 
 try:
-    from backend.pronpt import difficulties as QUIZ_DIFFICULTIES, get_quiz_prompt, get_judge_prompt
+    from backend.pronpt import get_quiz_prompt, get_judge_prompt
 except ImportError:
-    from pronpt import difficulties as QUIZ_DIFFICULTIES, get_quiz_prompt, get_judge_prompt
+    from pronpt import get_quiz_prompt, get_judge_prompt
 
 # .envファイルからAPIキーを環境変数として読み込む
 load_dotenv()
@@ -27,8 +27,8 @@ AVAILABLE_MODEL_IDS = (
 DEFAULT_MODEL_ID = "gemini-2.5-flash"
 QUIZ_GENERATION_TEMPERATURE = 1.9
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
-DEFAULT_QUIZ_DIFFICULTY = 0
-MAX_QUIZ_DIFFICULTY = max(0, len(QUIZ_DIFFICULTIES) - 1)
+DEFAULT_QUIZ_DIFFICULTY = 50
+MAX_QUIZ_DIFFICULTY = 100
 
 
 def _is_resource_exhausted_error(error: Exception) -> bool:
@@ -55,9 +55,11 @@ def normalize_difficulty(difficulty: int | str | None) -> int:
 
     if value < 0:
         return 0
+    if 0 <= value <= 5:
+        value *= 20
     if value > MAX_QUIZ_DIFFICULTY:
         return MAX_QUIZ_DIFFICULTY
-    return value
+    return int(round(value / 10.0) * 10)
 
 
 _ANSWER_PREFIX_RE = re.compile(r"^(答え|こたえ)(は|:|：)?", re.IGNORECASE)
@@ -193,7 +195,7 @@ if __name__ == "__main__":
     import time
 
     async def test_quiz_generation(model_id: str | None = None, genre: str = "一般常識", difficulty: int | str | None = 0):
-        print(f"モデル: {model_id or DEFAULT_MODEL_ID}", f"ジャンル: {genre}", f"難易度: {QUIZ_DIFFICULTIES[normalize_difficulty(difficulty)]}")
+        print(f"モデル: {model_id or DEFAULT_MODEL_ID}", f"ジャンル: {genre}", f"正答率目安: {normalize_difficulty(difficulty)}%")
         print("クイズを生成中...")
         t = time.time()
         quiz = await generate_quiz_async(genre, model_id, difficulty)
@@ -203,12 +205,12 @@ if __name__ == "__main__":
         print(f"答え: {quiz['answer']}")
         print()
 
-    async def alltest():
+    async def alltest(genre: str = "一般常識", difficulty: int | str | None = 0):
         for model in AVAILABLE_MODEL_IDS:
-            await test_quiz_generation(model_id=model)
+            await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
     model_id = "gemini-2.5-flash"
-    genre = "一般教養"
-    difficulty = 4
-    asyncio.run(alltest())
-    # asyncio.run(test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty))
+    genre = "アニメ・マンガ"
+    for i in range(11):
+        difficulty = i * 10
+        asyncio.run(test_quiz_generation(genre=genre, difficulty=difficulty))

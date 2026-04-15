@@ -1046,6 +1046,40 @@ body.modal-open #arena-question-text .arena-question-line {
     font-weight: 700;
 }
 
+.ai-accuracy-rate-control {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#ai-accuracy-rate-range {
+    width: 100%;
+    min-height: 32px;
+    margin-top: 0;
+    padding: 0;
+    background: transparent;
+    accent-color: var(--primary);
+}
+
+.ai-accuracy-rate-readout {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid #dbe4f0;
+    border-radius: 10px;
+    background: #f8fbff;
+    color: #334155;
+    font-size: 0.9rem;
+}
+
+.ai-accuracy-rate-readout strong {
+    color: #0f172a;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+}
+
 #ai-genre-input {
     margin-top: 0;
 }

@@ -678,7 +678,12 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         difficulty = int(payload.get("difficulty", 0))
     except (TypeError, ValueError):
         difficulty = 0
-    difficulty = max(0, min(5, difficulty))
+    if is_ai_mode:
+        if difficulty <= 5:
+            difficulty = difficulty * 20
+        difficulty = max(0, min(100, int(round(difficulty / 10) * 10)))
+    else:
+        difficulty = max(0, min(5, difficulty))
     ai_genre = str(payload.get("genre", "")).strip() if is_ai_mode else ""
     ai_difficulty = difficulty if is_ai_mode else 0
     questioner_name = str(payload.get("questioner_name", "")).strip() if is_ai_mode else ""
