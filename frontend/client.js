@@ -320,6 +320,7 @@ function getCurrentTeamActionPoints() {
 function canViewArenaAnswerForm() {
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
+    if (currentRoomSnapshot?.role !== "participant") return false;
     return userRole === "team-left" || userRole === "team-right";
 }
 
@@ -1545,6 +1546,10 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         userRole = data.current_room?.chat_role ?? null;
         currentRoomGameState = data.current_room?.game_state ?? null;
         currentGameState = data.current_room?.game ?? null;
+
+        document.body.dataset.chatRole = String(userRole || "");
+        document.body.dataset.roomRole = String(data.current_room?.role || "");
+
         if (data.target_screen === "game_arena") {
             updateArenaLeaveLabel(pendingArenaMode === "owner" ? "owner" : "guest");
             showGameArenaScreen();

@@ -920,6 +920,13 @@ body.modal-open #arena-question-text .arena-question-line {
     cursor: not-allowed;
 }
 
+body[data-chat-role="questioner"] #arena-answer-box,
+body[data-chat-role="spectator"] #arena-answer-box,
+body[data-room-role="owner"] #arena-answer-box,
+body[data-room-role="spectator"] #arena-answer-box {
+    display: none !important;
+}
+
 .arena-question-line {
     display: flex;
     justify-content: flex-start;
