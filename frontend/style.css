@@ -822,6 +822,10 @@ button:hover {
     transform-origin: center;
 }
 
+.arena-question-char[data-char-index] {
+    letter-spacing: 0;
+}
+
 .arena-question-char.is-selectable {
     cursor: pointer;
 }

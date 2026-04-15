@@ -2,6 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 import json
 import time
+import uuid
 
 from backend.game_logic import (
     apply_create_question_room,
@@ -74,6 +75,7 @@ class QuizGameManager:
         event_room_id: str | None = None,
         target_screen: str | None = None,
         event_recipient_ids: set[str] | None = None,
+        event_payload: dict | None = None,
     ):
         participants = self.build_participants()
         for client_id, ws in self.active_connections.items():
@@ -99,8 +101,186 @@ class QuizGameManager:
                 "event_chat_type": response_event_chat_type,
                 "event_room_id": event_room_id,
                 "target_screen": target_screen,
+                "event_payload": event_payload if is_event_recipient else None,
             }
             await ws.send_text(json.dumps(response))
+
+    def _resolve_team_for_client(self, room: dict, client_id: str):
+        if client_id in room["left_participants"]:
+            return "team-left"
+        if client_id in room["right_participants"]:
+            return "team-right"
+        return None
+
+    def _get_team_participant_ids(self, room: dict, team: str):
+        if team == "team-left":
+            return set(room["left_participants"])
+        if team == "team-right":
+            return set(room["right_participants"])
+        return set()
+
+    async def request_open_vote(self, client_id: str, char_index):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+
+        team = self._resolve_team_for_client(room, client_id)
+        if team is None:
+            await self.send_private_info(client_id, "陣営参加者のみオープンを申請できます。")
+            return
+
+        if room.get("game_state") != "playing":
+            await self.send_private_info(client_id, "ゲーム開始後に操作できます。")
+            return
+
+        game = room.get("game") or {}
+        if game.get("current_turn_team") != team:
+            await self.send_private_info(client_id, "あなたの陣営のターンではありません。")
+            return
+
+        if not isinstance(char_index, int):
+            await self.send_private_info(client_id, "無効な文字インデックスです。")
+            return
+
+        question_length = len(str(room.get("question_text", "")))
+        if char_index < 0 or char_index >= question_length:
+            await self.send_private_info(client_id, "無効な文字インデックスです。")
+            return
+
+        pending_vote = room.get("pending_open_vote")
+        if pending_vote and pending_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "進行中のオープン投票があります。")
+            return
+
+        voter_ids = self._get_team_participant_ids(room, team)
+        if not voter_ids:
+            await self.send_private_info(client_id, "投票対象の陣営参加者がいません。")
+            return
+
+        vote_id = str(uuid.uuid4())
+        required_approvals = (len(voter_ids) // 2) + 1
+        room["pending_open_vote"] = {
+            "vote_id": vote_id,
+            "requester_id": client_id,
+            "team": team,
+            "char_index": char_index,
+            "voter_ids": voter_ids,
+            "approved_ids": set(),
+            "rejected_ids": set(),
+            "required_approvals": required_approvals,
+            "status": "pending",
+        }
+
+        team_label = "先攻" if team == "team-left" else "後攻"
+        requester_name = self.nicknames.get(client_id, "ゲスト")
+        await self.broadcast_state(
+            public_info=f"{team_label}陣営で文字オープン投票を開始しました。",
+            event_type="open_vote_request",
+            event_message=f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。",
+            event_room_id=owner_id,
+            event_recipient_ids=voter_ids,
+            event_payload={
+                "vote_id": vote_id,
+                "team": team,
+                "char_index": char_index,
+                "required_approvals": required_approvals,
+                "total_voters": len(voter_ids),
+            },
+        )
+
+    async def respond_open_vote(self, client_id: str, vote_id: str, approve: bool):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        pending_vote = room.get("pending_open_vote")
+
+        if not pending_vote or pending_vote.get("status") != "pending":
+            await self.send_private_info(client_id, "進行中の投票がありません。")
+            return
+
+        if pending_vote.get("vote_id") != vote_id:
+            await self.send_private_info(client_id, "投票IDが一致しません。")
+            return
+
+        voter_ids = pending_vote["voter_ids"]
+        if client_id not in voter_ids:
+            await self.send_private_info(client_id, "この投票には参加できません。")
+            return
+
+        if client_id in pending_vote["approved_ids"] or client_id in pending_vote["rejected_ids"]:
+            await self.send_private_info(client_id, "この投票にはすでに回答済みです。")
+            return
+
+        if approve:
+            pending_vote["approved_ids"].add(client_id)
+        else:
+            pending_vote["rejected_ids"].add(client_id)
+
+        approvals = len(pending_vote["approved_ids"])
+        rejections = len(pending_vote["rejected_ids"])
+        required = pending_vote["required_approvals"]
+        team = pending_vote["team"]
+        char_index = pending_vote["char_index"]
+
+        if approvals >= required:
+            pending_vote["status"] = "approved"
+            result = apply_open_character(room, team, char_index)
+            room["pending_open_vote"] = None
+
+            if not result.get("ok"):
+                await self.broadcast_state(
+                    public_info="文字オープン投票は可決されましたが、オープン処理に失敗しました。",
+                    event_type="open_vote_resolved",
+                    event_room_id=owner_id,
+                    event_payload={
+                        "vote_id": vote_id,
+                        "approved": False,
+                        "char_index": char_index,
+                        "reason": result.get("error", "open_failed"),
+                    },
+                    event_recipient_ids=voter_ids,
+                )
+                return
+
+            is_yakumono = result.get("is_yakumono", False)
+            await self.broadcast_state(
+                public_info=f"{char_index + 1}文字目がオープンされました。",
+                event_type="open_vote_resolved",
+                event_message=f"オープン投票可決: {char_index + 1}文字目",
+                event_room_id=owner_id,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": True,
+                    "char_index": char_index,
+                    "is_yakumono": is_yakumono,
+                },
+            )
+            return
+
+        max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
+        if max_possible_approvals < required:
+            pending_vote["status"] = "rejected"
+            room["pending_open_vote"] = None
+            await self.broadcast_state(
+                public_info=f"{char_index + 1}文字目のオープン投票は否決されました。",
+                event_type="open_vote_resolved",
+                event_message=f"オープン投票否決: {char_index + 1}文字目",
+                event_room_id=owner_id,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": False,
+                    "char_index": char_index,
+                    "reason": "rejected",
+                },
+            )
 
     async def send_private_info(
         self,
@@ -544,6 +724,20 @@ class QuizGameManager:
         if payload_type == "open_character":
             char_index = payload.get("char_index")
             await self.open_character(client_id, char_index)
+            return
+
+        if payload_type == "open_vote_request":
+            char_index = payload.get("char_index")
+            await self.request_open_vote(client_id, char_index)
+            return
+
+        if payload_type == "open_vote_response":
+            vote_id = str(payload.get("vote_id", "")).strip()
+            approve = bool(payload.get("approve", False))
+            if vote_id == "":
+                await self.send_private_info(client_id, "投票IDが不正です。")
+                return
+            await self.respond_open_vote(client_id, vote_id, approve)
             return
 
         if payload_type == "submit_answer":

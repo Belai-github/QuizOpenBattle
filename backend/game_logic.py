@@ -1,6 +1,33 @@
 import random
 
 
+QUESTION_MASK_CHAR = "■"
+
+
+def _normalized_question_chars(text: str):
+    return [ch for ch in str(text or "") if ch not in {"\n", "\r"}]
+
+
+def _build_visible_question_text(normalized_chars: list[str], game: dict | None, chat_role: str):
+    if not normalized_chars:
+        return ""
+
+    if chat_role == "questioner":
+        return "".join(normalized_chars)
+
+    masked = [QUESTION_MASK_CHAR] * len(normalized_chars)
+    if not game or game.get("game_status") != "playing":
+        return "".join(masked)
+
+    opened_by_team = game.get("opened_by_team", {})
+    for idx, ch in enumerate(normalized_chars):
+        owner = opened_by_team.get(idx)
+        if owner == "yakumono" or owner == chat_role:
+            masked[idx] = ch
+
+    return "".join(masked)
+
+
 def remove_client_from_all_rooms(rooms: dict, client_id: str):
     for room in rooms.values():
         room["left_participants"].discard(client_id)
@@ -82,7 +109,9 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         )
 
     raw_question_text = str(room.get("question_text", ""))
-    question_text_for_client = raw_question_text if chat_role == "questioner" else ""
+    normalized_chars = _normalized_question_chars(raw_question_text)
+    normalized_text = "".join(normalized_chars)
+    question_text_for_client = normalized_text if chat_role == "questioner" else ""
 
     # ゲーム状態をJSON シリアライズ可能な形式に変換
     game_state = room.get("game")
@@ -97,12 +126,15 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             "opened_by_team": {str(k): v for k, v in game_state.get("opened_by_team", {}).items()},
         }
 
+    question_visible_text = _build_visible_question_text(normalized_chars, room.get("game"), chat_role)
+
     return {
         "room_owner_id": owner_id,
         "questioner_id": owner_id,
         "questioner_name": room["questioner_name"],
         "question_text": question_text_for_client,
-        "question_length": len(raw_question_text),
+        "question_visible_text": question_visible_text,
+        "question_length": len(normalized_chars),
         "yakumono_indexes": sorted(list(room.get("yakumono_indexes", set()))),
         "game_state": room.get("game_state", "waiting"),
         "game": game_state,
@@ -214,7 +246,7 @@ def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
             "correct_answer": None,  # False=誤答, True=正解, None=未답
         },
         "team_right": {
-            "action_points": 1,
+            "action_points": 0,
             "bonus_action_points": 0,
             "correct_answer": None,
         },
@@ -342,6 +374,18 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
 # ==================== ゲーム中のアクション処理 ====================
 
 
+def _team_state_key(team: str):
+    if team == "team-left":
+        return "team_left"
+    if team == "team-right":
+        return "team_right"
+    return ""
+
+
+def _is_no_action_remaining(team_state: dict):
+    return team_state.get("action_points", 0) <= 0 and team_state.get("bonus_action_points", 0) <= 0
+
+
 def apply_open_character(room: dict, team: str, char_index: int):
     """
     指定されたチームが文字をオープンします。
@@ -365,7 +409,7 @@ def apply_open_character(room: dict, team: str, char_index: int):
         return {"ok": False, "error": "あなたのターンではありません。"}
 
     # アクション権があるかどうか確認
-    team_state = game.get(team, {})
+    team_state = game.get(_team_state_key(team), {})
     total_actions = team_state.get("action_points", 0) + team_state.get("bonus_action_points", 0)
     if total_actions <= 0:
         return {"ok": False, "error": "アクション権がありません。"}
@@ -399,6 +443,9 @@ def apply_open_character(room: dict, team: str, char_index: int):
     else:
         team_state["bonus_action_points"] -= 1
 
+    if _is_no_action_remaining(team_state):
+        yield_turn(game)
+
     return {
         "ok": True,
         "is_yakumono": is_yakumono,
@@ -428,9 +475,9 @@ def apply_submit_answer(room: dict, team: str, is_correct: bool):
     if game.get("current_turn_team") != team:
         return {"ok": False, "error": "あなたのターンではありません。"}
 
-    team_state = game.get(team, {})
+    team_state = game.get(_team_state_key(team), {})
     other_team = "team-right" if team == "team-left" else "team-left"
-    other_team_state = game.get(other_team, {})
+    other_team_state = game.get(_team_state_key(other_team), {})
 
     if is_correct:
         # 正解
@@ -479,17 +526,15 @@ def apply_end_turn(room: dict, team: str):
     if game.get("current_turn_team") != team:
         return {"ok": False, "error": "あなたのターンではありません。"}
 
-    # ターン中のアクション権をリセット
-    team_state = game.get(team, {})
-    team_state["action_points"] = 1
+    # 通常アクション権はターン終了時に持ち越さない
+    team_state = game.get(_team_state_key(team), {})
+    team_state["action_points"] = 0
 
     # 次のターンへ
     yield_turn(game)
 
-    # 新しいターンのチームのアクション権を1付与
+    # 新しいターン側の通常アクション権付与は yield_turn 側で行う
     new_turn_team = game.get("current_turn_team")
-    new_team_state = game.get(new_turn_team, {})
-    # action_pointsはすでにリセットされているので追加不要
 
     return {
         "ok": True,
@@ -499,15 +544,18 @@ def apply_end_turn(room: dict, team: str):
 
 def yield_turn(game: dict):
     """ターンを相手に譲渡します。"""
-    current = game.get("current_turn_team")
+    current = str(game.get("current_turn_team") or "")
+    current_team_key = _team_state_key(current)
+    if current_team_key in game:
+        game[current_team_key]["action_points"] = 0
+
     next_team = "team-right" if current == "team-left" else "team-left"
     game["current_turn_team"] = next_team
 
-    # 次のターンのチームにアクション権を付与（＋アクション権は持ち越し）
-    if next_team in game:
-        next_team_state = game[next_team]
-        if next_team_state.get("action_points", 0) == 0:
-            next_team_state["action_points"] = 1
+    # 次ターン開始時、通常アクション権を1配る（＋アクション権は持ち越し）
+    next_team_key = _team_state_key(next_team)
+    if next_team_key in game:
+        game[next_team_key]["action_points"] = 1
 
 
 def build_game_state_for_client(room: dict, client_id: str, viewer_team: str):

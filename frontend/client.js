@@ -22,6 +22,8 @@ let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
 let currentRoomGameState = null; // "waiting" | "playing" | null
 let currentGameState = null; // game中の詳細状態: {current_turn_team, team_left: {...}, team_right: {...}, ...}
+const handledOpenVoteIds = new Set();
+let openVoteRequestPending = false;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const ARENA_MASK_CHAR = "■";
@@ -216,6 +218,13 @@ function isInGameArena() {
 function canSelectArenaQuestionChars() {
     const roomState = currentRoomGameState || "waiting";
     return isInGameArena() && userRole === "questioner" && roomState === "waiting";
+}
+
+function canRequestOpenCharacter() {
+    if (!isInGameArena()) return false;
+    if ((currentRoomGameState || "waiting") !== "playing") return false;
+    if (userRole !== "team-left" && userRole !== "team-right") return false;
+    return currentGameState?.current_turn_team === userRole;
 }
 
 function updateChatLengthWarning(inputEl) {
@@ -655,14 +664,47 @@ function buildArenaQuestionRows(charsPerLine) {
     }
 
     const lineLimit = Number.isFinite(charsPerLine) ? Math.max(Math.floor(charsPerLine), ARENA_MIN_CHARS_PER_LINE) : 10;
-    const canShowRaw = userRole === "questioner" && questionerShowRawQuestionText;
-    const renderChars = normalized.map((ch) => (canShowRaw ? ch : ARENA_MASK_CHAR));
+    const shouldMaskForQuestioner = userRole === "questioner" && !questionerShowRawQuestionText;
+    const renderChars = shouldMaskForQuestioner ? normalized.map(() => ARENA_MASK_CHAR) : normalized;
 
     const rows = [];
     for (let i = 0; i < renderChars.length; i += lineLimit) {
         rows.push(renderChars.slice(i, i + lineLimit));
     }
     return rows;
+}
+
+function getOpenedByTeamMap() {
+    const source = currentGameState?.opened_by_team;
+    if (!source || typeof source !== "object") {
+        return {};
+    }
+    return source;
+}
+
+function getDisplayCharForIndex(originalChar, index) {
+    const openedByTeam = getOpenedByTeamMap();
+    const owner = openedByTeam[String(index)];
+
+    if (!owner || owner === "yakumono") {
+        return originalChar;
+    }
+
+    const isQuestioner = userRole === "questioner";
+    const canSeeOriginal = isQuestioner || owner === userRole;
+    if (canSeeOriginal) {
+        return originalChar;
+    }
+
+    // 相手陣営がオープンした文字は相手色で表示する
+    if (owner === "team-left") {
+        return "🟥";
+    }
+    if (owner === "team-right") {
+        return "🟦";
+    }
+
+    return originalChar;
 }
 
 function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
@@ -673,14 +715,17 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
         return;
     }
 
-    const selectable = canSelectArenaQuestionChars();
+    const selectableForSetup = canSelectArenaQuestionChars();
+    const selectableForOpen = canRequestOpenCharacter();
+    const selectable = selectableForSetup || selectableForOpen;
+    const openedByTeam = getOpenedByTeamMap();
 
     let totalChars = 0;
     rows.forEach((row) => {
         totalChars += row.length;
     });
 
-    if (!selectable) {
+    if (!selectableForSetup) {
         selectedArenaQuestionCharIndexes.clear();
         lastAutoSelectedQuestionKey = null;
     } else {
@@ -700,13 +745,17 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
         lineEl.className = "arena-question-line";
 
         rowChars.forEach((char) => {
+            const isOpened = Boolean(openedByTeam[String(globalIndex)]);
+            const displayChar = getDisplayCharForIndex(char, globalIndex);
             const charEl = document.createElement("span");
             charEl.className = "arena-question-char";
             charEl.setAttribute("aria-label", `文字 ${globalIndex + 1}`);
             charEl.dataset.charIndex = String(globalIndex);
-            charEl.textContent = char;
+            charEl.textContent = displayChar;
 
-            if (selectable) {
+            const canClickInSetup = selectableForSetup;
+            const canClickInOpen = selectableForOpen && !isOpened;
+            if (canClickInSetup || canClickInOpen) {
                 charEl.classList.add("is-selectable");
                 charEl.setAttribute("role", "button");
                 charEl.setAttribute("tabindex", "0");
@@ -714,7 +763,7 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
                 charEl.setAttribute("aria-disabled", "true");
             }
 
-            if (selectedArenaQuestionCharIndexes.has(globalIndex)) {
+            if (selectableForSetup && selectedArenaQuestionCharIndexes.has(globalIndex)) {
                 charEl.classList.add("is-selected");
             }
 
@@ -772,11 +821,15 @@ function renderArena(currentRoom) {
     titleEl.textContent = `出題者: ${questionerLabel}`;
 
     const serverQuestionText = String(currentRoom.question_text || "");
+    const serverQuestionVisibleText = String(currentRoom.question_visible_text || "");
     const serverQuestionLength = Number(currentRoom.question_length || 0);
-    if (serverQuestionText) {
+
+    if (userRole === "questioner" && serverQuestionText) {
         currentArenaQuestionRawText = serverQuestionText;
+    } else if (serverQuestionVisibleText) {
+        currentArenaQuestionRawText = serverQuestionVisibleText;
     } else if (Number.isFinite(serverQuestionLength) && serverQuestionLength > 0) {
-        // 非出題者には問題文本文を配信しないため、長さ情報だけで伏せ字表示を作る。
+        // サーバーが可視化文字列を返せないケースでは長さ情報だけで伏せ字表示を作る。
         currentArenaQuestionRawText = ARENA_MASK_CHAR.repeat(Math.floor(serverQuestionLength));
     } else {
         currentArenaQuestionRawText = "";
@@ -938,7 +991,7 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
 }
 
 function appendEventLog(eventType, eventMessage, eventChatType = null) {
-    const allowedTypes = new Set(["join", "leave", "question", "chat", "room_shuffle"]);
+    const allowedTypes = new Set(["join", "leave", "question", "chat", "room_shuffle", "open_vote_request", "open_vote_resolved"]);
     if (!allowedTypes.has(eventType) || !eventMessage) {
         return;
     }
@@ -1010,6 +1063,10 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             void showConfirmModal(data.private_info, { hideCancel: true, okLabel: "OK" });
         } else if (data.event_type === "private_notice" && data.private_info) {
             void showAlertModal(data.private_info);
+        }
+
+        if (data.event_type === "open_vote_request" && data.event_payload) {
+            void handleOpenVoteRequest(data.event_payload);
         }
 
         appendEventLog(data.event_type, data.event_message, data.event_chat_type);
@@ -1169,21 +1226,85 @@ function bindChatHandlers() {
 bindChatHandlers();
 
 function toggleArenaQuestionCharSelectionFromTarget(targetEl) {
-    if (!canSelectArenaQuestionChars()) return;
-
     const charEl = targetEl?.closest?.(".arena-question-char");
     if (!charEl) return;
 
     const index = Number(charEl.dataset.charIndex);
     if (!Number.isFinite(index)) return;
+    const isOpened = Boolean(getOpenedByTeamMap()[String(index)]);
 
-    if (selectedArenaQuestionCharIndexes.has(index)) {
-        selectedArenaQuestionCharIndexes.delete(index);
-    } else {
-        selectedArenaQuestionCharIndexes.add(index);
+    if (canSelectArenaQuestionChars()) {
+        if (selectedArenaQuestionCharIndexes.has(index)) {
+            selectedArenaQuestionCharIndexes.delete(index);
+        } else {
+            selectedArenaQuestionCharIndexes.add(index);
+        }
+
+        renderArenaQuestionText();
+        return;
     }
 
-    renderArenaQuestionText();
+    if (canRequestOpenCharacter()) {
+        if (isOpened) {
+            return;
+        }
+        requestOpenVote(index);
+    }
+}
+
+function requestOpenVote(charIndex) {
+    if (openVoteRequestPending) {
+        void showAlertModal("投票開始処理中です。少し待ってください。");
+        return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        void showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    openVoteRequestPending = true;
+    ws.send(
+        JSON.stringify({
+            type: "open_vote_request",
+            char_index: charIndex,
+            timestamp: Date.now()
+        })
+    );
+
+    window.setTimeout(() => {
+        openVoteRequestPending = false;
+    }, 800);
+}
+
+async function handleOpenVoteRequest(payload) {
+    const voteId = String(payload?.vote_id || "");
+    const charIndex = Number(payload?.char_index);
+    if (!voteId || !Number.isFinite(charIndex)) return;
+    if (handledOpenVoteIds.has(voteId)) return;
+
+    handledOpenVoteIds.add(voteId);
+
+    const confirmed = await showConfirmModal(
+        `${charIndex + 1}文字目をオープンしますか？\n（陣営の過半数OKで実行されます）`,
+        {
+            okLabel: "OK",
+            cancelLabel: "キャンセル"
+        }
+    );
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "open_vote_response",
+            vote_id: voteId,
+            approve: Boolean(confirmed),
+            timestamp: Date.now()
+        })
+    );
 }
 
 document.addEventListener("click", (event) => {
