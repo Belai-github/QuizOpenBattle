@@ -41,12 +41,10 @@ from backend.storage.reconnect import (
     set_room_pending_disconnect,
 )
 from backend.broadcast import (
+    broadcast_state as broadcast_state_handler,
     build_participants as build_participants_payload,
     build_rooms_summary as build_rooms_summary_payload,
-    build_ws_response,
-    resolve_arena_history_chat_type,
-    resolve_event_timestamp,
-    resolve_log_marker_id,
+    send_private_info as send_private_info_handler,
 )
 from backend.api_routes import register_api_routes
 from backend.handlers.voting import (
@@ -65,6 +63,13 @@ from backend.handlers.room_ops import (
     shuffle_participants as shuffle_participants_handler,
     swap_participant_team as swap_participant_team_handler,
 )
+from backend.handlers.answering import (
+    judge_answer as judge_answer_handler,
+    judge_full_open_settlement as judge_full_open_settlement_handler,
+    submit_answer_attempt as submit_answer_attempt_handler,
+)
+from backend.handlers.chat import process_chat_message as process_chat_message_handler
+from backend.handlers.question import process_question as process_question_handler
 
 from backend.game_logic import (
     _normalized_question_chars,
@@ -365,99 +370,18 @@ class QuizGameManager:
         event_recipient_ids: set[str] | None = None,
         event_payload: dict | None = None,
     ):
-        history_message = str(event_message or public_info or "").strip()
-        event_timestamp = resolve_event_timestamp(event_payload)
-        event_identity = self._derive_event_identity(
-            event_room_id=event_room_id,
+        return await broadcast_state_handler(
+            self,
+            public_info,
+            private_map=private_map,
             event_type=event_type,
+            event_message=event_message,
             event_chat_type=event_chat_type,
+            event_room_id=event_room_id,
+            target_screen=target_screen,
+            event_recipient_ids=event_recipient_ids,
             event_payload=event_payload,
         )
-        log_marker_id = resolve_log_marker_id(event_payload)
-
-        skip_history = isinstance(event_payload, dict) and bool(event_payload.get("skip_history"))
-        if history_message and not skip_history and self._should_append_lobby_chat_history(event_type, event_chat_type, event_room_id):
-            self._append_lobby_chat_history(
-                event_type=event_type or "",
-                event_message=history_message,
-                event_chat_type=str(event_chat_type or "").strip() or "lobby",
-                event_identity=event_identity,
-                log_marker_id=log_marker_id,
-                event_timestamp=event_timestamp,
-            )
-
-        if event_room_id and history_message and not skip_history:
-            arena_history_chat_type = resolve_arena_history_chat_type(event_type, event_chat_type)
-            if arena_history_chat_type is not None:
-                self._append_arena_chat_history(
-                    event_room_id,
-                    event_type or "",
-                    history_message,
-                    arena_history_chat_type,
-                    log_marker_id,
-                    event_identity=event_identity,
-                    event_payload=event_payload,
-                    event_timestamp=event_timestamp,
-                )
-
-        participants = self.build_participants()
-        for client_id, ws in self.active_connections.items():
-            rooms = self.build_rooms_summary(client_id)
-            current_room = self.build_current_room_for_client(client_id)
-            private_info = ""
-            if private_map is not None:
-                private_info = private_map.get(client_id, "")
-
-            is_event_recipient = event_recipient_ids is None or client_id in event_recipient_ids
-            response_event_type = event_type if is_event_recipient else None
-            response_event_message = (
-                self._resolve_event_message_for_client(
-                    current_room,
-                    event_type,
-                    event_chat_type,
-                    history_message,
-                    event_payload,
-                )
-                if is_event_recipient
-                else None
-            )
-            response_event_payload = (
-                self._resolve_event_payload_for_client(
-                    current_room,
-                    event_type,
-                    event_chat_type,
-                    event_payload,
-                )
-                if is_event_recipient
-                else None
-            )
-            response_event_chat_type = event_chat_type if is_event_recipient else None
-
-            response = build_ws_response(
-                public_info=public_info,
-                private_info=private_info,
-                participants=participants,
-                rooms=rooms,
-                current_room=current_room,
-                lobby_chat_history=self._build_lobby_chat_history_snapshot(),
-                ai_question_generation_active=self.ai_question_generation_active,
-                ai_question_generation_owner_id=self.ai_question_generation_owner_id,
-                response_event_type=response_event_type,
-                response_event_message=response_event_message,
-                response_event_chat_type=response_event_chat_type,
-                event_room_id=event_room_id,
-                target_screen=target_screen,
-                response_event_payload=response_event_payload,
-                is_event_recipient=is_event_recipient,
-                history_message=history_message,
-                event_identity=event_identity,
-                event_timestamp=event_timestamp,
-            )
-            await ws.send_text(json.dumps(response))
-
-        should_reveal_finished_answers = event_type == "game_finished" and bool(event_room_id) and not (isinstance(event_payload, dict) and bool(event_payload.get("skip_finished_answer_reveal")))
-        if should_reveal_finished_answers:
-            await self._rebroadcast_finished_answer_logs(str(event_room_id))
 
     def _resolve_team_for_client(self, room: dict, client_id: str):
         if client_id in room["left_participants"]:
@@ -2119,24 +2043,13 @@ class QuizGameManager:
         target_screen: str | None = None,
         event_type: str = "private_notice",
     ):
-        ws = self.active_connections.get(client_id)
-        if ws is None:
-            return
-
-        response = {
-            "public_info": "",
-            "private_info": message,
-            "participants": self.build_participants(),
-            "rooms": self.build_rooms_summary(client_id),
-            "current_room": self.build_current_room_for_client(client_id),
-            "lobby_chat_history": self._build_lobby_chat_history_snapshot(),
-            "event_type": event_type,
-            "event_message": None,
-            "event_chat_type": None,
-            "event_room_id": None,
-            "target_screen": target_screen,
-        }
-        await ws.send_text(json.dumps(response))
+        return await send_private_info_handler(
+            self,
+            client_id,
+            message,
+            target_screen=target_screen,
+            event_type=event_type,
+        )
 
     async def cancel_question(self, requester_id: str, room_owner_id: str):
         return await cancel_question_handler(self, requester_id, room_owner_id)
@@ -2357,6 +2270,9 @@ class QuizGameManager:
         await self.request_turn_end_attempt(client_id)
 
     async def submit_answer_attempt(self, client_id: str, answer_text: str):
+        return await submit_answer_attempt_handler(self, client_id, answer_text)
+
+    async def _submit_answer_attempt_impl(self, client_id: str, answer_text: str):
         """参加者が解答内容を提出するアクション"""
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
@@ -2634,6 +2550,9 @@ class QuizGameManager:
         await self.send_private_info(client_id, "提案しました。")
 
     async def judge_answer(self, client_id: str, is_correct: bool):
+        return await judge_answer_handler(self, client_id, is_correct)
+
+    async def _judge_answer_impl(self, client_id: str, is_correct: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -2658,6 +2577,9 @@ class QuizGameManager:
             await self.send_private_info(client_id, result.get("error", "正誤判定に失敗しました。"))
 
     async def judge_full_open_settlement(self, client_id: str, vote_id: str, left_is_correct: bool, right_is_correct: bool):
+        return await judge_full_open_settlement_handler(self, client_id, vote_id, left_is_correct, right_is_correct)
+
+    async def _judge_full_open_settlement_impl(self, client_id: str, vote_id: str, left_is_correct: bool, right_is_correct: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -2954,6 +2876,9 @@ class QuizGameManager:
                 await self._evaluate_team_forfeit_if_needed(room_owner_id_before_exit, room)
 
     async def process_question(self, player_id: str, payload: dict):
+        return await process_question_handler(self, player_id, payload)
+
+    async def _process_question_impl(self, player_id: str, payload: dict):
         normalized_payload = dict(payload or {})
         is_ai_mode = bool(normalized_payload.get("is_ai_mode"))
         model_id = normalize_model_id(normalized_payload.get("model_id"))
@@ -3152,6 +3077,9 @@ class QuizGameManager:
             await self.send_private_info(player_id, "", target_screen="game_arena")
 
     async def process_chat_message(self, client_id: str, payload: dict):
+        return await process_chat_message_handler(self, client_id, payload)
+
+    async def _process_chat_message_impl(self, client_id: str, payload: dict):
         message = str(payload.get("message", "")).replace("\r\n", "\n").replace("\r", "\n").strip()
         if message == "":
             return

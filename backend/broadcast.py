@@ -1,3 +1,4 @@
+import json
 import time
 
 
@@ -143,3 +144,137 @@ def build_ws_response(
         "event_version": event_identity["event_version"] if is_event_recipient else None,
         "event_timestamp": event_timestamp if is_event_recipient else None,
     }
+
+
+async def send_private_info(
+    manager,
+    client_id: str,
+    message: str,
+    target_screen: str | None = None,
+    event_type: str = "private_notice",
+):
+    ws = manager.active_connections.get(client_id)
+    if ws is None:
+        return
+
+    response = {
+        "public_info": "",
+        "private_info": message,
+        "participants": manager.build_participants(),
+        "rooms": manager.build_rooms_summary(client_id),
+        "current_room": manager.build_current_room_for_client(client_id),
+        "lobby_chat_history": manager._build_lobby_chat_history_snapshot(),
+        "event_type": event_type,
+        "event_message": None,
+        "event_chat_type": None,
+        "event_room_id": None,
+        "target_screen": target_screen,
+    }
+    await ws.send_text(json.dumps(response))
+
+
+async def broadcast_state(
+    manager,
+    public_info: str,
+    private_map: dict | None = None,
+    event_type: str | None = None,
+    event_message: str | None = None,
+    event_chat_type: str | None = None,
+    event_room_id: str | None = None,
+    target_screen: str | None = None,
+    event_recipient_ids: set[str] | None = None,
+    event_payload: dict | None = None,
+):
+    history_message = str(event_message or public_info or "").strip()
+    event_timestamp = resolve_event_timestamp(event_payload)
+    event_identity = manager._derive_event_identity(
+        event_room_id=event_room_id,
+        event_type=event_type,
+        event_chat_type=event_chat_type,
+        event_payload=event_payload,
+    )
+    log_marker_id = resolve_log_marker_id(event_payload)
+
+    skip_history = isinstance(event_payload, dict) and bool(event_payload.get("skip_history"))
+    if history_message and not skip_history and manager._should_append_lobby_chat_history(event_type, event_chat_type, event_room_id):
+        manager._append_lobby_chat_history(
+            event_type=event_type or "",
+            event_message=history_message,
+            event_chat_type=str(event_chat_type or "").strip() or "lobby",
+            event_identity=event_identity,
+            log_marker_id=log_marker_id,
+            event_timestamp=event_timestamp,
+        )
+
+    if event_room_id and history_message and not skip_history:
+        arena_history_chat_type = resolve_arena_history_chat_type(event_type, event_chat_type)
+        if arena_history_chat_type is not None:
+            manager._append_arena_chat_history(
+                event_room_id,
+                event_type or "",
+                history_message,
+                arena_history_chat_type,
+                log_marker_id,
+                event_identity=event_identity,
+                event_payload=event_payload,
+                event_timestamp=event_timestamp,
+            )
+
+    participants = manager.build_participants()
+    for client_id, ws in manager.active_connections.items():
+        rooms = manager.build_rooms_summary(client_id)
+        current_room = manager.build_current_room_for_client(client_id)
+        private_info = ""
+        if private_map is not None:
+            private_info = private_map.get(client_id, "")
+
+        is_event_recipient = event_recipient_ids is None or client_id in event_recipient_ids
+        response_event_type = event_type if is_event_recipient else None
+        response_event_message = (
+            manager._resolve_event_message_for_client(
+                current_room,
+                event_type,
+                event_chat_type,
+                history_message,
+                event_payload,
+            )
+            if is_event_recipient
+            else None
+        )
+        response_event_payload = (
+            manager._resolve_event_payload_for_client(
+                current_room,
+                event_type,
+                event_chat_type,
+                event_payload,
+            )
+            if is_event_recipient
+            else None
+        )
+        response_event_chat_type = event_chat_type if is_event_recipient else None
+
+        response = build_ws_response(
+            public_info=public_info,
+            private_info=private_info,
+            participants=participants,
+            rooms=rooms,
+            current_room=current_room,
+            lobby_chat_history=manager._build_lobby_chat_history_snapshot(),
+            ai_question_generation_active=manager.ai_question_generation_active,
+            ai_question_generation_owner_id=manager.ai_question_generation_owner_id,
+            response_event_type=response_event_type,
+            response_event_message=response_event_message,
+            response_event_chat_type=response_event_chat_type,
+            event_room_id=event_room_id,
+            target_screen=target_screen,
+            response_event_payload=response_event_payload,
+            is_event_recipient=is_event_recipient,
+            history_message=history_message,
+            event_identity=event_identity,
+            event_timestamp=event_timestamp,
+        )
+        await ws.send_text(json.dumps(response))
+
+    should_reveal_finished_answers = event_type == "game_finished" and bool(event_room_id) and not (isinstance(event_payload, dict) and bool(event_payload.get("skip_finished_answer_reveal")))
+    if should_reveal_finished_answers:
+        await manager._rebroadcast_finished_answer_logs(str(event_room_id))
