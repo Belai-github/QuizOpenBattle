@@ -1150,8 +1150,6 @@ class QuizGameManager:
                     event_room_id=owner_id,
                 )
                 await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
-
-            await self.send_private_info(client_id, "オープンしました。")
             return
 
         vote_id = str(uuid.uuid4())
@@ -1318,6 +1316,18 @@ class QuizGameManager:
                 event_recipient_ids=open_log_recipient_ids,
             )
 
+            notify_targets = set(pending_vote.get("approved_ids", set()))
+            requester_id = pending_vote.get("requester_id")
+            if requester_id:
+                notify_targets.add(requester_id)
+            private_map = {target_id: "オープンの提案が否決されました。" for target_id in notify_targets}
+            await self.broadcast_state(
+                public_info="",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
+
     async def respond_answer_vote(self, client_id: str, vote_id: str, approve: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
@@ -1454,6 +1464,18 @@ class QuizGameManager:
                     "reason": "rejected",
                     "log_marker_id": vote_id,
                 },
+            )
+
+            notify_targets = set(pending_vote.get("approved_ids", set()))
+            requester_id = pending_vote.get("requester_id")
+            if requester_id:
+                notify_targets.add(requester_id)
+            private_map = {target_id: "アンサーの提案が否決されました。" for target_id in notify_targets}
+            await self.broadcast_state(
+                public_info="",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
             )
             return
 
