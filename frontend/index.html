@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>QuizOpenBattle</title>
     <link rel="icon" href="img/comp_favicon.png" type="image/png">
     <link rel="stylesheet" href="style.css">
@@ -320,6 +320,41 @@
     <script>
         const url = new URL(window.location.href);
         const unix = String(Math.floor(Date.now() / 1000));
+
+        // モバイルブラウザ差異を吸収するため、ズーム操作を明示的に抑止。
+        (() => {
+            let lastTouchEndAt = 0;
+
+            document.addEventListener("touchstart", (event) => {
+                if (event.touches.length > 1) {
+                    event.preventDefault();
+                }
+            }, { passive: false });
+
+            document.addEventListener("touchmove", (event) => {
+                if (event.touches.length > 1) {
+                    event.preventDefault();
+                }
+            }, { passive: false });
+
+            document.addEventListener("touchend", (event) => {
+                const now = Date.now();
+                if (now - lastTouchEndAt <= 300) {
+                    event.preventDefault();
+                }
+                lastTouchEndAt = now;
+            }, { passive: false });
+
+            document.addEventListener("gesturestart", (event) => event.preventDefault());
+            document.addEventListener("gesturechange", (event) => event.preventDefault());
+            document.addEventListener("gestureend", (event) => event.preventDefault());
+
+            window.addEventListener("wheel", (event) => {
+                if (event.ctrlKey) {
+                    event.preventDefault();
+                }
+            }, { passive: false });
+        })();
 
         // 毎回 t を現在時刻に更新（URL表示も更新）
         url.searchParams.set("t", unix);

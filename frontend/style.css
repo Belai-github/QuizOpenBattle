@@ -1928,6 +1928,18 @@ body.modal-open #arena-question-text .arena-question-line {
 
 /* モバイル版（768px未満）: 進行ログをオーバーレイ化 */
 @media (max-width: 767px) {
+
+    html,
+    body,
+    a,
+    button,
+    [role="button"],
+    input,
+    textarea,
+    select {
+        touch-action: manipulation;
+    }
+
     #arena-logs-modal {
         padding: 12px;
         border: none;
