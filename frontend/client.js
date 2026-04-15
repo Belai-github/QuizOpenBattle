@@ -1569,8 +1569,10 @@ function updateArenaLeaveLabel(modeOrRoom) {
     const ownerId = String(snapshot?.room_owner_id || "");
     const me = String(myClientId || "");
     const isOwner = ownerId !== "" && me !== "" && ownerId === me;
+    const isAiRoom = Boolean(snapshot?.is_ai_mode);
 
-    if (isOwner) {
+    // AI部屋は右上の閉じるボタンで管理し、退室リンクは通常表記にする。
+    if (isOwner && !isAiRoom) {
         leaveGameArenaEl.textContent = "✕ 部屋を閉じる";
         leaveGameArenaEl.setAttribute("aria-label", "部屋を閉じる");
         return;
