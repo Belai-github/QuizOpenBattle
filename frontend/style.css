@@ -886,16 +886,18 @@ button:hover {
     line-height: 1;
     cursor: default;
     user-select: none;
+    -webkit-tap-highlight-color: transparent;
     transition: transform 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
     transform-origin: center;
 }
 
 .arena-question-char.is-mask-token {
+    --mask-token-bg: #64748b;
     position: relative;
     overflow: hidden;
     border-radius: 0.22em;
     border: none;
-    background: #64748b;
+    background: var(--mask-token-bg);
     color: transparent;
     box-shadow: 0 4px 10px rgba(30, 41, 59, 0.28);
 }
@@ -914,13 +916,31 @@ button:hover {
 }
 
 .arena-question-char.is-mask-token.is-owned-left {
-    background: #ef4444;
+    --mask-token-bg: #ef4444;
+    background: var(--mask-token-bg);
     box-shadow: 0 4px 10px rgba(185, 28, 28, 0.28);
 }
 
 .arena-question-char.is-mask-token.is-owned-right {
-    background: #3b82f6;
+    --mask-token-bg: #3b82f6;
+    background: var(--mask-token-bg);
     box-shadow: 0 4px 10px rgba(29, 78, 216, 0.28);
+}
+
+.arena-question-char.is-whitespace-visible {
+    border: 1px dashed #94a3b8;
+    border-radius: 0.22em;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.5em;
+    font-weight: 700;
+}
+
+.arena-question-char.is-mask-token:hover,
+.arena-question-char.is-mask-token:active,
+.arena-question-char.is-mask-token:focus,
+.arena-question-char.is-mask-token:focus-visible {
+    background: var(--mask-token-bg);
 }
 
 .arena-question-char[data-char-index] {
@@ -932,7 +952,7 @@ button:hover {
     touch-action: manipulation;
 }
 
-.arena-question-char.is-selectable:hover {
+.arena-question-char.is-selectable:not(.is-mask-token):hover {
     background: #e2e8f0;
     transform: scale(1.1);
 }
@@ -942,12 +962,13 @@ button:hover {
 }
 
 .arena-question-char.is-mask-token:hover::before {
+    color: #ffffff;
+}
+
+.arena-question-char.is-mask-token.is-selectable:active::before {
     color: #111827;
 }
 
-.arena-question-char.is-mask-token:active::before {
-    color: #111827;
-}
 
 @media (hover: none),
 (pointer: coarse) {
@@ -964,13 +985,17 @@ button:hover {
         color: #ffffff;
     }
 
-    .arena-question-char.is-selectable:active {
+    .arena-question-char.is-selectable:not(.is-mask-token):active {
         background: #e2e8f0;
         transform: scale(1.06);
     }
 
     .arena-question-char.is-mask-token.is-selectable:active {
         filter: brightness(1.06);
+    }
+
+    .arena-question-char.is-mask-token.is-selectable:active::before {
+        color: #111827;
     }
 }
 

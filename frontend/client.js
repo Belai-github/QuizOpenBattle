@@ -41,6 +41,7 @@ let lastAutoSelectedQuestionKey = null;
 const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
 let lastRulebookTriggerEl = null;
 let viewportDebugEl = null;
+let previousRoomGameState = null;
 
 function removeWhitespaceTextNodes(rootEl) {
     if (!rootEl) return;
@@ -340,6 +341,13 @@ function updateArenaLeaveLabel(mode) {
 }
 
 function updateGameStateUI() {
+    // waiting -> playing へ遷移したタイミングで、出題前の選択状態を確実に破棄する
+    if (previousRoomGameState !== "playing" && currentRoomGameState === "playing") {
+        selectedArenaQuestionCharIndexes.clear();
+        lastAutoSelectedQuestionKey = null;
+    }
+    previousRoomGameState = currentRoomGameState;
+
     if (!currentGameState || currentRoomGameState !== "playing") {
         // ゲーム中でない場合はアクション権表示をリセット・非表示
         const leftDisplay = document.getElementById("arena-action-points-left");
@@ -674,13 +682,9 @@ function renderNameList(listEl, names) {
 function splitIntoGraphemes(text) {
     if (typeof text !== "string" || text.length === 0) return [];
 
-    // 絵文字や結合文字を1文字として扱う。
-    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
-        const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
-        return Array.from(segmenter.segment(text), (seg) => seg.segment);
-    }
-
-    return Array.from(text);
+    // サーバー側のインデックス計算と一致させるため、NFC正規化 + code point単位で分割する。
+    const normalized = text.normalize("NFC");
+    return Array.from(normalized);
 }
 
 function getNormalizedArenaQuestionChars() {
@@ -917,6 +921,7 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
     const selectableForOpen = canRequestOpenCharacter();
     const selectable = selectableForSetup || selectableForOpen;
     const openedByTeam = getOpenedByTeamMap();
+    const viewerRole = getEffectiveQuestionViewerRole();
 
     let totalChars = 0;
     rows.forEach((row) => {
@@ -951,9 +956,14 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
             charEl.dataset.charIndex = String(globalIndex);
             charEl.textContent = displayInfo.text;
 
+            // どの経路でも空表示を避ける（白い穴に見える状態を防ぐ）
+            if (charEl.textContent === "") {
+                charEl.textContent = "□";
+            }
+
             if (displayInfo.tokenVariant) {
                 charEl.classList.add("is-mask-token");
-                charEl.dataset.tokenLabel = displayInfo.text;
+                charEl.dataset.tokenLabel = displayInfo.text || String(globalIndex + 1);
                 charEl.textContent = "";
                 if (displayInfo.tokenVariant === "left") {
                     charEl.classList.add("is-owned-left");
@@ -962,12 +972,25 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
                 }
             }
 
+            // 参加者/観戦者視点で空白文字が開いた場合、白い穴に見えないように可視記号で描く。
+            if (
+                displayInfo.tokenVariant == null
+                && viewerRole !== "questioner"
+                && typeof displayInfo.text === "string"
+                && displayInfo.text.trim() === ""
+            ) {
+                charEl.classList.add("is-whitespace-visible");
+                charEl.textContent = "□";
+                charEl.setAttribute("aria-label", `空白 文字 ${globalIndex + 1}`);
+            }
+
             const canClickInSetup = selectableForSetup;
             const canClickInOpen = selectableForOpen && !isOpened;
             if (canClickInSetup || canClickInOpen) {
                 charEl.classList.add("is-selectable");
                 charEl.setAttribute("role", "button");
-                charEl.setAttribute("tabindex", "0");
+                // 参加者の文字オープン操作はタップ主体なので、フォーカス残留を避ける。
+                charEl.setAttribute("tabindex", canClickInSetup ? "0" : "-1");
             } else {
                 charEl.setAttribute("aria-disabled", "true");
             }

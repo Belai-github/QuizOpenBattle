@@ -5,6 +5,7 @@ import time
 import uuid
 
 from backend.game_logic import (
+    _normalized_question_chars,
     apply_create_question_room,
     apply_exit_room,
     apply_join_room,
@@ -150,7 +151,7 @@ class QuizGameManager:
             await self.send_private_info(client_id, "無効な文字インデックスです。")
             return
 
-        question_length = len(str(room.get("question_text", "")))
+        question_length = len(_normalized_question_chars(room.get("question_text", "")))
         if char_index < 0 or char_index >= question_length:
             await self.send_private_info(client_id, "無効な文字インデックスです。")
             return

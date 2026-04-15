@@ -1,11 +1,13 @@
 import random
+import unicodedata
 
 
 QUESTION_MASK_CHAR = "■"
 
 
 def _normalized_question_chars(text: str):
-    return [ch for ch in str(text or "") if ch not in {"\n", "\r"}]
+    normalized_text = unicodedata.normalize("NFC", str(text or ""))
+    return [ch for ch in normalized_text if ch not in {"\n", "\r"}]
 
 
 def _build_visible_question_text(normalized_chars: list[str], game: dict | None, chat_role: str):
@@ -232,7 +234,7 @@ def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
         return {"ok": False, "error": "先攻・後攻の参加者がそろってから開始してください。"}
 
     payload = payload or {}
-    question_length = len(str(room.get("question_text", "")))
+    question_length = len(_normalized_question_chars(room.get("question_text", "")))
     selected_indexes = _sanitize_selected_indexes(payload.get("selected_char_indexes"), question_length)
     room["yakumono_indexes"] = selected_indexes
 
@@ -437,7 +439,7 @@ def apply_open_character(room: dict, team: str, char_index: int):
         return {"ok": False, "error": "アクション権がありません。"}
 
     # インデックスが有効か確認
-    question_length = len(str(room.get("question_text", "")))
+    question_length = len(_normalized_question_chars(room.get("question_text", "")))
     if not (0 <= char_index < question_length):
         return {"ok": False, "error": "無効な文字インデックスです。"}
 
