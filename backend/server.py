@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 import json
+import random
 
 app = FastAPI()
 
@@ -24,16 +25,53 @@ class QuizGameManager:
     def build_rooms_summary(self, viewer_client_id: str | None = None):
         rooms = []
         for owner_id, room in self.rooms.items():
+            participant_count = len(room["left_participants"]) + len(room["right_participants"])
             rooms.append(
                 {
                     "room_owner_id": owner_id,
                     "questioner_name": room["questioner_name"],
-                    "participant_count": len(room["participants"]),
+                    "participant_count": participant_count,
                     "spectator_count": len(room["spectators"]),
                     "is_owner": viewer_client_id == owner_id,
                 }
             )
         return rooms
+
+    def build_current_room_for_client(self, client_id: str):
+        for owner_id, room in self.rooms.items():
+            if owner_id == client_id:
+                role = "owner"
+            elif client_id in room["left_participants"] or client_id in room["right_participants"]:
+                role = "participant"
+            elif client_id in room["spectators"]:
+                role = "spectator"
+            else:
+                continue
+
+            # 左右の参加者を別々にリスト化
+            left_participant_names = []
+            for pid in room["left_participants"]:
+                left_participant_names.append(self.nicknames.get(pid, "ゲスト"))
+
+            right_participant_names = []
+            for pid in room["right_participants"]:
+                right_participant_names.append(self.nicknames.get(pid, "ゲスト"))
+
+            spectator_names = []
+            for sid in room["spectators"]:
+                spectator_names.append(self.nicknames.get(sid, "ゲスト"))
+
+            return {
+                "room_owner_id": owner_id,
+                "questioner_name": room["questioner_name"],
+                "question_text": room["question_text"],
+                "role": role,
+                "left_participants": left_participant_names,
+                "right_participants": right_participant_names,
+                "spectators": spectator_names,
+            }
+
+        return None
 
     async def broadcast_state(
         self,
@@ -47,6 +85,7 @@ class QuizGameManager:
         participants = self.build_participants()
         for client_id, ws in self.active_connections.items():
             rooms = self.build_rooms_summary(client_id)
+            current_room = self.build_current_room_for_client(client_id)
             private_info = ""
             if private_map is not None:
                 private_info = private_map.get(client_id, "")
@@ -56,6 +95,7 @@ class QuizGameManager:
                 "private_info": private_info,
                 "participants": participants,
                 "rooms": rooms,
+                "current_room": current_room,
                 "event_type": event_type,
                 "event_message": event_message,
                 "event_room_id": event_room_id,
@@ -79,6 +119,7 @@ class QuizGameManager:
             "private_info": message,
             "participants": self.build_participants(),
             "rooms": self.build_rooms_summary(client_id),
+            "current_room": self.build_current_room_for_client(client_id),
             "event_type": event_type,
             "event_message": None,
             "event_room_id": None,
@@ -98,7 +139,7 @@ class QuizGameManager:
 
         questioner_name = room["questioner_name"]
         # 強制退室通知は参加者・観戦者のみに送り、出題者本人には送らない。
-        affected_client_ids = set(room["participants"]) | set(room["spectators"])
+        affected_client_ids = set(room["left_participants"]) | set(room["right_participants"]) | set(room["spectators"])
         self.rooms.pop(room_owner_id, None)
 
         for target_client_id in affected_client_ids:
@@ -118,7 +159,8 @@ class QuizGameManager:
 
     def remove_client_from_all_rooms(self, client_id: str):
         for room in self.rooms.values():
-            room["participants"].discard(client_id)
+            room["left_participants"].discard(client_id)
+            room["right_participants"].discard(client_id)
             room["spectators"].discard(client_id)
 
     async def join_room(self, client_id: str, room_owner_id: str, role: str):
@@ -134,7 +176,25 @@ class QuizGameManager:
         self.remove_client_from_all_rooms(client_id)
 
         if role == "participant":
-            room["participants"].add(client_id)
+            # 左右の参加者数を比較して配置を決定
+            left_count = len(room["left_participants"])
+            right_count = len(room["right_participants"])
+
+            if left_count == right_count:
+                # 同数の場合はランダム
+                side = random.choice(["left", "right"])
+            elif left_count < right_count:
+                # 左の方が少ない場合は左へ
+                side = "left"
+            else:
+                # 右の方が少ない場合は右へ
+                side = "right"
+
+            if side == "left":
+                room["left_participants"].add(client_id)
+            else:
+                room["right_participants"].add(client_id)
+
             role_name = "参加者"
         else:
             room["spectators"].add(client_id)
@@ -185,7 +245,7 @@ class QuizGameManager:
             self.remove_client_from_all_rooms(client_id)
 
             if closed_room is not None:
-                affected_client_ids = set(closed_room["participants"]) | set(closed_room["spectators"])
+                affected_client_ids = set(closed_room["left_participants"]) | set(closed_room["right_participants"]) | set(closed_room["spectators"])
                 for target_client_id in affected_client_ids:
                     await self.send_private_info(
                         target_client_id,
@@ -216,7 +276,7 @@ class QuizGameManager:
         if client_id in self.rooms:
             room = self.rooms.pop(client_id)
 
-            affected_client_ids = set(room["participants"]) | set(room["spectators"])
+            affected_client_ids = set(room["left_participants"]) | set(room["right_participants"]) | set(room["spectators"])
             for target_client_id in affected_client_ids:
                 await self.send_private_info(
                     target_client_id,
@@ -255,7 +315,8 @@ class QuizGameManager:
             "owner_id": player_id,
             "question_text": question_text,
             "questioner_name": actor_name,
-            "participants": set(),
+            "left_participants": set(),
+            "right_participants": set(),
             "spectators": set(),
         }
 

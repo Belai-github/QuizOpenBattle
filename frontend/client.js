@@ -167,6 +167,49 @@ function renderParticipants(participants) {
     });
 }
 
+function renderNameList(listEl, names) {
+    listEl.innerHTML = "";
+    if (!Array.isArray(names) || names.length === 0) {
+        const emptyItem = document.createElement("li");
+        emptyItem.textContent = "なし";
+        listEl.appendChild(emptyItem);
+        return;
+    }
+
+    names.forEach((name) => {
+        const item = document.createElement("li");
+        item.textContent = name;
+        listEl.appendChild(item);
+    });
+}
+
+function renderArena(currentRoom) {
+    const titleEl = document.getElementById("arena-room-title");
+    const questionEl = document.getElementById("arena-question-text");
+    const leftListEl = document.getElementById("arena-player-left-list");
+    const rightListEl = document.getElementById("arena-player-right-list");
+    const spectatorListEl = document.getElementById("arena-spectator-list");
+
+    if (!currentRoom) {
+        titleEl.textContent = "出題者: -";
+        questionEl.textContent = "問題文を準備中...";
+        renderNameList(leftListEl, []);
+        renderNameList(rightListEl, []);
+        renderNameList(spectatorListEl, []);
+        return;
+    }
+
+    titleEl.textContent = `出題者: ${currentRoom.questioner_name}`;
+    questionEl.textContent = currentRoom.question_text || "問題文を準備中...";
+
+    const leftPlayers = Array.isArray(currentRoom.left_participants) ? currentRoom.left_participants : [];
+    const rightPlayers = Array.isArray(currentRoom.right_participants) ? currentRoom.right_participants : [];
+
+    renderNameList(leftListEl, leftPlayers);
+    renderNameList(rightListEl, rightPlayers);
+    renderNameList(spectatorListEl, currentRoom.spectators || []);
+}
+
 function requestRoomEntry(roomOwnerId, role) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
@@ -325,6 +368,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         appendEventLog(data.event_type, data.event_message);
         renderRooms(data.rooms);
         renderParticipants(data.participants);
+        renderArena(data.current_room);
     };
 });
 

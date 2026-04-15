@@ -41,13 +41,35 @@
                 </div>
             </div>
         </div>
-        <h3>参加者一覧</h3>
+        <h3>ログインプレイヤー</h3>
         <ul id="participants-list"></ul>
     </div>
 
     <div id="game-arena-screen" style="display: none;">
         <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">☓部屋を閉じる</div>
-        <!-- 今後のゲーム本編UIをここに配置 -->
+
+        <h3 id="arena-room-title">出題者: -</h3>
+
+        <div id="arena-board-layout">
+            <div id="arena-player-left" class="arena-player-box left">
+                <div class="arena-player-label">先行</div>
+                <ul id="arena-player-left-list"></ul>
+            </div>
+
+            <div id="arena-question-board">
+                <p id="arena-question-text">問題文を準備中...</p>
+            </div>
+
+            <div id="arena-player-right" class="arena-player-box right">
+                <div class="arena-player-label">後攻</div>
+                <ul id="arena-player-right-list"></ul>
+            </div>
+        </div>
+
+        <div id="arena-spectator-box">
+            <div class="arena-spectator-label">観戦者</div>
+            <ul id="arena-spectator-list"></ul>
+        </div>
     </div>
 
     <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-message">

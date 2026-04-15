@@ -305,6 +305,78 @@ button:hover {
     background: #fff1f2;
 }
 
+#arena-room-title {
+    margin: 0 0 12px;
+    font-size: 1.1rem;
+}
+
+#arena-board-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.arena-player-box {
+    border-radius: 12px;
+    padding: 10px;
+    min-height: 120px;
+}
+
+.arena-player-box.left {
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+}
+
+.arena-player-box.right {
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+}
+
+.arena-player-label {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+#arena-player-left-list,
+#arena-player-right-list,
+#arena-spectator-list {
+    margin: 0;
+    padding-left: 18px;
+}
+
+#arena-question-board {
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    background: #ffffff;
+    min-height: 160px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 12px;
+}
+
+#arena-question-text {
+    margin: 0;
+    font-size: 2.25rem;
+    line-height: 1.5;
+    font-weight: 700;
+    text-align: left;
+    word-break: break-word;
+}
+
+#arena-spectator-box {
+    margin-top: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    background: #e5e7eb;
+    padding: 10px;
+}
+
+.arena-spectator-label {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
 @media (min-width: 768px) {
     body {
         padding: 28px;
@@ -313,11 +385,21 @@ button:hover {
     #login-screen,
     #waiting-room-screen,
     #game-arena-screen {
+        max-width: 900px;
         padding: 20px;
     }
 
     #waiting-panels {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    #arena-board-layout {
+        grid-template-columns: 110px minmax(0, 1fr) 110px;
+        align-items: stretch;
+    }
+
+    #arena-question-text {
+        font-size: 2.7rem;
     }
 }
 
