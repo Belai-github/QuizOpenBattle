@@ -31,6 +31,25 @@
         <ul id="participants-list"></ul>
     </div>
 
+    <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-message">
+        <div class="modal-card">
+            <p id="confirm-message"></p>
+            <div class="modal-actions">
+                <button id="confirm-cancel-btn" type="button">キャンセル</button>
+                <button id="confirm-ok-btn" type="button">送信する</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="alert-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="alert-message">
+        <div class="modal-card">
+            <p id="alert-message"></p>
+            <div class="modal-actions single">
+                <button id="alert-ok-btn" type="button">OK</button>
+            </div>
+        </div>
+    </div>
+
     <script src="client.js"></script>
 </body>
 
