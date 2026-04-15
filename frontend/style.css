@@ -841,20 +841,22 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-answer-compose {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    position: relative;
 }
 
 #arena-answer-input {
     margin-top: 0;
     min-height: 48px;
-    padding-right: 12px;
+    padding-right: 196px;
 }
 
 .arena-answer-actions {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
     gap: 8px;
 }
 
