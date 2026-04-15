@@ -1532,8 +1532,8 @@ body[data-room-role="spectator"] #arena-answer-box {
     #arena-global-chat-box {
         margin-top: 10px;
         min-width: 0;
-        height: auto;
-        align-self: start;
+        height: 100%;
+        align-self: stretch;
     }
 
     #arena-spectator-box {
