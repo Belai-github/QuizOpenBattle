@@ -149,6 +149,26 @@ button:hover {
     background: #1e40af;
 }
 
+.ai-question-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ai-btn-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.45);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: ai-spin 0.8s linear infinite;
+}
+
+.ai-question-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+}
+
 #kifu-list-screen {
     width: 100%;
     max-width: 960px;
@@ -969,6 +989,33 @@ body.modal-open #arena-question-text .arena-question-line {
     min-width: 160px;
 }
 
+.ai-question-modal-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ai-question-modal-card h2 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.ai-question-modal-help {
+    margin: 0;
+    color: #475569;
+    font-size: 0.86rem;
+}
+
+#ai-genre-input {
+    margin-top: 0;
+}
+
+@keyframes ai-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 #confirm-cancel-btn {
     background: #ffffff;
     color: var(--danger-muted);
@@ -1768,6 +1815,23 @@ body[data-room-role="spectator"] #arena-answer-box {
 
 #leave-game-arena:hover {
     text-decoration: underline;
+}
+
+#close-room-btn {
+    color: #374151;
+    font-size: 0.95rem;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+}
+
+#close-room-btn:hover {
+    text-decoration: underline;
+}
+
+body[data-app-mode="kifu"] #close-room-btn {
+    display: none !important;
 }
 
 #viewport-debug {

@@ -1,8 +1,15 @@
 import os
 import json
+import re
+import unicodedata
+from difflib import SequenceMatcher
 from google import genai
 from dotenv import load_dotenv
-from pronpt import get_quiz_prompt, get_judge_prompt
+
+try:
+    from backend.pronpt import get_quiz_prompt, get_judge_prompt
+except ImportError:
+    from pronpt import get_quiz_prompt, get_judge_prompt
 
 # .envファイルからAPIキーを環境変数として読み込む
 load_dotenv()
@@ -10,8 +17,53 @@ load_dotenv()
 # 新しいSDKのクライアントを初期化（環境変数 GEMINI_API_KEY が自動で使われます）
 client = genai.Client()
 
-# 現在の最新安定・高速モデルを指定
-MODEL_ID = "gemini-2.5-flash"
+MODEL_ID = "gemini-1.5-flash"
+
+
+_ANSWER_PREFIX_RE = re.compile(r"^(答え|こたえ)(は|:|：)?", re.IGNORECASE)
+_ANSWER_SUFFIX_RE = re.compile(
+    r"(です|でした|だと思います|だとおもいます|だと考えます|でしょう|かな|かも|ですね)[。！!？?\s]*$",
+    re.IGNORECASE,
+)
+_NOISE_RE = re.compile(r'[\s\u3000\-‐‑‒–—―_・,，.．。!！?？"\'\(\)\[\]【】「」『』]+')
+
+
+def _katakana_to_hiragana(text: str) -> str:
+    converted = []
+    for ch in text:
+        code = ord(ch)
+        if 0x30A1 <= code <= 0x30F6:
+            converted.append(chr(code - 0x60))
+        else:
+            converted.append(ch)
+    return "".join(converted)
+
+
+def _normalize_answer_text(text: str) -> str:
+    value = unicodedata.normalize("NFKC", str(text or "")).strip().lower()
+    value = _ANSWER_PREFIX_RE.sub("", value)
+    value = _ANSWER_SUFFIX_RE.sub("", value)
+    value = _katakana_to_hiragana(value)
+    value = _NOISE_RE.sub("", value)
+    return value
+
+
+def _fallback_answer_judgement(expected_answer: str, user_answer: str) -> bool:
+    expected = _normalize_answer_text(expected_answer)
+    user = _normalize_answer_text(user_answer)
+
+    if expected == "" or user == "":
+        return False
+
+    if expected == user:
+        return True
+
+    min_len = min(len(expected), len(user))
+    if min_len >= 2 and (expected in user or user in expected):
+        return True
+
+    similarity = SequenceMatcher(a=expected, b=user).ratio()
+    return similarity >= 0.9
 
 
 async def generate_quiz_async(genre="一般常識"):
@@ -47,8 +99,8 @@ async def check_answer_async(expected_answer: str, user_answer: str):
         return "true" in result_text
 
     except Exception as e:
-        print(f"判定エラー: {e}")
-        return False
+        print(f"判定エラー: {e} -> ローカル簡易判定にフォールバックします")
+        return _fallback_answer_judgement(expected_answer, user_answer)
 
 
 # --- 単独で実行した時のテスト用コード ---

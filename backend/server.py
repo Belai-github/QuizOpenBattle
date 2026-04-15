@@ -29,6 +29,7 @@ from backend.game_logic import (
     resolve_chat_recipients,
     resolve_client_room_context,
 )
+from backend.ai_logic import check_answer_async, generate_quiz_async
 from backend.kifu_storage import (
     append_action,
     begin_kifu_record,
@@ -290,7 +291,10 @@ class QuizGameManager:
             rooms.append(
                 {
                     "room_owner_id": owner_id,
+                    "room_owner_name": self.nicknames.get(owner_id, "ゲスト"),
                     "questioner_name": room["questioner_name"],
+                    "genre": str(room.get("genre") or "").strip(),
+                    "is_ai_room": bool(room.get("is_ai_mode")),
                     "participant_count": participant_count,
                     "spectator_count": len(room["spectators"]),
                     "game_state": room.get("game_state", "waiting"),
@@ -302,6 +306,133 @@ class QuizGameManager:
 
     def build_current_room_for_client(self, client_id: str):
         return build_current_room_for_client(self.rooms, self.nicknames, client_id)
+
+    def _room_member_ids(self, room_owner_id: str, room: dict) -> set[str]:
+        return {room_owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
+
+    async def _finalize_answer_judgement(self, owner_id: str, room: dict, team: str, answer_text: str, is_correct: bool):
+        game = room.get("game") or {}
+        previous_turn_team = game.get("current_turn_team")
+        game["pending_answer_judgement"] = None
+        result = apply_submit_answer(room, team, is_correct)
+
+        if not result.get("ok"):
+            return result
+
+        self._resolve_kifu_latest_answer(owner_id, team, answer_text, is_correct)
+
+        left_ids = set(room.get("left_participants", set()))
+        right_ids = set(room.get("right_participants", set()))
+        spectator_ids = set(room.get("spectators", set()))
+        questioner_ids = {owner_id}
+
+        private_map = {}
+
+        if is_correct:
+            if team == "team-left":
+                msg = "先攻が正解しました。次の後攻のターンで正解できれば引き分け、そうでなければ先攻の勝利です。"
+                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
+                    private_map[target_id] = msg
+            else:
+                winner = result.get("winner")
+                if winner == "draw":
+                    msg = "後攻が正解しました。引き分けです。"
+                else:
+                    msg = "後攻が正解しました。後攻の勝利です。"
+                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
+                    private_map[target_id] = msg
+        else:
+            if result.get("game_status") == "finished" and result.get("winner") == "team-left":
+                end_msg = "後攻が正解できませんでした。先攻の勝利です。"
+                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
+                    private_map[target_id] = end_msg
+            else:
+                self_msg = "誤答です。相手に＋アクション権が1回付与されます"
+                other_msg = "相手が誤答しました。＋アクション権を1回獲得しました。"
+
+                if team == "team-left":
+                    for target_id in left_ids:
+                        private_map[target_id] = self_msg
+                    for target_id in right_ids:
+                        private_map[target_id] = other_msg
+                else:
+                    for target_id in right_ids:
+                        private_map[target_id] = self_msg
+                    for target_id in left_ids:
+                        private_map[target_id] = other_msg
+
+                for target_id in spectator_ids | questioner_ids:
+                    private_map[target_id] = "正誤判定が完了しました。"
+
+        # 正誤判定完了時はモーダル通知を出さず、進行ログと状態更新のみで伝達する。
+
+        team_label = self._team_label(team)
+        await self._broadcast_team_log_message(
+            owner_id,
+            room,
+            "answer_result",
+            self._format_answer_result_message(team_label, is_correct),
+        )
+
+        next_turn_team = (room.get("game") or {}).get("current_turn_team")
+        should_notify_turn_changed = result.get("game_status") == "playing" and previous_turn_team != next_turn_team
+        if should_notify_turn_changed:
+            turn_changed_message = self._format_turn_changed_message(next_turn_team)
+            await self.broadcast_state(
+                public_info=turn_changed_message,
+                event_type="turn_changed",
+                event_room_id=owner_id,
+            )
+            await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
+
+        if result.get("game_status") == "finished":
+            winner = result.get("winner")
+            game_finished_message = self._format_game_finished_message(winner)
+            await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
+            self._finalize_kifu_if_tracking(owner_id, room, "finished")
+
+        return result
+
+    async def _resolve_ai_answer_judgement(self, owner_id: str, room: dict, team: str, answer_text: str):
+        game = room.get("game") or {}
+        pending = game.get("pending_answer_judgement")
+        if not pending:
+            return
+
+        expected_answer = str(room.get("ai_expected_answer", "")).strip()
+        if expected_answer == "":
+            game["pending_answer_judgement"] = None
+            private_map = {target_id: "AI正誤判定に失敗しました。再度アンサーしてください。" for target_id in self._room_member_ids(owner_id, room)}
+            await self.broadcast_state(
+                public_info="AI正誤判定に失敗しました。",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
+            return
+
+        try:
+            is_correct = await asyncio.wait_for(check_answer_async(expected_answer, answer_text), timeout=12.0)
+        except Exception:
+            game["pending_answer_judgement"] = None
+            private_map = {target_id: "AI正誤判定に失敗しました。再度アンサーしてください。" for target_id in self._room_member_ids(owner_id, room)}
+            await self.broadcast_state(
+                public_info="AI正誤判定に失敗しました。",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
+            return
+
+        result = await self._finalize_answer_judgement(owner_id, room, team, answer_text, bool(is_correct))
+        if not result.get("ok"):
+            private_map = {target_id: result.get("error", "AI正誤判定に失敗しました。") for target_id in self._room_member_ids(owner_id, room)}
+            await self.broadcast_state(
+                public_info="AI正誤判定に失敗しました。",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
 
     async def broadcast_state(
         self,
@@ -1551,30 +1682,18 @@ class QuizGameManager:
                 },
             )
 
-            await self.broadcast_state(
-                public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
-                event_type="answer_attempt",
-                event_room_id=owner_id,
-            )
+            if not room.get("is_ai_mode"):
+                await self.broadcast_state(
+                    public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
+                    event_type="answer_attempt",
+                    event_room_id=owner_id,
+                )
             await self._broadcast_team_log_message(
                 owner_id,
                 room,
                 "answer_attempt",
                 self._format_answer_attempt_message(team_label, answer_text),
                 event_payload={"team": team},
-            )
-
-            await self.broadcast_state(
-                public_info="",
-                event_type="answer_judgement_request",
-                event_room_id=owner_id,
-                event_recipient_ids={owner_id},
-                event_payload={
-                    "team": team,
-                    "team_label": team_label,
-                    "answer_text": answer_text,
-                    "answerer_name": requester_name,
-                },
             )
 
             await self.broadcast_state(
@@ -1589,6 +1708,23 @@ class QuizGameManager:
                     "approved": True,
                     "team": team,
                     "log_marker_id": vote_id,
+                },
+            )
+
+            if room.get("is_ai_mode"):
+                await self._resolve_ai_answer_judgement(owner_id, room, team, answer_text)
+                return
+
+            await self.broadcast_state(
+                public_info="",
+                event_type="answer_judgement_request",
+                event_room_id=owner_id,
+                event_recipient_ids={owner_id},
+                event_payload={
+                    "team": team,
+                    "team_label": team_label,
+                    "answer_text": answer_text,
+                    "answerer_name": requester_name,
                 },
             )
             return
@@ -1899,6 +2035,13 @@ class QuizGameManager:
         self._finalize_kifu_if_tracking(room_owner_id, room, "owner_cancelled")
         self._clear_room_reconnect_reservations(room_owner_id)
 
+        await self.send_private_info(
+            requester_id,
+            "部屋を閉じました。",
+            target_screen="waiting_room",
+            event_type="room_closed",
+        )
+
         for target_client_id in affected_client_ids:
             await self.send_private_info(
                 target_client_id,
@@ -2144,11 +2287,12 @@ class QuizGameManager:
                 },
             )
 
-            await self.broadcast_state(
-                public_info=f"{team_label}がアンサーしました。出題者が正誤判定中です。",
-                event_type="answer_attempt",
-                event_room_id=owner_id,
-            )
+            if not room.get("is_ai_mode"):
+                await self.broadcast_state(
+                    public_info=f"{team_label}がアンサーしました。出題者が正誤判定中です。",
+                    event_type="answer_attempt",
+                    event_room_id=owner_id,
+                )
             await self._broadcast_team_log_message(
                 owner_id,
                 room,
@@ -2156,6 +2300,11 @@ class QuizGameManager:
                 self._format_answer_attempt_message(team_label, text),
                 event_payload={"team": team},
             )
+
+            if room.get("is_ai_mode"):
+                await self.send_private_info(client_id, "解答を送信しました。")
+                await self._resolve_ai_answer_judgement(owner_id, room, team, text)
+                return
 
             await self.broadcast_state(
                 public_info="",
@@ -2169,8 +2318,7 @@ class QuizGameManager:
                     "answerer_name": nickname,
                 },
             )
-
-            await self.send_private_info(client_id, "送信しました。")
+            await self.send_private_info(client_id, "解答を送信しました。")
             return
 
         should_emit_vote_log = total_voters > 1
@@ -2232,95 +2380,9 @@ class QuizGameManager:
 
         team = pending.get("team")
         answer_text = str(pending.get("answer_text", "")).strip()
-        previous_turn_team = game.get("current_turn_team")
-        game["pending_answer_judgement"] = None
-        result = apply_submit_answer(room, team, is_correct)
-
+        result = await self._finalize_answer_judgement(owner_id, room, team, answer_text, bool(is_correct))
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "正誤判定に失敗しました。"))
-            return
-
-        self._resolve_kifu_latest_answer(owner_id, team, answer_text, is_correct)
-
-        left_ids = set(room.get("left_participants", set()))
-        right_ids = set(room.get("right_participants", set()))
-        spectator_ids = set(room.get("spectators", set()))
-        questioner_ids = {owner_id}
-
-        private_map = {}
-
-        if is_correct:
-            if team == "team-left":
-                msg = "先攻が正解しました。次の後攻のターンで正解できれば引き分け、そうでなければ先攻の勝利です。"
-                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
-                    private_map[target_id] = msg
-            else:
-                winner = result.get("winner")
-                if winner == "draw":
-                    msg = "後攻が正解しました。引き分けです。"
-                else:
-                    msg = "後攻が正解しました。後攻の勝利です。"
-                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
-                    private_map[target_id] = msg
-        else:
-            # Check if game finished due to wrong answer after left team answered correctly
-            if result.get("game_status") == "finished" and result.get("winner") == "team-left":
-                # Right team failed to answer correctly after left answered correctly
-                end_msg = "後攻が正解できませんでした。先攻の勝利です。"
-                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
-                    private_map[target_id] = end_msg
-            else:
-                # Normal wrong answer case
-                self_msg = "誤答です。相手に＋アクション権が1回付与されます"
-                other_msg = "相手が誤答しました。＋アクション権を1回獲得しました。"
-
-                if team == "team-left":
-                    for target_id in left_ids:
-                        private_map[target_id] = self_msg
-                    for target_id in right_ids:
-                        private_map[target_id] = other_msg
-                else:
-                    for target_id in right_ids:
-                        private_map[target_id] = self_msg
-                    for target_id in left_ids:
-                        private_map[target_id] = other_msg
-
-                for target_id in spectator_ids | questioner_ids:
-                    private_map[target_id] = "正誤判定が完了しました。"
-
-        await self.broadcast_state(
-            public_info="正誤判定が完了しました。",
-            private_map=private_map,
-            event_type="private_notice",
-            event_room_id=owner_id,
-        )
-
-        team_label = self._team_label(team)
-        result_label = "正解" if is_correct else "誤答"
-        await self._broadcast_team_log_message(
-            owner_id,
-            room,
-            "answer_result",
-            self._format_answer_result_message(team_label, is_correct),
-        )
-
-        next_turn_team = (room.get("game") or {}).get("current_turn_team")
-        should_notify_turn_changed = result.get("game_status") == "playing" and previous_turn_team != next_turn_team
-        if should_notify_turn_changed:
-            turn_changed_message = self._format_turn_changed_message(next_turn_team)
-            await self.broadcast_state(
-                public_info=turn_changed_message,
-                event_type="turn_changed",
-                event_room_id=owner_id,
-            )
-            await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
-
-        # Only send game_finished event if not already handled by private_notice
-        if result.get("game_status") == "finished":
-            winner = result.get("winner")
-            game_finished_message = self._format_game_finished_message(winner)
-            await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
-            self._finalize_kifu_if_tracking(owner_id, room, "finished")
 
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         # 同一 client_id の二重接続は許可しない（別タブ重複やなりすまし抑止）。
@@ -2472,10 +2534,39 @@ class QuizGameManager:
                 await self._evaluate_team_forfeit_if_needed(room_owner_id_before_exit, room)
 
     async def process_question(self, player_id: str, payload: dict):
-        result = apply_create_question_room(self.rooms, self.nicknames, player_id, payload)
+        normalized_payload = dict(payload or {})
+        is_ai_mode = bool(normalized_payload.get("is_ai_mode"))
+
+        if is_ai_mode:
+            genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
+            try:
+                quiz_data = await asyncio.wait_for(generate_quiz_async(genre), timeout=18.0)
+            except Exception:
+                await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
+                return
+
+            question_text = str((quiz_data or {}).get("question", "")).strip()
+            expected_answer = str((quiz_data or {}).get("answer", "")).strip()
+            if question_text == "" or expected_answer == "" or expected_answer == "エラー":
+                await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
+                return
+
+            normalized_payload["question_text"] = question_text
+            normalized_payload["questioner_name"] = "AI"
+            normalized_payload["questioner_id"] = "ai-questioner"
+            normalized_payload["genre"] = genre
+
+        result = apply_create_question_room(self.rooms, self.nicknames, player_id, normalized_payload)
         if not result.get("ok"):
             await self.send_private_info(player_id, result.get("error", "出題に失敗しました。"))
             return
+
+        if is_ai_mode:
+            room = self.rooms.get(player_id)
+            if room is not None:
+                room["is_ai_mode"] = True
+                room["ai_genre"] = str(normalized_payload.get("genre", "")).strip() or "一般常識"
+                room["ai_expected_answer"] = str((quiz_data or {}).get("answer", "")).strip()
 
         private_map = {}
         actor_name = result["actor_name"]
@@ -2494,8 +2585,9 @@ class QuizGameManager:
             event_room_id=player_id,
         )
 
-        # 出題者自身も部屋作成直後にゲーム会場へ遷移させる。
-        await self.send_private_info(player_id, "", target_screen="game_arena")
+        # AI出題では作成者を強制入室させない。必要なら room_entry で参加/観戦する。
+        if not is_ai_mode:
+            await self.send_private_info(player_id, "", target_screen="game_arena")
 
     async def process_chat_message(self, client_id: str, payload: dict):
         message = str(payload.get("message", "")).replace("\r\n", "\n").replace("\r", "\n").strip()

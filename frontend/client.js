@@ -13,6 +13,7 @@ const questionInputEl = document.getElementById("question-box");
 const questionLengthWarningEl = document.getElementById("question-length-warning");
 const questionLengthCounterEl = document.getElementById("question-length-counter");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
+const closeRoomBtnEl = document.getElementById("close-room-btn");
 const startGameBtnEl = document.getElementById("start-game-btn");
 const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
 const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-visibility-btn");
@@ -22,6 +23,12 @@ const arenaAnswerLengthWarningEl = document.getElementById("arena-answer-length-
 const arenaAnswerSubmitBtnEl = document.getElementById("arena-answer-submit-btn");
 const arenaTurnEndBtnEl = document.getElementById("arena-turn-end-btn");
 const openKifuListBtnEl = document.getElementById("open-kifu-list-btn");
+const aiQuestionBtnEl = document.getElementById("ai-question-btn");
+const aiQuestionSpinnerEl = document.getElementById("ai-question-spinner");
+const aiQuestionModalEl = document.getElementById("ai-question-modal");
+const aiGenreInputEl = document.getElementById("ai-genre-input");
+const aiQuestionModalCancelBtnEl = document.getElementById("ai-question-cancel-btn");
+const aiQuestionModalSubmitBtnEl = document.getElementById("ai-question-submit-btn");
 const kifuListScreenEl = document.getElementById("kifu-list-screen");
 const kifuListEl = document.getElementById("kifu-list");
 const kifuListBackLinkEl = document.getElementById("kifu-list-back-link");
@@ -68,6 +75,7 @@ let viewportDebugEl = null;
 let previousRoomGameState = null;
 let connectionTimeoutModalShown = false;
 let isConnecting = false;
+let aiQuestionRequestPending = false;
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
@@ -969,6 +977,7 @@ function isAnyModalOpen() {
     const judgementModal = document.getElementById("answer-judgement-modal");
     if (confirmModal && confirmModal.open) return true;
     if (alertModal && alertModal.open) return true;
+    if (aiQuestionModalEl && aiQuestionModalEl.open) return true;
     if (rulebookModalEl && rulebookModalEl.open) return true;
     if (judgementModal && !judgementModal.classList.contains("hidden")) return true;
     return false;
@@ -1504,7 +1513,8 @@ function getArenaProgressAnnouncementText() {
             baseText = "対戦結果：引き分け";
         }
     } else if (roomState !== "playing") {
-        baseText = "出題者による開始を待っています...";
+        const waitingOwnerLabel = currentRoomSnapshot?.is_ai_mode ? "作成者" : "出題者";
+        baseText = `${waitingOwnerLabel}による開始を待っています...`;
     } else {
         const currentTurnLabel = getTeamLabel(currentGameState?.current_turn_team);
         if (currentGameState?.is_judging_answer) {
@@ -1611,6 +1621,7 @@ function showWaitingRoomScreen() {
     updateStartGameButtonVisibility(null);
     updateQuestionVisibilityButton();
     updateArenaAnswerFormVisibility();
+    updateArenaCloseButtonVisibility(null);
     updateChatBoxVisibility();
 }
 
@@ -1632,6 +1643,7 @@ function showGameArenaScreen() {
 
     updateQuestionVisibilityButton();
     updateArenaAnswerFormVisibility();
+    updateArenaCloseButtonVisibility(currentRoomSnapshot);
     updateChatBoxVisibility();
 }
 
@@ -1910,6 +1922,7 @@ function renderKifuStep() {
     currentRoomGameState = roomSnapshot.game_state;
     currentGameState = roomSnapshot.game;
     userRole = "questioner";
+    updateArenaCloseButtonVisibility(roomSnapshot);
     document.body.dataset.chatRole = "questioner";
     document.body.dataset.roomRole = "owner";
 
@@ -1982,6 +1995,7 @@ function enterKifuViewer(detail) {
     questionerViewMode = "all";
     if (kifuReplayControlsEl) kifuReplayControlsEl.classList.remove("hidden");
     showGameArenaScreen();
+    if (closeRoomBtnEl) closeRoomBtnEl.classList.add("hidden");
     if (leaveGameArenaEl) {
         leaveGameArenaEl.textContent = "←一覧へ戻る";
         leaveGameArenaEl.setAttribute("aria-label", "一覧へ戻る");
@@ -2022,7 +2036,7 @@ function canToggleQuestionViewMode() {
         return true;
     }
 
-    return userRole === "spectator" && roomState === "playing";
+    return userRole === "spectator" && (roomState === "playing" || roomState === "finished");
 }
 
 function getQuestionViewModeCycleForCurrentUser() {
@@ -2083,7 +2097,8 @@ function updateStartGameButtonVisibility(currentRoom) {
     if (!startGameBtnEl && !shuffleParticipantsBtnEl) return;
 
     const roomState = currentRoom?.game_state ?? currentRoomGameState ?? null;
-    const canSee = isInGameArena() && userRole === "questioner" && roomState === "waiting";
+    const canManageRoom = Boolean(currentRoom?.can_manage_room ?? currentRoomSnapshot?.can_manage_room);
+    const canSee = isInGameArena() && roomState === "waiting" && (userRole === "questioner" || canManageRoom);
     startGameBtnEl?.classList.toggle("hidden", !canSee);
     shuffleParticipantsBtnEl?.classList.toggle("hidden", !canSee);
 
@@ -2109,11 +2124,60 @@ function updateStartGameButtonVisibility(currentRoom) {
     }
 }
 
+function updateArenaCloseButtonVisibility(currentRoom) {
+    if (!closeRoomBtnEl) return;
+
+    if (isKifuMode) {
+        closeRoomBtnEl.classList.add("hidden");
+        return;
+    }
+
+    const room = currentRoom || currentRoomSnapshot;
+    const canManageRoom = Boolean(room?.can_manage_room);
+    const isAiMode = Boolean(room?.is_ai_mode);
+    const roomState = String(room?.game_state || currentRoomGameState || "waiting");
+    const canShow = isInGameArena() && canManageRoom && isAiMode && roomState === "finished";
+    closeRoomBtnEl.classList.toggle("hidden", !canShow);
+}
+
+async function requestCloseRoom(roomOwnerId) {
+    const targetRoomOwnerId = String(roomOwnerId || "").trim();
+    if (targetRoomOwnerId === "") {
+        await showAlertModal("閉じる対象の部屋が見つかりません。");
+        return;
+    }
+
+    const confirmed = await showConfirmModal(
+        "この部屋を閉じますか？\n\n参加者と観戦者は全員ロビーへ戻ります。",
+        {
+            okLabel: "閉じる",
+            cancelLabel: "キャンセル",
+        }
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "cancel_question",
+            room_owner_id: targetRoomOwnerId,
+            timestamp: Date.now(),
+        })
+    );
+}
+
 function closeAllModals() {
     setArenaCharClickGuard();
     alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
     if (alertModal.open) alertModal.close();
     if (confirmModal.open) confirmModal.close();
+    if (aiQuestionModalEl && aiQuestionModalEl.open) aiQuestionModalEl.close();
     if (rulebookModalEl && rulebookModalEl.open) rulebookModalEl.close();
     const judgementModal = document.getElementById("answer-judgement-modal");
     if (judgementModal && !judgementModal.classList.contains("hidden")) {
@@ -2279,6 +2343,88 @@ function showConfirmModal(message, options = {}) {
         confirmCancelBtn.addEventListener("click", onCancelClick, { once: true });
         confirmModal.addEventListener("click", onBackdropClick);
         confirmModal.addEventListener("cancel", onCancel);
+    });
+}
+
+function setAiQuestionLoading(loading) {
+    aiQuestionRequestPending = Boolean(loading);
+
+    if (aiQuestionBtnEl) {
+        aiQuestionBtnEl.disabled = aiQuestionRequestPending;
+        aiQuestionBtnEl.setAttribute("aria-busy", aiQuestionRequestPending ? "true" : "false");
+    }
+
+    if (aiQuestionSpinnerEl) {
+        aiQuestionSpinnerEl.classList.toggle("hidden", !aiQuestionRequestPending);
+    }
+
+    if (aiQuestionModalSubmitBtnEl) {
+        aiQuestionModalSubmitBtnEl.disabled = aiQuestionRequestPending;
+    }
+
+    if (aiQuestionModalCancelBtnEl) {
+        aiQuestionModalCancelBtnEl.disabled = aiQuestionRequestPending;
+    }
+
+    if (questionInputEl) {
+        questionInputEl.disabled = aiQuestionRequestPending;
+    }
+}
+
+function showAiGenreInputModal() {
+    return new Promise((resolve) => {
+        if (!aiQuestionModalEl || !aiGenreInputEl) {
+            resolve(null);
+            return;
+        }
+
+        aiGenreInputEl.value = "";
+        setAiQuestionLoading(false);
+
+        if (!aiQuestionModalEl.open) {
+            aiQuestionModalEl.showModal();
+        }
+        aiGenreInputEl.focus();
+        updateArenaInteractionLock();
+
+        const close = (value) => {
+            if (aiQuestionModalEl.open) {
+                aiQuestionModalEl.close();
+            }
+            aiQuestionModalSubmitBtnEl?.removeEventListener("click", onSubmit);
+            aiQuestionModalCancelBtnEl?.removeEventListener("click", onCancelClick);
+            aiQuestionModalEl.removeEventListener("click", onBackdropClick);
+            aiQuestionModalEl.removeEventListener("cancel", onCancel);
+            aiGenreInputEl.removeEventListener("keydown", onKeydown);
+            updateArenaInteractionLock();
+            resolve(value);
+        };
+
+        const onSubmit = () => {
+            const genre = String(aiGenreInputEl.value || "").trim();
+            close(genre);
+        };
+        const onCancelClick = () => close(null);
+        const onBackdropClick = (event) => {
+            if (event.target === aiQuestionModalEl) {
+                close(null);
+            }
+        };
+        const onCancel = (event) => {
+            event.preventDefault();
+            close(null);
+        };
+        const onKeydown = (event) => {
+            if (event.key !== "Enter" || event.isComposing) return;
+            event.preventDefault();
+            onSubmit();
+        };
+
+        aiQuestionModalSubmitBtnEl?.addEventListener("click", onSubmit, { once: true });
+        aiQuestionModalCancelBtnEl?.addEventListener("click", onCancelClick, { once: true });
+        aiQuestionModalEl.addEventListener("click", onBackdropClick);
+        aiQuestionModalEl.addEventListener("cancel", onCancel);
+        aiGenreInputEl.addEventListener("keydown", onKeydown);
     });
 }
 
@@ -2714,7 +2860,19 @@ function renderArena(currentRoom) {
     const questionerLabel = isMeQuestioner
         ? `${currentRoom.questioner_name} (You)`
         : currentRoom.questioner_name;
-    titleEl.textContent = `出題者: ${questionerLabel}`;
+    const genreLabel = String(currentRoom.genre || "").trim() || "未設定";
+    titleEl.textContent = "";
+    const questionerSpanEl = document.createElement("span");
+    questionerSpanEl.className = "arena-title-questioner";
+    questionerSpanEl.textContent = `出題者: ${questionerLabel}`;
+
+    const genreSpanEl = document.createElement("span");
+    genreSpanEl.className = "arena-title-genre";
+    genreSpanEl.style.marginLeft = "20px";
+    genreSpanEl.textContent = `ジャンル:${genreLabel}`;
+
+    titleEl.appendChild(questionerSpanEl);
+    titleEl.appendChild(genreSpanEl);
 
     const serverQuestionText = String(currentRoom.question_text || "");
     const serverQuestionVisibleText = String(currentRoom.question_visible_text || "");
@@ -2776,7 +2934,12 @@ function renderRooms(rooms) {
 
         const questionerEl = document.createElement("div");
         questionerEl.className = "room-card-questioner";
-        questionerEl.textContent = `${room.questioner_name} の出題部屋`;
+        if (room.is_ai_room) {
+            const ownerName = String(room.room_owner_name || "ゲスト");
+            questionerEl.textContent = `AIの部屋(作成者:${ownerName})`;
+        } else {
+            questionerEl.textContent = `${room.questioner_name} の部屋`;
+        }
 
         const metaEl = document.createElement("div");
         metaEl.className = "room-card-meta";
@@ -2787,9 +2950,11 @@ function renderRooms(rooms) {
             finished: "対戦終了",
         };
         const gameStateLabel = gameStateLabelByState[roomState] || "準備中";
-        metaEl.textContent = `状態 ${gameStateLabel} / 参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
+        const genreLabel = String(room.genre || "").trim() || "未設定";
+        metaEl.textContent = `状態 ${gameStateLabel} / 参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人 / ジャンル:${genreLabel}`;
 
-        if (!room.is_owner) {
+        const shouldShowJoinActions = !room.is_owner || Boolean(room.is_ai_room);
+        if (shouldShowJoinActions) {
             const actionsEl = document.createElement("div");
             actionsEl.className = "room-card-actions";
 
@@ -2809,6 +2974,19 @@ function renderRooms(rooms) {
                 actionsEl.appendChild(joinBtn);
             }
             actionsEl.appendChild(watchBtn);
+
+            const canShowClose = Boolean(room.is_owner) && Boolean(room.is_ai_room) && String(room.game_state || "") === "finished";
+            if (canShowClose) {
+                const closeBtn = document.createElement("button");
+                closeBtn.type = "button";
+                closeBtn.className = "room-card-btn danger";
+                closeBtn.textContent = "閉じる";
+                closeBtn.addEventListener("click", () => {
+                    void requestCloseRoom(room.room_owner_id);
+                });
+                actionsEl.appendChild(closeBtn);
+            }
+
             card.appendChild(actionsEl);
         }
 
@@ -3313,12 +3491,14 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onerror = () => {
         isConnecting = false;
+        setAiQuestionLoading(false);
         if (!ws || ws.readyState === WebSocket.OPEN) return;
         void showConnectionTimeoutReloadModal();
     };
 
     ws.onclose = (event) => {
         isConnecting = false;
+        setAiQuestionLoading(false);
         if (event.code === 1000) return;
 
         const friendlyMessage = getFriendlyConnectionErrorMessage(event);
@@ -3334,6 +3514,19 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+
+        if (aiQuestionRequestPending) {
+            const enteredArena = data.target_screen === "game_arena"
+                && Boolean(data.current_room?.is_ai_mode)
+                && String(data.current_room?.room_owner_id || "") === String(myClientId || "");
+            const receivedPrivateError = data.event_type === "private_notice" && Boolean(data.private_info);
+            const roomCreatedInLobby = Array.isArray(data.rooms)
+                && data.rooms.some((room) => String(room?.room_owner_id || "") === String(myClientId || ""));
+            if (enteredArena || receivedPrivateError || roomCreatedInLobby) {
+                setAiQuestionLoading(false);
+            }
+        }
+
         if (isKifuMode) {
             return;
         }
@@ -3413,6 +3606,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         } else if (data.event_type === "private_notice" && data.private_info) {
             closeAllModals();
             void showAlertModal(data.private_info);
+        } else if (data.event_type === "game_finished" && data.event_message) {
+            closeAllModals();
+            void showAlertModal(data.event_message);
         }
 
         // 投票が解決されたらハンドル状態を解放し、再提案/再投票を阻害しないようにする。
@@ -3476,6 +3672,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         renderArena(data.current_room);
         updateGameStateUI();
         updateStartGameButtonVisibility(data.current_room);
+        updateArenaCloseButtonVisibility(data.current_room);
         updateArenaAnswerFormVisibility();
         updateChatBoxVisibility();
     };
@@ -3520,8 +3717,45 @@ async function submitQuestion() {
     updateQuestionLengthWarning();
 }
 
+async function submitAiQuestion() {
+    if (aiQuestionRequestPending) {
+        return;
+    }
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    const genre = await showAiGenreInputModal();
+    if (genre === null) {
+        return;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    const normalizedGenre = String(genre || "").trim().slice(0, 40);
+    setAiQuestionLoading(true);
+    pendingArenaMode = "owner";
+
+    ws.send(
+        JSON.stringify({
+            type: "question_submission",
+            is_ai_mode: true,
+            genre: normalizedGenre,
+            timestamp: Date.now(),
+        })
+    );
+}
+
 document.getElementById("submit-question-btn").addEventListener("click", () => {
     submitQuestion();
+});
+
+aiQuestionBtnEl?.addEventListener("click", () => {
+    void submitAiQuestion();
 });
 
 questionInputEl?.addEventListener("keydown", (event) => {
@@ -4049,6 +4283,17 @@ leaveGameArenaEl?.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         requestRoomExit();
+    }
+});
+
+closeRoomBtnEl?.addEventListener("click", () => {
+    void requestCloseRoom(currentRoomSnapshot?.room_owner_id);
+});
+
+closeRoomBtnEl?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        void requestCloseRoom(currentRoomSnapshot?.room_owner_id);
     }
 });
 

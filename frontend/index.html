@@ -20,6 +20,10 @@
     <div id="waiting-room-screen" style="display: none;">
         <div class="waiting-room-header">
             <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
+            <button id="ai-question-btn" type="button" class="kifu-nav-btn ai-question-btn" aria-label="AIが出題">
+                AIが出題
+                <span id="ai-question-spinner" class="ai-btn-spinner hidden" aria-hidden="true"></span>
+            </button>
             <button id="open-kifu-list-btn" type="button" class="kifu-nav-btn" aria-label="棋譜一覧">棋譜一覧</button>
             <button id="rulebook-btn" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
                 <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
@@ -71,6 +75,7 @@
         <div class="arena-header-tools">
             <div class="arena-header-left-actions">
                 <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">✕ 部屋を閉じる</div>
+                <div id="close-room-btn" class="hidden" role="button" tabindex="0" aria-label="部屋を閉じる">✕ 部屋を閉じる</div>
             </div>
             <div class="arena-header-right-actions">
                 <button id="start-game-btn" class="start-game-btn hidden" type="button">ゲーム開始</button>
@@ -251,6 +256,18 @@
             </div>
             <div class="modal-actions single">
                 <button id="rulebook-close-btn" type="button">閉じる</button>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="ai-question-modal" class="modal" aria-labelledby="ai-question-title">
+        <div class="modal-card ai-question-modal-card">
+            <h2 id="ai-question-title">AIが出題</h2>
+            <p class="ai-question-modal-help">ジャンルを入力してください（空欄なら一般常識）。</p>
+            <input id="ai-genre-input" type="text" maxlength="40" placeholder="例: 歴史、化学、アニメ" aria-label="ジャンル入力">
+            <div class="modal-actions">
+                <button id="ai-question-cancel-btn" type="button">キャンセル</button>
+                <button id="ai-question-submit-btn" type="button">生成する</button>
             </div>
         </div>
     </dialog>

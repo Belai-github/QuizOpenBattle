@@ -110,6 +110,16 @@ def _normalized_question_chars(text: str):
     return [ch for ch in normalized_text if ch not in {"\n", "\r"}]
 
 
+def _default_yakumono_indexes_from_text(text: str) -> set[int]:
+    indexes: set[int] = set()
+    for idx, ch in enumerate(_normalized_question_chars(text)):
+        category = unicodedata.category(ch)
+        # 句読点・記号を約物として扱う（フロントの自動選択方針と合わせる）。
+        if category.startswith("P") or category.startswith("S"):
+            indexes.add(idx)
+    return indexes
+
+
 def _build_visible_question_text(normalized_chars: list[str], game: dict | None, chat_role: str):
     if not normalized_chars:
         return ""
@@ -158,7 +168,9 @@ def remove_client_from_all_rooms(rooms: dict, client_id: str):
 
 def resolve_client_room_context(rooms: dict, client_id: str):
     for owner_id, room in rooms.items():
-        if owner_id == client_id:
+        is_ai_mode = bool(room.get("is_ai_mode"))
+
+        if owner_id == client_id and not is_ai_mode:
             return {
                 "room_owner_id": owner_id,
                 "room": room,
@@ -372,8 +384,9 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
 
     return {
         "room_owner_id": owner_id,
-        "questioner_id": owner_id,
+        "questioner_id": str(room.get("questioner_id") or owner_id),
         "questioner_name": room["questioner_name"],
+        "genre": str(room.get("genre") or "").strip(),
         "question_text": question_text_for_client,
         "question_visible_text": question_visible_text,
         "question_length": len(normalized_chars),
@@ -388,6 +401,8 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "pending_disconnects": pending_disconnects,
         "arena_chat_history": arena_chat_history,
         "pre_game_global_chat_history": pre_game_global_chat_history,
+        "is_ai_mode": bool(room.get("is_ai_mode")),
+        "can_manage_room": client_id == owner_id,
     }
 
 
@@ -396,7 +411,7 @@ def apply_join_room(rooms: dict, client_id: str, room_owner_id: str, role: str):
     if room is None:
         return {"ok": False, "error": "部屋が見つかりません。"}
 
-    if client_id == room_owner_id:
+    if client_id == room_owner_id and not room.get("is_ai_mode"):
         return {
             "ok": True,
             "role_name": "出題者",
@@ -475,6 +490,10 @@ def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
     payload = payload or {}
     question_length = len(_normalized_question_chars(room.get("question_text", "")))
     selected_indexes = _sanitize_selected_indexes(payload.get("selected_char_indexes"), question_length)
+
+    if room.get("is_ai_mode") and not selected_indexes:
+        selected_indexes = _default_yakumono_indexes_from_text(room.get("question_text", ""))
+
     room["yakumono_indexes"] = selected_indexes
 
     room["game_state"] = "playing"
@@ -537,6 +556,18 @@ def apply_shuffle_participants(rooms: dict, client_id: str):
 
 def apply_exit_room(rooms: dict, client_id: str):
     if client_id in rooms:
+        room = rooms[client_id]
+        owner_joined_as_guest = client_id in room["left_participants"] or client_id in room["right_participants"] or client_id in room["spectators"]
+
+        if room.get("is_ai_mode") and owner_joined_as_guest:
+            room["left_participants"].discard(client_id)
+            room["right_participants"].discard(client_id)
+            room["spectators"].discard(client_id)
+            return {
+                "owner_closed": False,
+                "affected_client_ids": set(),
+            }
+
         room = rooms.pop(client_id)
         affected_client_ids = set(room["left_participants"]) | set(room["right_participants"]) | set(room["spectators"])
         return {
@@ -556,6 +587,21 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         return {"ok": False, "error": "同時に出題できる問題は1つまでです。"}
 
     actor_name = nicknames.get(player_id, "相手")
+    is_ai_mode = bool(payload.get("is_ai_mode"))
+    genre = str(payload.get("genre", "")).strip()
+    ai_genre = str(payload.get("genre", "")).strip() if is_ai_mode else ""
+    questioner_name = str(payload.get("questioner_name", "")).strip() if is_ai_mode else ""
+    questioner_id = str(payload.get("questioner_id", "")).strip() if is_ai_mode else ""
+
+    if is_ai_mode:
+        if questioner_name == "":
+            questioner_name = "AI"
+        if questioner_id == "":
+            questioner_id = "ai-questioner"
+    else:
+        questioner_name = actor_name
+        questioner_id = player_id
+
     question_text = str(payload.get("question_text", payload.get("content", ""))).strip()
     if question_text == "":
         question_text = "（空欄）"
@@ -568,9 +614,13 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
 
     rooms[player_id] = {
         "owner_id": player_id,
+        "questioner_id": questioner_id,
         "question_text": question_text,
         "yakumono_indexes": set(),
-        "questioner_name": actor_name,
+        "questioner_name": questioner_name,
+        "genre": genre,
+        "is_ai_mode": is_ai_mode,
+        "ai_genre": ai_genre,
         "game_state": "waiting",
         "left_participants": set(),
         "right_participants": set(),
