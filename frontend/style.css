@@ -1023,7 +1023,9 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #arena-answer-box {
-    width: min(100%, 520px);
+    width: 100%;
+    max-width: 100%;
+    align-self: stretch;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1555,6 +1557,7 @@ body[data-room-role="spectator"] #arena-answer-box {
         width: 100%;
         max-width: 100%;
         justify-self: stretch;
+        min-height: 150px;
     }
 
     #arena-player-right {
