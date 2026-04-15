@@ -430,6 +430,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "questioner_name": room["questioner_name"],
         "genre": str(room.get("genre") or "").strip(),
         "difficulty": int(room.get("difficulty", 0) or 0),
+        "ai_model_id": str(room.get("ai_model_id") or "").strip(),
         "question_text": question_text_for_client,
         "question_visible_text": question_visible_text,
         "question_length": len(normalized_chars),

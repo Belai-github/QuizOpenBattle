@@ -3078,6 +3078,7 @@ class QuizGameManager:
         normalized_payload = dict(payload or {})
         is_ai_mode = bool(normalized_payload.get("is_ai_mode"))
         model_id = normalize_model_id(normalized_payload.get("model_id"))
+        requester_name = self.nicknames.get(player_id, "ゲスト")
 
         if is_ai_mode:
             async with self.ai_question_generation_lock:
@@ -3101,6 +3102,12 @@ class QuizGameManager:
                     "owner_id": player_id,
                 },
             )
+            await self.broadcast_state(
+                public_info="",
+                event_type="chat",
+                event_message=f"{requester_name}がAI出題をリクエストしました",
+                event_chat_type="lobby",
+            )
 
             quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
@@ -3108,8 +3115,11 @@ class QuizGameManager:
             generation_timeout = 100.0
             try:
                 try:
-                    quiz_task = asyncio.create_task(generate_quiz_async(genre, model_id=model_id, difficulty=difficulty))
-                    quiz_data = await asyncio.wait_for(quiz_task, timeout=generation_timeout)
+                    quiz_generation_result = generate_quiz_async(genre, model_id=model_id, difficulty=difficulty)
+                    if asyncio.iscoroutine(quiz_generation_result):
+                        quiz_data = await asyncio.wait_for(quiz_generation_result, timeout=generation_timeout)
+                    else:
+                        quiz_data = quiz_generation_result
                 except asyncio.TimeoutError as e:
                     print(
                         "AI問題生成タイムアウト:",
@@ -3122,6 +3132,12 @@ class QuizGameManager:
                         },
                     )
                     await self.send_private_info(player_id, "AI問題の生成がタイムアウトしました。時間をおいて再試行してください。")
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="chat",
+                        event_message=f"{requester_name}のAI出題は失敗しました",
+                        event_chat_type="lobby",
+                    )
                     return
                 except Exception as e:
                     print(
@@ -3134,6 +3150,12 @@ class QuizGameManager:
                         },
                     )
                     await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="chat",
+                        event_message=f"{requester_name}のAI出題は失敗しました",
+                        event_chat_type="lobby",
+                    )
                     return
 
                 question_text = str((quiz_data or {}).get("question", "")).strip()
@@ -3143,6 +3165,12 @@ class QuizGameManager:
                     await self.send_private_info(
                         player_id,
                         "AI APIの利用上限に達しているため問題生成できません。\n課金上限または請求設定を確認してください。",
+                    )
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="chat",
+                        event_message=f"{requester_name}のAI出題は失敗しました",
+                        event_chat_type="lobby",
                     )
                     return
 
@@ -3158,6 +3186,12 @@ class QuizGameManager:
                         },
                     )
                     await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="chat",
+                        event_message=f"{requester_name}のAI出題は失敗しました",
+                        event_chat_type="lobby",
+                    )
                     return
 
                 normalized_payload["question_text"] = question_text
@@ -3171,6 +3205,12 @@ class QuizGameManager:
                 result = apply_create_question_room(self.rooms, self.nicknames, player_id, normalized_payload)
                 if not result.get("ok"):
                     await self.send_private_info(player_id, result.get("error", "出題に失敗しました。"))
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="chat",
+                        event_message=f"{requester_name}のAI出題は失敗しました",
+                        event_chat_type="lobby",
+                    )
                     return
 
                 room = self.rooms.get(player_id)
@@ -3180,6 +3220,13 @@ class QuizGameManager:
                     room["ai_difficulty"] = difficulty
                     room["ai_expected_answer"] = str((quiz_data or {}).get("answer", "")).strip()
                     room["ai_model_id"] = model_id
+
+                await self.broadcast_state(
+                    public_info="",
+                    event_type="chat",
+                    event_message=f"{requester_name}のAI出題が成功しました",
+                    event_chat_type="lobby",
+                )
             finally:
                 async with self.ai_question_generation_lock:
                     if self.ai_question_generation_owner_id == player_id:

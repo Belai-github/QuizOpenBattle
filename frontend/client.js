@@ -2496,6 +2496,7 @@ function buildReplayRoomSnapshot(detail, step) {
         question_length: Number(detail?.question_length || 0),
         genre: String(detail?.genre || "").trim(),
         difficulty: Number.isFinite(Number(detail?.difficulty)) ? Number(detail?.difficulty) : 0,
+        ai_model_id: String(detail?.ai_model_id || "").trim(),
         is_ai_mode: Boolean(detail?.is_ai_mode),
         yakumono_indexes: Array.isArray(detail?.yakumono_indexes) ? detail.yakumono_indexes : [],
         game_state: step?.game?.game_status === "finished" ? "finished" : "playing",
@@ -3642,8 +3643,10 @@ function renderArena(currentRoom) {
     const difficultyLabel = currentRoom.is_ai_mode
         ? `${normalizeAiAccuracyRate(currentRoom.difficulty)}%`
         : "未設定";
+    const modelLabel = String(currentRoom.ai_model_id || "").trim() || "未設定";
     const shouldShowGenre = String(currentRoom.genre || "").trim() !== "";
     const shouldShowDifficulty = Boolean(currentRoom.is_ai_mode) && difficultyLabel !== "未設定";
+    const shouldShowModel = Boolean(currentRoom.is_ai_mode) && modelLabel !== "未設定";
     if (questionerListEl) {
         questionerListEl.innerHTML = "";
         const questionerItemEl = document.createElement("li");
@@ -3682,6 +3685,13 @@ function renderArena(currentRoom) {
             difficultyChipEl.className = "arena-room-meta-chip";
             difficultyChipEl.textContent = `難易度: ${difficultyLabel}`;
             roomMetaEl.appendChild(difficultyChipEl);
+        }
+
+        if (shouldShowModel) {
+            const modelChipEl = document.createElement("span");
+            modelChipEl.className = "arena-room-meta-chip";
+            modelChipEl.textContent = `モデル: ${modelLabel}`;
+            roomMetaEl.appendChild(modelChipEl);
         }
     }
 
