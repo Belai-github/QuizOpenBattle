@@ -93,7 +93,7 @@ from backend.game_logic import (
     resolve_client_room_context,
 )
 from backend.ai_logic import check_answer_async, generate_quiz_async, normalize_difficulty, normalize_model_id
-from backend.kifu_storage import (
+from backend.storage.kifu_storage import (
     append_action,
     begin_kifu_record,
     finalize_kifu_record,

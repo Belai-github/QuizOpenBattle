@@ -16,8 +16,8 @@ try:
         get_quiz_system_prompt,
         get_quiz_user_prompt,
     )
-    from backend.judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
-    from backend.api_history import append_api_history
+    from backend.storage.judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
+    from backend.storage.api_history import append_api_history
     from backend.model_catalog import (
         get_answer_judgement_model_id,
         get_available_model_ids,
@@ -34,8 +34,8 @@ except ImportError:
         get_quiz_system_prompt,
         get_quiz_user_prompt,
     )
-    from judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
-    from api_history import append_api_history
+    from storage.judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
+    from storage.api_history import append_api_history
     from model_catalog import (
         get_answer_judgement_model_id,
         get_available_model_ids,

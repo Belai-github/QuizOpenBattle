@@ -4,7 +4,7 @@ from fastapi import HTTPException, Query
 from pydantic import BaseModel
 
 from backend.auth import is_valid_client_id, sanitize_nickname
-from backend.kifu_storage import get_kifu_detail_for_client, list_kifu_for_client
+from backend.storage.kifu_storage import get_kifu_detail_for_client, list_kifu_for_client
 from backend.model_catalog import get_frontend_model_payload
 
 
