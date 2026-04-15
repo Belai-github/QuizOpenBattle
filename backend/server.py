@@ -10,10 +10,11 @@ app.mount("/game", StaticFiles(directory="frontend", html=True), name="frontend"
 class QuizGameManager:
     def __init__(self):
         self.active_connections = {}
+        self.nicknames = {}
         # 【対策1】同時に接続できる最大人数を設定（例: プレイヤー2人＋観戦2人 = 4）
         self.MAX_CONNECTIONS = 4
 
-    async def connect(self, websocket: WebSocket, client_id: str):
+    async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         await websocket.accept()
 
         # 接続上限に達している場合は、即座に通信を切断する
@@ -24,13 +25,15 @@ class QuizGameManager:
             return False
 
         self.active_connections[client_id] = websocket
-        print(f"プレイヤー接続: {client_id} (現在: {len(self.active_connections)}人)")
+        self.nicknames[client_id] = nickname
+        print(f"プレイヤー接続: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
         return True
 
     def disconnect(self, client_id: str):
         if client_id in self.active_connections:
             del self.active_connections[client_id]
-            print(f"プレイヤー切断: {client_id} (現在: {len(self.active_connections)}人)")
+            nickname = self.nicknames.pop(client_id, client_id)
+            print(f"プレイヤー切断: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
 
     async def process_action(self, action_player_id: str, action_data: dict):
         # （前回の処理と同じ）
@@ -38,7 +41,8 @@ class QuizGameManager:
             if client_id == action_player_id:
                 secret_msg = f"あなたは「{action_data.get('action')}」を選択しました。"
             else:
-                secret_msg = "相手が行動を完了しました。あなたのターンです。"
+                actor_name = self.nicknames.get(action_player_id, "相手")
+                secret_msg = f"{actor_name} が行動を完了しました。あなたのターンです。"
 
             response = {"public_info": "行動が受理されました", "private_info": secret_msg}
             await ws.send_text(json.dumps(response))
@@ -49,8 +53,12 @@ manager = QuizGameManager()
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    nickname = websocket.query_params.get("nickname", "ゲスト").strip()
+    if nickname == "":
+        nickname = "ゲスト"
+
     # 接続処理を行い、許可されなかった（False）場合はここで処理を終える
-    is_accepted = await manager.connect(websocket, client_id)
+    is_accepted = await manager.connect(websocket, client_id, nickname)
     if not is_accepted:
         return
 
