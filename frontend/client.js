@@ -1,5 +1,14 @@
 let ws;
 
+function buildWebSocketUrl(clientId, nickname) {
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = new URL(window.location.origin);
+    wsUrl.protocol = wsProtocol;
+    wsUrl.pathname = `/ws/${encodeURIComponent(clientId)}`;
+    wsUrl.searchParams.set("nickname", nickname);
+    return wsUrl.toString();
+}
+
 window.onload = () => {
     const savedNickname = localStorage.getItem("quiz_nickname");
 
@@ -19,9 +28,8 @@ document.getElementById("join-btn").addEventListener("click", () => {
 
     const clientId = crypto.randomUUID();
 
-    const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-    const encodedName = encodeURIComponent(nicknameInput);
-    ws = new WebSocket(`${protocol}${window.location.host}/ws/${clientId}?nickname=${encodedName}`);
+    const wsUrl = buildWebSocketUrl(clientId, nicknameInput);
+    ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
         console.log("サーバーに接続しました");
