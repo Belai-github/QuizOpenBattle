@@ -183,6 +183,18 @@ function isPlayerRole(role = userRole) {
     return role === "team-left" || role === "team-right";
 }
 
+function getRoleDisplayLabel(role) {
+    const normalizedRole = String(role || "").trim();
+    const labels = {
+        questioner: "出題者",
+        "team-left": "参加者",
+        "team-right": "参加者",
+        spectator: "観戦者",
+    };
+
+    return labels[normalizedRole] || normalizedRole || "-";
+}
+
 function populateAiModelSelect() {
     if (!aiModelSelectEl || aiModelSelectEl.options.length > 0) {
         return;
@@ -1968,7 +1980,7 @@ function renderKifuListRows(rows) {
         metaEl.className = "kifu-card-meta";
         const finishedAt = Number(row.finished_at || row.started_at || 0);
         const dateText = finishedAt > 0 ? new Date(finishedAt).toLocaleString() : "-";
-        metaEl.textContent = `終了: ${dateText} / あなたの関与: ${row.your_role || "-"}`;
+        metaEl.textContent = `終了: ${dateText} / あなたの関与: ${getRoleDisplayLabel(row.your_role)}`;
 
         const openBtn = document.createElement("button");
         openBtn.type = "button";

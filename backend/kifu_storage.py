@@ -99,6 +99,7 @@ def begin_kifu_record(room_owner_id: str, room: dict[str, Any], nicknames: dict[
         "schema_version": SCHEMA_VERSION,
         "kifu_id": kifu_id,
         "room_owner_id": room_owner_id,
+        "is_ai_mode": bool(room.get("is_ai_mode", False)),
         "started_at": started_at_ms,
         "finished_at": None,
         "question_text": str(room.get("question_text", "")),
@@ -249,22 +250,38 @@ def _all_records() -> list[dict[str, Any]]:
 
 def _resolve_role(record: dict[str, Any], client_id: str) -> str | None:
     cid = str(client_id or "")
+
+    def _resolve_participant_or_spectator() -> str | None:
+        participants = record.get("participants_at_start")
+        if isinstance(participants, dict):
+            for team_key in ("team_left", "team_right"):
+                values = participants.get(team_key, [])
+                if not isinstance(values, list):
+                    continue
+                if any(isinstance(item, dict) and str(item.get("client_id") or "") == cid for item in values):
+                    return "participant"
+
+        spectators = record.get("spectators_ever", [])
+        if isinstance(spectators, list):
+            if any(isinstance(item, dict) and str(item.get("client_id") or "") == cid for item in spectators):
+                return "spectator"
+
+        return None
+
+    if bool(record.get("is_ai_mode")):
+        resolved_role = _resolve_participant_or_spectator()
+        if resolved_role is not None:
+            return resolved_role
+        if cid == str(record.get("room_owner_id") or ""):
+            return "questioner"
+        return None
+
     if cid == str(record.get("room_owner_id") or ""):
         return "questioner"
 
-    participants = record.get("participants_at_start")
-    if isinstance(participants, dict):
-        for team_key in ("team_left", "team_right"):
-            values = participants.get(team_key, [])
-            if not isinstance(values, list):
-                continue
-            if any(isinstance(item, dict) and str(item.get("client_id") or "") == cid for item in values):
-                return "participant"
-
-    spectators = record.get("spectators_ever", [])
-    if isinstance(spectators, list):
-        if any(isinstance(item, dict) and str(item.get("client_id") or "") == cid for item in spectators):
-            return "spectator"
+    resolved_role = _resolve_participant_or_spectator()
+    if resolved_role is not None:
+        return resolved_role
 
     return None
 
