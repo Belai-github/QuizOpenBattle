@@ -63,6 +63,8 @@ const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
 const arenaRoomLogStore = new Map();
 let currentArenaLogRoomId = null;
+const arenaChatHistorySeenSeqSetByRoom = new Map();
+const preGameGlobalHistorySeenSeqSetByRoom = new Map();
 
 function isPlayerRole(role = userRole) {
     return role === "team-left" || role === "team-right";
@@ -233,14 +235,14 @@ function getOrCreateArenaRoomLogState(roomOwnerId) {
     return state;
 }
 
-function pushArenaRoomLog(roomOwnerId, chatType, eventType, eventMessage) {
+function pushArenaRoomLog(roomOwnerId, chatType, eventType, eventMessage, eventTimestamp = null) {
     const state = getOrCreateArenaRoomLogState(roomOwnerId);
     if (!state || !ARENA_CHAT_TYPES.includes(chatType)) {
         return;
     }
 
     const logs = state[chatType];
-    logs.push({ eventType, eventMessage });
+    logs.push({ eventType, eventMessage, eventTimestamp });
     while (logs.length > 50) {
         logs.shift();
     }
@@ -279,8 +281,8 @@ function renderArenaLogsForRoom(roomOwnerId) {
         if (!logEl) return;
 
         const entries = state[chatType] || [];
-        entries.forEach(({ eventType, eventMessage }) => {
-            const item = createEventLogItem(eventType, eventMessage);
+        entries.forEach(({ eventType, eventMessage, eventTimestamp }) => {
+            const item = createEventLogItem(eventType, eventMessage, eventTimestamp);
             if (item) {
                 logEl.appendChild(item);
                 applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
@@ -296,6 +298,150 @@ function renderArenaLogsForRoom(roomOwnerId) {
             }
         }
     });
+}
+
+function hydrateArenaChatHistoryIfNeeded(currentRoom) {
+    if (!currentRoom) {
+        return;
+    }
+
+    const roomId = String(currentRoom.room_owner_id || "").trim();
+    if (roomId === "") {
+        return;
+    }
+
+    const history = Array.isArray(currentRoom.arena_chat_history)
+        ? currentRoom.arena_chat_history
+        : [];
+    if (history.length === 0) {
+        return;
+    }
+
+    const roomStateLogs = getOrCreateArenaRoomLogState(roomId);
+    if (!roomStateLogs) {
+        return;
+    }
+
+    let seenSeqSet = arenaChatHistorySeenSeqSetByRoom.get(roomId);
+    if (!seenSeqSet) {
+        seenSeqSet = new Set();
+        arenaChatHistorySeenSeqSetByRoom.set(roomId, seenSeqSet);
+    }
+    let updated = false;
+
+    const sortedHistory = [...history].sort((a, b) => {
+        const timeDiff = Number(a?.timestamp || 0) - Number(b?.timestamp || 0);
+        if (timeDiff !== 0) {
+            return timeDiff;
+        }
+        return Number(a?.seq || 0) - Number(b?.seq || 0);
+    });
+
+    sortedHistory.forEach((entry) => {
+        const seq = Number(entry?.seq || 0);
+        const eventChatType = String(entry?.event_chat_type || "").trim();
+        const eventType = String(entry?.event_type || "").trim();
+        const eventMessage = String(entry?.event_message || "").trim();
+        if (!Number.isFinite(seq) || seenSeqSet.has(seq) || eventMessage === "") {
+            return;
+        }
+        if (!ARENA_CHAT_TYPES.includes(eventChatType)) {
+            return;
+        }
+
+        roomStateLogs[eventChatType].push({
+            eventType,
+            eventMessage,
+            eventTimestamp: Number(entry?.timestamp || 0),
+        });
+        while (roomStateLogs[eventChatType].length > 50) {
+            roomStateLogs[eventChatType].shift();
+        }
+
+        seenSeqSet.add(seq);
+        updated = true;
+    });
+
+    if (updated && currentArenaLogRoomId === roomId) {
+        renderArenaLogsForRoom(roomId);
+    }
+}
+
+function hydratePreGameGlobalHistoryIfNeeded(currentRoom) {
+    if (!currentRoom || currentRoom.role !== "participant") {
+        return;
+    }
+
+    if (String(currentRoom.game_state || "") !== "playing") {
+        return;
+    }
+
+    const roomId = String(currentRoom.room_owner_id || "").trim();
+    if (roomId === "") {
+        return;
+    }
+
+    const history = Array.isArray(currentRoom.pre_game_global_chat_history)
+        ? currentRoom.pre_game_global_chat_history
+        : [];
+    if (history.length === 0) {
+        return;
+    }
+
+    const roomStateLogs = getOrCreateArenaRoomLogState(roomId);
+    if (!roomStateLogs) {
+        return;
+    }
+
+    let seenSeqSet = preGameGlobalHistorySeenSeqSetByRoom.get(roomId);
+    if (!seenSeqSet) {
+        seenSeqSet = new Set();
+        preGameGlobalHistorySeenSeqSetByRoom.set(roomId, seenSeqSet);
+    }
+    let updated = false;
+
+    const sortedHistory = [...history].sort((a, b) => {
+        const timeDiff = Number(a?.timestamp || 0) - Number(b?.timestamp || 0);
+        if (timeDiff !== 0) {
+            return timeDiff;
+        }
+        return Number(a?.seq || 0) - Number(b?.seq || 0);
+    });
+
+    sortedHistory.forEach((entry) => {
+        const seq = Number(entry?.seq || 0);
+        const eventType = String(entry?.event_type || "chat").trim() || "chat";
+        const eventMessage = String(entry?.event_message || "").trim();
+        const eventTimestamp = Number(entry?.timestamp || 0);
+
+        if (!Number.isFinite(seq) || seenSeqSet.has(seq) || eventMessage === "") {
+            return;
+        }
+
+        roomStateLogs["game-global"].push({
+            eventType,
+            eventMessage,
+            eventTimestamp,
+        });
+        while (roomStateLogs["game-global"].length > 50) {
+            roomStateLogs["game-global"].shift();
+        }
+
+        seenSeqSet.add(seq);
+        updated = true;
+    });
+
+    if (updated && currentArenaLogRoomId === roomId) {
+        renderArenaLogsForRoom(roomId);
+    }
+}
+
+function resetArenaChatCaches() {
+    arenaRoomLogStore.clear();
+    arenaChatHistorySeenSeqSetByRoom.clear();
+    preGameGlobalHistorySeenSeqSetByRoom.clear();
+    currentArenaLogRoomId = null;
+    clearArenaLogElements();
 }
 
 function resolveLogScrollContainer(logEl) {
@@ -963,6 +1109,15 @@ function updateGameStateUI() {
     if (previousRoomGameState !== "playing" && currentRoomGameState === "playing") {
         selectedArenaQuestionCharIndexes.clear();
         lastAutoSelectedQuestionKey = null;
+
+        ["game-chat-log-team-left", "game-chat-log-team-right"].forEach((logId) => {
+            const logEl = document.getElementById(logId);
+            if (!logEl) return;
+            const filterState = getChatLogFilterState(logEl);
+            filterState.showChat = true;
+            filterState.showLog = false;
+        });
+        refreshChatLogFilterControls();
     }
     previousRoomGameState = currentRoomGameState;
 
@@ -1851,7 +2006,7 @@ function renderRooms(rooms) {
     });
 }
 
-function createEventLogItem(eventType, eventMessage) {
+function createEventLogItem(eventType, eventMessage, eventTimestamp = null) {
     if (!eventMessage) {
         return null;
     }
@@ -1905,7 +2060,10 @@ function createEventLogItem(eventType, eventMessage) {
 
     const timestampEl = document.createElement("span");
     timestampEl.className = "event-log-time";
-    timestampEl.textContent = new Date().toLocaleTimeString("ja-JP", {
+    const timestampDate = Number.isFinite(Number(eventTimestamp)) && Number(eventTimestamp) > 0
+        ? new Date(Number(eventTimestamp))
+        : new Date();
+    timestampEl.textContent = timestampDate.toLocaleTimeString("ja-JP", {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit"
@@ -1916,7 +2074,7 @@ function createEventLogItem(eventType, eventMessage) {
     return item;
 }
 
-function appendLogToContainer(logEl, eventType, eventMessage) {
+function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = null) {
     if (!logEl) {
         return;
     }
@@ -1925,7 +2083,7 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
     const wasNearBottom = isLogNearBottom(scrollContainer);
     const indicatorEl = ensureLogNewIndicator(scrollContainer);
 
-    const item = createEventLogItem(eventType, eventMessage);
+    const item = createEventLogItem(eventType, eventMessage, eventTimestamp);
     if (!item) {
         return;
     }
@@ -1961,10 +2119,14 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
         "leave",
         "room_entry",
         "room_exit",
+        "room_reconnected",
         "game_start",
+        "game_finished",
         "question",
         "chat",
         "room_shuffle",
+        "character_opened",
+        "answer_submitted",
         "open_vote_request",
         "open_vote_resolved",
         "answer_attempt",
@@ -1983,8 +2145,14 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
     if (eventChatType && eventChatType !== "lobby") {
         const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
         const isTeamLog = eventChatType === "team-left" || eventChatType === "team-right";
-        // teamログのうち、chat以外は片側(team-left)のみミラーして重複表示を防ぐ。
-        const shouldMirrorToGlobal = isTeamLog && (eventType === "chat" || eventChatType === "team-left");
+        // teamチャット本文は進行ログへミラーしない。
+        // 非chatログは、プレイヤーには自チーム分のみ、出題者/観戦者には片側(team-left)のみミラーして重複を防ぐ。
+        const shouldMirrorToGlobal = isTeamLog
+            && eventType !== "chat"
+            && (
+                (isPlayerRole() && eventChatType === userRole)
+                || (!isPlayerRole() && eventChatType === "team-left")
+            );
         if (resolvedRoomId !== "") {
             pushArenaRoomLog(resolvedRoomId, eventChatType, eventType, eventMessage);
             if (shouldMirrorToGlobal) {
@@ -2016,11 +2184,21 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
             const globalLogEl = document.getElementById("game-chat-log-game-global");
             appendLogToContainer(globalLogEl, eventType, eventMessage);
         }
+        return;
+    }
+
+    if (eventType === "room_entry" || eventType === "room_exit") {
+        return;
     }
 
     // アリーナ内で発生するゲーム進行ログは待機所ログへは送らない。
     const arenaOnlyTypes = new Set([
+        "game_start",
+        "game_finished",
+        "question",
         "room_shuffle",
+        "character_opened",
+        "answer_submitted",
         "open_vote_request",
         "open_vote_resolved",
         "answer_attempt",
@@ -2032,6 +2210,14 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
         "turn_changed",
     ]);
     if (arenaOnlyTypes.has(eventType)) {
+        const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
+        if (isInGameArena() && resolvedRoomId !== "") {
+            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage);
+            if (currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
+                const globalLogEl = document.getElementById("game-chat-log-game-global");
+                appendLogToContainer(globalLogEl, eventType, eventMessage);
+            }
+        }
         return;
     }
 
@@ -2183,11 +2369,18 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        const eventMessageForLog = String(data.event_message || data.public_info || "").trim();
+        const wasInArena = isInGameArena();
         currentRoomSnapshot = data.current_room ?? null;
         userRole = data.current_room?.chat_role ?? null;
         currentRoomGameState = data.current_room?.game_state ?? null;
         currentGameState = data.current_room?.game ?? null;
         const activeRoomId = String(data.current_room?.room_owner_id || "").trim() || null;
+
+        const isEnteringArena = data.target_screen === "game_arena" && (!wasInArena || activeRoomId !== currentArenaLogRoomId);
+        if (isEnteringArena) {
+            resetArenaChatCaches();
+        }
 
         if (activeRoomId !== currentArenaLogRoomId) {
             renderArenaLogsForRoom(activeRoomId);
@@ -2226,7 +2419,15 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             void handleAnswerJudgementRequest(data.event_payload);
         }
 
-        appendEventLog(data.event_type, data.event_message, data.event_chat_type, data.event_room_id);
+        if (isInGameArena() && (isEnteringArena || currentRoomGameState !== "waiting")) {
+            hydrateArenaChatHistoryIfNeeded(data.current_room);
+            hydratePreGameGlobalHistoryIfNeeded(data.current_room);
+        }
+
+        // 待機中はライブ追記、対戦開始後は履歴ドリブン描画に統一する。
+        if ((!isInGameArena() || currentRoomGameState === "waiting") && !isEnteringArena) {
+            appendEventLog(data.event_type, eventMessageForLog, data.event_chat_type, data.event_room_id);
+        }
         renderRooms(data.rooms);
         renderParticipants(data.participants);
         renderArena(data.current_room);

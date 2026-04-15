@@ -196,6 +196,34 @@ class QuizGameManager:
         event_recipient_ids: set[str] | None = None,
         event_payload: dict | None = None,
     ):
+        arena_progress_event_types = {
+            "game_start",
+            "game_finished",
+            "question",
+            "room_shuffle",
+            "character_opened",
+            "answer_submitted",
+            "open_vote_request",
+            "open_vote_resolved",
+            "answer_attempt",
+            "answer_result",
+            "answer_vote_request",
+            "answer_vote_resolved",
+            "turn_end_vote_request",
+            "turn_end_vote_resolved",
+            "turn_changed",
+            "room_reconnected",
+        }
+        history_message = str(event_message or public_info or "").strip()
+
+        if event_room_id and history_message:
+            if event_chat_type in {"team-left", "team-right", "game-global"}:
+                self._append_arena_chat_history(event_room_id, event_type or "", history_message, event_chat_type)
+            elif event_type in {"room_entry", "room_exit"}:
+                self._append_arena_chat_history(event_room_id, event_type, history_message, "game-global")
+            elif event_type in arena_progress_event_types:
+                self._append_arena_chat_history(event_room_id, event_type or "", history_message, "game-global")
+
         participants = self.build_participants()
         for client_id, ws in self.active_connections.items():
             rooms = self.build_rooms_summary(client_id)
@@ -206,7 +234,7 @@ class QuizGameManager:
 
             is_event_recipient = event_recipient_ids is None or client_id in event_recipient_ids
             response_event_type = event_type if is_event_recipient else None
-            response_event_message = event_message if is_event_recipient else None
+            response_event_message = history_message if is_event_recipient else None
             response_event_chat_type = event_chat_type if is_event_recipient else None
 
             response = {
@@ -237,6 +265,38 @@ class QuizGameManager:
         if team == "team-right":
             return set(room["right_participants"])
         return set()
+
+    def _append_arena_chat_history(self, room_owner_id: str, event_type: str, event_message: str, event_chat_type: str):
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            return
+
+        if event_chat_type not in {"team-left", "team-right", "game-global"}:
+            return
+
+        message = str(event_message or "").strip()
+        if message == "":
+            return
+
+        seq = int(room.get("arena_chat_seq", 0)) + 1
+        room["arena_chat_seq"] = seq
+        history = room.setdefault("arena_chat_history", [])
+        if not isinstance(history, list):
+            history = []
+            room["arena_chat_history"] = history
+
+        history.append(
+            {
+                "seq": seq,
+                "timestamp": int(time.time() * 1000),
+                "event_type": str(event_type or ""),
+                "event_message": message,
+                "event_chat_type": event_chat_type,
+            }
+        )
+
+        while len(history) > 400:
+            history.pop(0)
 
     def _purge_expired_reconnect_reservations(self):
         now = time.time()
@@ -1146,6 +1206,13 @@ class QuizGameManager:
             await self.send_private_info(client_id, result.get("error", "ゲーム開始に失敗しました。"))
             return
 
+        room = self.rooms.get(client_id)
+        if room is not None:
+            room["arena_chat_history"] = []
+            room["arena_chat_seq"] = 0
+            room["pre_game_global_chat_history"] = []
+            room["pre_game_global_chat_seq"] = 0
+
         questioner_name = result["questioner_name"]
         await self.broadcast_state(
             public_info=f"{questioner_name} がゲームを開始しました",
@@ -1637,9 +1704,7 @@ class QuizGameManager:
 
     async def exit_room(self, client_id: str):
         ctx_before_exit = resolve_client_room_context(self.rooms, client_id)
-        room_owner_id_before_exit = None
-        if ctx_before_exit and ctx_before_exit.get("role") == "participant":
-            room_owner_id_before_exit = ctx_before_exit.get("room_owner_id")
+        room_owner_id_before_exit = ctx_before_exit.get("room_owner_id") if ctx_before_exit else None
 
         self._cancel_disconnect_grace_timer(client_id)
         self._clear_pending_disconnect_everywhere(client_id)
@@ -1668,6 +1733,7 @@ class QuizGameManager:
             public_info=f"{nickname} が部屋から退室しました",
             event_type="room_exit",
             event_message=f"{nickname} が部屋から退室しました",
+            event_room_id=room_owner_id_before_exit,
         )
 
         if room_owner_id_before_exit is not None:
@@ -1763,6 +1829,25 @@ class QuizGameManager:
         room_owner_id = room_ctx["room_owner_id"]
         room = room_ctx["room"]
         sender_chat_role = room_ctx["chat_role"]
+
+        if chat_type == "game-global" and room.get("game_state", "waiting") == "waiting":
+            pre_seq = int(room.get("pre_game_global_chat_seq", 0)) + 1
+            room["pre_game_global_chat_seq"] = pre_seq
+            pre_history = room.setdefault("pre_game_global_chat_history", [])
+            if not isinstance(pre_history, list):
+                pre_history = []
+                room["pre_game_global_chat_history"] = pre_history
+            pre_history.append(
+                {
+                    "seq": pre_seq,
+                    "timestamp": int(time.time() * 1000),
+                    "event_type": "chat",
+                    "event_message": f"{nickname}: {message}",
+                }
+            )
+            while len(pre_history) > 200:
+                pre_history.pop(0)
+
         chat_result = resolve_chat_recipients(room_owner_id, room, sender_chat_role, chat_type)
         if not chat_result.get("ok"):
             await self.send_private_info(client_id, chat_result.get("error", "チャット送信に失敗しました。"))
@@ -1777,6 +1862,7 @@ class QuizGameManager:
             event_type="chat",
             event_message=f"{nickname}: {message}",
             event_chat_type=chat_type,
+            event_room_id=room_owner_id,
             event_recipient_ids=event_recipient_ids,
         )
 

@@ -399,14 +399,18 @@ button:hover {
 }
 
 .chat-log-filter-btn {
-    width: auto;
+    width: 72px;
     min-height: 24px;
     margin-top: 0;
     padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 999px;
     border: 1px solid #cbd5e1;
     background: #ffffff;
     color: #334155;
+    text-align: center;
     font-size: 0.68rem;
     font-weight: 700;
     line-height: 1;
@@ -458,6 +462,10 @@ button:hover {
 
 .chat-log .event-log-item {
     gap: 6px;
+}
+
+.chat-log .event-log-item.filtered-out {
+    display: none !important;
 }
 
 .chat-log .event-log-time {
@@ -889,8 +897,9 @@ body.modal-open #arena-question-text .arena-question-line {
     padding: 10px;
     display: flex;
     flex-direction: column;
-    min-height: 360px;
+    min-height: 0;
     overflow: visible;
+    align-self: start;
 }
 
 #arena-global-chat-box.hidden {
@@ -905,8 +914,9 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #arena-global-chat-box .log-scroll-shell {
-    flex: 1 1 auto;
-    min-height: 0;
+    flex: 0 0 240px;
+    min-height: 240px;
+    max-height: 240px;
     display: flex;
     flex-direction: column;
 }
@@ -932,9 +942,9 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #arena-global-chat-box #game-chat-log-game-global {
-    height: 100%;
-    min-height: 0;
-    max-height: none;
+    height: 240px;
+    min-height: 240px;
+    max-height: 240px;
 }
 
 .arena-player-box {
@@ -1484,11 +1494,17 @@ body[data-room-role="spectator"] #arena-answer-box {
         gap: 12px;
     }
 
-    #arena-global-chat-box,
     #arena-spectator-box {
         margin-top: 10px;
         min-width: 0;
         height: 100%;
+    }
+
+    #arena-global-chat-box {
+        margin-top: 10px;
+        min-width: 0;
+        height: auto;
+        align-self: start;
     }
 
     #arena-spectator-box {

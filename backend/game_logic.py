@@ -192,6 +192,64 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
 
     question_visible_text = _build_visible_question_text(normalized_chars, room.get("game"), chat_role)
 
+    arena_chat_history = []
+    pre_game_global_chat_history = []
+    room_state = room.get("game_state", "waiting")
+    raw_history = room.get("arena_chat_history") or []
+    if isinstance(raw_history, list):
+        readable_roles_by_type = {
+            "team-left": {"team-left", "questioner", "spectator"},
+            "team-right": {"team-right", "questioner", "spectator"},
+            "game-global": {"team-left", "team-right", "questioner", "spectator"},
+        }
+
+        sorted_history = sorted(
+            [entry for entry in raw_history if isinstance(entry, dict)],
+            key=lambda entry: (int(entry.get("timestamp", 0)), int(entry.get("seq", 0))),
+        )
+
+        for entry in sorted_history:
+            event_chat_type = str(entry.get("event_chat_type", "")).strip()
+            event_type = str(entry.get("event_type", "")).strip()
+            event_message = str(entry.get("event_message", "")).strip()
+            if event_message == "":
+                continue
+
+            readable_roles = readable_roles_by_type.get(event_chat_type)
+            if not readable_roles or chat_role not in readable_roles:
+                continue
+
+            if event_chat_type == "game-global" and room_state == "playing" and chat_role in {"team-left", "team-right"} and event_type == "chat":
+                continue
+
+            arena_chat_history.append(
+                {
+                    "seq": int(entry.get("seq", 0)),
+                    "timestamp": int(entry.get("timestamp", 0)),
+                    "event_type": event_type,
+                    "event_message": event_message,
+                    "event_chat_type": event_chat_type,
+                }
+            )
+
+    if room_state == "playing" and ctx["role"] == "participant":
+        raw_pre_game_history = room.get("pre_game_global_chat_history") or []
+        if isinstance(raw_pre_game_history, list):
+            pre_game_global_chat_history = sorted(
+                [
+                    {
+                        "seq": int(entry.get("seq", 0)),
+                        "timestamp": int(entry.get("timestamp", 0)),
+                        "event_type": str(entry.get("event_type", "chat")),
+                        "event_message": str(entry.get("event_message", "")).strip(),
+                        "event_chat_type": "game-global",
+                    }
+                    for entry in raw_pre_game_history
+                    if isinstance(entry, dict) and str(entry.get("event_message", "")).strip() != ""
+                ],
+                key=lambda entry: (entry["timestamp"], entry["seq"]),
+            )
+
     return {
         "room_owner_id": owner_id,
         "questioner_id": owner_id,
@@ -208,6 +266,8 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "right_participants": right_participants,
         "spectators": spectators,
         "pending_disconnects": pending_disconnects,
+        "arena_chat_history": arena_chat_history,
+        "pre_game_global_chat_history": pre_game_global_chat_history,
     }
 
 
@@ -396,6 +456,10 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         "right_participants": set(),
         "spectators": set(),
         "pending_disconnects": {},
+        "arena_chat_history": [],
+        "arena_chat_seq": 0,
+        "pre_game_global_chat_history": [],
+        "pre_game_global_chat_seq": 0,
     }
 
     remove_client_from_all_rooms(rooms, player_id)
@@ -421,11 +485,14 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
             event_recipient_ids |= ids
         return {"ok": True, "event_recipient_ids": event_recipient_ids}
 
-    # 全体チャットは待機中・終了後は全員、対戦中は出題者/観戦者のみ利用可能
+    # 全体チャットは待機中・終了後は全員、対戦中は出題者/観戦者のみ送受信可能
     if chat_type == "game-global":
         if room_state == "playing":
             if sender_chat_role not in {"questioner", "spectator"}:
                 return {"ok": False, "error": "対戦中の全体チャットは出題者/観戦者のみ利用できます。"}
+
+            event_recipient_ids = role_to_ids["questioner"] | role_to_ids["spectator"]
+            return {"ok": True, "event_recipient_ids": event_recipient_ids}
         elif room_state != "finished":
             return {"ok": False, "error": "全体チャットを利用できない状態です。"}
 
