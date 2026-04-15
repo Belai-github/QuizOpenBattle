@@ -86,14 +86,21 @@ function showQuestionConfirmModal(questionText) {
     });
 }
 
-function showConfirmModal(message) {
+function showConfirmModal(message, options = {}) {
+    const { hideCancel = false, okLabel = "送信する", cancelLabel = "キャンセル" } = options;
     return new Promise((resolve) => {
         confirmMessageEl.textContent = message;
+        confirmOkBtn.textContent = okLabel;
+        confirmCancelBtn.textContent = cancelLabel;
+        confirmCancelBtn.style.display = hideCancel ? "none" : "";
         confirmModal.classList.remove("hidden");
         confirmOkBtn.focus();
 
         const close = (result) => {
             confirmModal.classList.add("hidden");
+            confirmCancelBtn.style.display = "";
+            confirmOkBtn.textContent = "送信する";
+            confirmCancelBtn.textContent = "キャンセル";
             confirmOkBtn.removeEventListener("click", onOk);
             confirmCancelBtn.removeEventListener("click", onCancel);
             confirmModal.removeEventListener("click", onBackdropClick);
@@ -105,12 +112,12 @@ function showConfirmModal(message) {
         const onCancel = () => close(false);
         const onBackdropClick = (event) => {
             if (event.target === confirmModal) {
-                close(false);
+                close(hideCancel ? true : false);
             }
         };
         const onEscape = (event) => {
             if (event.key === "Escape") {
-                close(false);
+                close(hideCancel ? true : false);
             }
         };
 
@@ -153,17 +160,6 @@ function requestRoomEntry(roomOwnerId, role) {
     ws.send(JSON.stringify(payload));
 }
 
-function requestCancelQuestion(roomOwnerId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-    const payload = {
-        type: "cancel_question",
-        room_owner_id: roomOwnerId,
-        timestamp: Date.now()
-    };
-    ws.send(JSON.stringify(payload));
-}
-
 function renderRooms(rooms) {
     const roomListEl = document.getElementById("room-list");
     roomListEl.innerHTML = "";
@@ -184,29 +180,14 @@ function renderRooms(rooms) {
         questionerEl.className = "room-card-questioner";
         questionerEl.textContent = `${room.questioner_name} の部屋`;
 
-        const questionEl = document.createElement("div");
-        questionEl.className = "room-card-question";
-        questionEl.textContent = `Q. ${room.question_text}`;
-
         const metaEl = document.createElement("div");
         metaEl.className = "room-card-meta";
         metaEl.textContent = `参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
 
-        const actionsEl = document.createElement("div");
-        actionsEl.className = "room-card-actions";
+        if (!room.is_owner) {
+            const actionsEl = document.createElement("div");
+            actionsEl.className = "room-card-actions";
 
-        if (room.is_owner) {
-            const cancelBtn = document.createElement("button");
-            cancelBtn.type = "button";
-            cancelBtn.className = "room-card-btn danger";
-            cancelBtn.textContent = "出題取消";
-            cancelBtn.addEventListener("click", async () => {
-                const confirmed = await showConfirmModal("この出題を取り消しますか？");
-                if (!confirmed) return;
-                requestCancelQuestion(room.room_owner_id);
-            });
-            actionsEl.appendChild(cancelBtn);
-        } else {
             const joinBtn = document.createElement("button");
             joinBtn.type = "button";
             joinBtn.className = "room-card-btn";
@@ -222,12 +203,11 @@ function renderRooms(rooms) {
 
             actionsEl.appendChild(joinBtn);
             actionsEl.appendChild(watchBtn);
+            card.appendChild(actionsEl);
         }
 
         card.appendChild(questionerEl);
-        card.appendChild(questionEl);
         card.appendChild(metaEl);
-        card.appendChild(actionsEl);
         roomListEl.appendChild(card);
     });
 }
@@ -308,9 +288,13 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         const data = JSON.parse(event.data);
         if (data.target_screen === "game_arena") {
             showGameArenaScreen();
+        } else if (data.target_screen === "waiting_room") {
+            showWaitingRoomScreen();
         }
 
-        if (data.event_type === "private_notice" && data.private_info) {
+        if (data.event_type === "forced_exit_notice" && data.private_info) {
+            void showConfirmModal(data.private_info, { hideCancel: true, okLabel: "OK" });
+        } else if (data.event_type === "private_notice" && data.private_info) {
             void showAlertModal(data.private_info);
         }
 
@@ -359,4 +343,21 @@ document.getElementById("question-box").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     submitQuestion();
+});
+
+const leaveGameArenaEl = document.getElementById("leave-game-arena");
+
+function requestRoomExit() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "room_exit" }));
+    }
+    showWaitingRoomScreen();
+}
+
+leaveGameArenaEl?.addEventListener("click", requestRoomExit);
+leaveGameArenaEl?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        requestRoomExit();
+    }
 });

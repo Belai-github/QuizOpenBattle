@@ -28,7 +28,6 @@ class QuizGameManager:
                 {
                     "room_owner_id": owner_id,
                     "questioner_name": room["questioner_name"],
-                    "question_text": room["question_text"],
                     "participant_count": len(room["participants"]),
                     "spectator_count": len(room["spectators"]),
                     "is_owner": viewer_client_id == owner_id,
@@ -64,7 +63,13 @@ class QuizGameManager:
             }
             await ws.send_text(json.dumps(response))
 
-    async def send_private_info(self, client_id: str, message: str, target_screen: str | None = None):
+    async def send_private_info(
+        self,
+        client_id: str,
+        message: str,
+        target_screen: str | None = None,
+        event_type: str = "private_notice",
+    ):
         ws = self.active_connections.get(client_id)
         if ws is None:
             return
@@ -74,7 +79,7 @@ class QuizGameManager:
             "private_info": message,
             "participants": self.build_participants(),
             "rooms": self.build_rooms_summary(client_id),
-            "event_type": "private_notice",
+            "event_type": event_type,
             "event_message": None,
             "event_room_id": None,
             "target_screen": target_screen,
@@ -92,7 +97,17 @@ class QuizGameManager:
             return
 
         questioner_name = room["questioner_name"]
+        # 強制退室通知は参加者・観戦者のみに送り、出題者本人には送らない。
+        affected_client_ids = set(room["participants"]) | set(room["spectators"])
         self.rooms.pop(room_owner_id, None)
+
+        for target_client_id in affected_client_ids:
+            await self.send_private_info(
+                target_client_id,
+                "出題が取り消されたため、部屋から退室しました。",
+                target_screen="waiting_room",
+                event_type="forced_exit_notice",
+            )
 
         await self.broadcast_state(
             public_info=f"{questioner_name} の出題が取り消されました",
@@ -113,7 +128,7 @@ class QuizGameManager:
             return
 
         if client_id == room_owner_id:
-            await self.send_private_info(client_id, "あなたはこの部屋の出題者です。")
+            await self.send_private_info(client_id, "あなたの出題部屋に入室しました。", target_screen="game_arena")
             return
 
         self.remove_client_from_all_rooms(client_id)
@@ -184,6 +199,37 @@ class QuizGameManager:
                     event_room_id=client_id,
                 )
 
+    async def exit_room(self, client_id: str):
+        nickname = self.nicknames.get(client_id, "ゲスト")
+
+        # 出題者が退室した場合は、その出題部屋を閉じる。
+        if client_id in self.rooms:
+            room = self.rooms.pop(client_id)
+
+            affected_client_ids = set(room["participants"]) | set(room["spectators"])
+            for target_client_id in affected_client_ids:
+                await self.send_private_info(
+                    target_client_id,
+                    "出題者が退室したため、部屋から退室しました。",
+                    target_screen="waiting_room",
+                    event_type="forced_exit_notice",
+                )
+
+            await self.broadcast_state(
+                public_info=f"{nickname} が出題部屋を閉じました",
+                event_type="room_closed",
+                event_message=f"{nickname} の出題部屋が閉じられました",
+                event_room_id=client_id,
+            )
+            return
+
+        self.remove_client_from_all_rooms(client_id)
+        await self.broadcast_state(
+            public_info=f"{nickname} が部屋から退室しました",
+            event_type="room_exit",
+            event_message=f"{nickname} が部屋から退室しました",
+        )
+
     async def process_question(self, player_id: str, payload: dict):
         if player_id in self.rooms:
             await self.send_private_info(player_id, "同時に出題できる問題は1つまでです。")
@@ -225,6 +271,10 @@ class QuizGameManager:
 
     async def process_client_payload(self, client_id: str, payload: dict):
         payload_type = payload.get("type")
+
+        if payload_type == "room_exit":
+            await self.exit_room(client_id)
+            return
 
         if payload_type == "question_submission":
             await self.process_question(client_id, payload)
