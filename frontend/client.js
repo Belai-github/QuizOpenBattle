@@ -20,6 +20,7 @@ const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-v
 const arenaGlobalChatBoxEl = document.getElementById("arena-global-chat-box");
 const arenaLogsModalEl = document.getElementById("arena-logs-modal");
 const arenaLogsModalSlotEl = document.getElementById("arena-logs-modal-slot");
+const arenaLogsUnreadBadgeEl = document.getElementById("arena-logs-unread-badge");
 const arenaAnswerBoxEl = document.getElementById("arena-answer-box");
 const arenaAnswerInputEl = document.getElementById("arena-answer-input");
 const arenaAnswerLengthWarningEl = document.getElementById("arena-answer-length-warning");
@@ -155,6 +156,7 @@ const ARENA_ALLOWED_EVENT_TYPES = new Set([
 ]);
 const arenaRoomLogStore = new Map();
 let currentArenaLogRoomId = null;
+let arenaLogsUnreadPending = false;
 const arenaChatHistorySeenSeqSetByRoom = new Map();
 const preGameGlobalHistorySeenSeqSetByRoom = new Map();
 const ARENA_HISTORY_DEBUG_STORAGE_KEY = "quiz_debug_arena_history";
@@ -1696,10 +1698,32 @@ function syncArenaLogsPresentation() {
 
     if (isMobileArenaLogsMode()) {
         mountArenaLogsIntoModal();
+        setArenaLogsUnreadBadgeVisible(arenaLogsUnreadPending && !(arenaLogsModalEl?.open));
         return;
     }
 
     closeArenaLogsPresentation(true);
+    setArenaLogsUnreadBadgeVisible(false);
+}
+
+function setArenaLogsUnreadBadgeVisible(visible) {
+    if (!arenaLogsUnreadBadgeEl) return;
+    arenaLogsUnreadBadgeEl.classList.toggle("hidden", !visible);
+}
+
+function clearArenaLogsUnreadState() {
+    arenaLogsUnreadPending = false;
+    setArenaLogsUnreadBadgeVisible(false);
+}
+
+function notifyArenaLogsUnreadIfNeeded(logEl) {
+    if (!logEl || logEl.id !== "game-chat-log-game-global") return;
+    if (arenaLogsModalEl?.open) return;
+
+    arenaLogsUnreadPending = true;
+    if (isMobileArenaLogsMode()) {
+        setArenaLogsUnreadBadgeVisible(true);
+    }
 }
 
 function canSelectArenaQuestionChars() {
@@ -2361,7 +2385,8 @@ function isReplayMode() {
 
 function syncReplayControlsVisibility() {
     if (kifuReplayControlsEl) {
-        kifuReplayControlsEl.classList.toggle("hidden", !isReplayMode());
+        const isGameFinished = (currentRoomGameState || "waiting") === "finished";
+        kifuReplayControlsEl.classList.toggle("hidden", !isGameFinished);
     }
 }
 
@@ -4393,6 +4418,7 @@ function appendLogToContainer(
     if (logEl.classList.contains("chat-log")) {
         applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
     }
+    notifyArenaLogsUnreadIfNeeded(logEl);
     while (logEl.children.length > 50) {
         logEl.removeChild(logEl.firstChild);
     }
@@ -5735,6 +5761,7 @@ document.getElementById("arena-logs-toggle-btn")?.addEventListener("click", () =
 
         mountArenaLogsIntoModal();
         arenaLogsModalEl?.showModal();
+        clearArenaLogsUnreadState();
         return;
     }
 

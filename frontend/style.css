@@ -1296,7 +1296,7 @@ body.modal-open #arena-question-text .arena-question-line {
 
 .arena-player-box {
     border-radius: 12px;
-    padding: 10px 10px 0;
+    padding: 10px 10px 10px;
     min-height: 120px;
     display: flex;
     flex-direction: column;
@@ -1899,6 +1899,24 @@ body.modal-open #arena-question-text .arena-question-line {
     background: #fff7cc !important;
     margin-top: 0;
     display: none;
+    position: relative;
+}
+
+.arena-logs-toggle-label {
+    position: relative;
+    z-index: 1;
+}
+
+.arena-logs-unread-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #ef4444;
+    box-shadow: 0 0 0 2px #fff7cc;
+    pointer-events: none;
 }
 
 #arena-logs-toggle-btn:hover {
@@ -2015,25 +2033,56 @@ body.modal-open #arena-question-text .arena-question-line {
         bottom: 10px;
     }
 
-    /* 時系列ボタン群を小さく、折行対応 */
-    #kifu-replay-controls {
-        flex-wrap: wrap;
-        gap: 4px;
+    /* 時系列ボタン群を直感的な3段配置にする: ラベル > 前次 > 最初最後 */
+    #kifu-replay-controls:not(.hidden) {
+        display: grid;
+        grid-template-columns: repeat(2, max-content);
+        grid-template-areas:
+            "label label"
+            "prev next"
+            "first last";
+        justify-content: center;
+        justify-items: center;
+        align-items: center;
+        gap: 6px 8px;
     }
 
-    .kifu-step-btn {
-        width: 28px !important;
-        min-height: 28px !important;
-        font-size: 0.7rem;
+    #kifu-step-first-btn {
+        grid-area: first;
+    }
+
+    #kifu-step-prev-btn {
+        grid-area: prev;
     }
 
     #kifu-step-label {
-        min-width: 50px;
-        font-size: 0.7rem;
+        grid-area: label;
+        min-width: 0;
+        font-size: 0.74rem;
+    }
+
+    #kifu-step-next-btn {
+        grid-area: next;
+    }
+
+    #kifu-step-last-btn {
+        grid-area: last;
+    }
+
+    .kifu-step-btn {
+        width: 32px !important;
+        min-height: 32px !important;
+        font-size: 0.72rem;
     }
 }
 
 @media (min-width: 768px) {
+
+    /* デスクトップ版では進行ログのclose buttonを非表示 */
+    #arena-logs-close-btn {
+        display: none;
+    }
+
     .rulebook-modal-card {
         width: min(94vw, 900px);
         max-width: 900px;
