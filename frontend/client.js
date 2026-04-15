@@ -1894,7 +1894,7 @@ async function submitIntentionalDrawProposal() {
     }
 
     const confirmed = await showConfirmModal(
-        "ID(インテンショナルドロー)は、ゲームが膠着状態になったときの救済措置として、全員の同意のもとこのゲームを引き分けにするルールです。IDを提案しますか？",
+        "ID(インテンショナルドロー)は、ゲームが膠着状態になったときの救済措置として、全員の同意のもとこのゲームを引き分けにするルールです。\n\nIDを提案しますか？",
         {
             okLabel: "はい",
             cancelLabel: "いいえ",
@@ -4225,14 +4225,17 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
         messageEl.textContent = eventMessage;
     }
 
-    if (eventType === "game_finished") {
-        const normalizedMessage = String(eventMessage || "");
+    const normalizedMessage = String(eventMessage || "");
+    const isGameFinishedLog = eventType === "game_finished"
+        || normalizedMessage.includes("ゲーム終了")
+        || normalizedMessage.includes("対戦結果：");
+    if (isGameFinishedLog) {
         messageEl.classList.add("game-finished");
-        if (/勝者\s*[:：]\s*先攻|先攻の勝利|先攻勝ち/.test(normalizedMessage)) {
+        if (normalizedMessage.includes("先攻の勝利") || normalizedMessage.includes("先攻勝ち")) {
             messageEl.classList.add("game-finished-left-win");
-        } else if (/勝者\s*[:：]\s*後攻|後攻の勝利|後攻勝ち/.test(normalizedMessage)) {
+        } else if (normalizedMessage.includes("後攻の勝利") || normalizedMessage.includes("後攻勝ち")) {
             messageEl.classList.add("game-finished-right-win");
-        } else if (/引き分け|ドロー|勝者\s*[:：]\s*なし/.test(normalizedMessage)) {
+        } else if (normalizedMessage.includes("引き分け") || normalizedMessage.includes("ドロー")) {
             messageEl.classList.add("game-finished-draw");
         }
     }
