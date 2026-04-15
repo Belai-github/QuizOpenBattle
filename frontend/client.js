@@ -1293,6 +1293,12 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
         return;
     }
 
+    // アリーナ内で発生するゲーム進行ログは待機所ログへは送らない。
+    const arenaOnlyTypes = new Set(["room_shuffle", "open_vote_request", "open_vote_resolved"]);
+    if (arenaOnlyTypes.has(eventType)) {
+        return;
+    }
+
     if (eventType === "chat" && eventChatType && eventChatType !== "lobby") {
         const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
         appendLogToContainer(roomLogEl, eventType, eventMessage);
