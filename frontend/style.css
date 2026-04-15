@@ -729,10 +729,9 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #arena-player-right {
-    #arena-global-chat-box.hidden {
-        display: none;
-    }
-
+    order: 3;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
 }
 
@@ -763,6 +762,7 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #game-chat-log-spectator {
+    min-height: 240px;
     background: #e5e7eb;
     border-color: #cbd5e1;
 }
@@ -1159,6 +1159,7 @@ body[data-room-role="spectator"] #arena-answer-box {
     border-radius: 12px;
     background: #e5e7eb;
     padding: 10px;
+    min-height: 120px;
 }
 
 #arena-spectator-box .chat-box {
@@ -1364,18 +1365,41 @@ body[data-room-role="spectator"] #arena-answer-box {
     #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box {
         grid-column: 1 / -1;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-rows: auto minmax(220px, auto) auto;
     }
 
     #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .arena-spectator-label {
-        grid-column: 1 / -1;
+        grid-column: 1;
+        grid-row: 1;
     }
 
     #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-list {
         grid-column: 1;
+        grid-row: 2;
+        align-self: start;
     }
 
     #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) {
+        display: contents;
+    }
+
+    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .arena-chat-title {
         grid-column: 2;
+        grid-row: 1;
+        margin-bottom: 0;
+        align-self: end;
+    }
+
+    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .chat-log {
+        grid-column: 2;
+        grid-row: 2;
+        min-height: 220px;
+    }
+
+    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .chat-compose {
+        grid-column: 2;
+        grid-row: 3;
+        margin-top: 0;
     }
 }
 
