@@ -1,30 +1,31 @@
-// テスト用にランダムなIDを生成（本来はログインやルーム入室時に決める）
-const clientId = "Player_" + Math.floor(Math.random() * 1000);
-document.getElementById("my-id").textContent = clientId;
+const CLIENT_ID_KEY = "qob_client_id";
+const NICKNAME_KEY = "qob_nickname";
 
-// WebSocketでPythonサーバーに接続
-const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-const ws = new WebSocket(`${protocol}${window.location.host}/ws/${clientId}`);
+let clientId = localStorage.getItem(CLIENT_ID_KEY);
+if (!clientId) {
+    clientId = crypto.randomUUID();
+    localStorage.setItem(CLIENT_ID_KEY, clientId);
+}
 
-ws.onopen = () => {
-    console.log("サーバーに接続しました");
-};
+const ws = new WebSocket(`ws://${location.host}/ws/${clientId}`);
 
-// サーバーからメッセージを受け取ったときの処理
-ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+ws.addEventListener("open", () => {
+    const cachedName = localStorage.getItem(NICKNAME_KEY);
+    if (cachedName) {
+        ws.send(JSON.stringify({ type: "set_nickname", nickname: cachedName }));
+    }
+    ws.send(JSON.stringify({ type: "get_participants" }));
+});
 
-    // 画面の表示を更新（ここで非対称情報が反映される）
-    document.getElementById("public-info").textContent = data.public_info;
-    document.getElementById("private-info").textContent = data.private_info;
-};
+function saveNickname(name) {
+    localStorage.setItem(NICKNAME_KEY, name);
+    ws.send(JSON.stringify({ type: "set_nickname", nickname: name }));
+}
 
-// ボタンを押したときの処理
-document.getElementById("action-btn").addEventListener("click", () => {
-    const actionData = {
-        action: "攻撃", // テスト用のダミーデータ
-        timestamp: Date.now()
-    };
-    // サーバーへ送信
-    ws.send(JSON.stringify(actionData));
+ws.addEventListener("message", (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "participants") {
+        // msg.participants を画面に表示
+        // 例: [{ client_id: "...", nickname: "Alice" }, ...]
+    }
 });
