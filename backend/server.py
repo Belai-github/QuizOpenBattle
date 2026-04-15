@@ -424,10 +424,8 @@ class QuizGameManager:
             return
 
         try:
-            is_correct = await asyncio.wait_for(
-                check_answer_async(expected_answer, answer_text, model_id=model_id),
-                timeout=12.0,
-            )
+            answer_judgement_task = check_answer_async(expected_answer, answer_text, model_id=model_id)
+            is_correct = await asyncio.wait_for(answer_judgement_task, timeout=12.0)
         except Exception:
             game["pending_answer_judgement"] = None
             private_map = {target_id: "AI正誤判定に失敗しました。再度アンサーしてください。" for target_id in self._room_member_ids(owner_id, room)}
@@ -2626,7 +2624,7 @@ class QuizGameManager:
             quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
             difficulty = normalize_difficulty(normalized_payload.get("difficulty", 0))
-            generation_timeout = 180.0 if model_id == "gemini-3.1-pro-preview" else 100.0
+            generation_timeout = 100.0
             try:
                 try:
                     quiz_data = await asyncio.wait_for(

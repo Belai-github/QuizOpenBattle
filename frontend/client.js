@@ -72,7 +72,6 @@ const AI_MODEL_OPTIONS = [
     ["gemini-2.5-flash", "gemini-2.5-flash (生成時間目安:約5秒)"],
     ["gemini-2.5-pro", "gemini-2.5-pro (生成時間目安:約20秒)"],
     ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview (生成時間:約2秒)"],
-    ["gemini-3.1-pro-preview", "gemini-3.1-pro-preview (生成時間:約60秒)"],
 ];
 const DEFAULT_AI_DIFFICULTY = 3;
 const AI_DIFFICULTY_OPTIONS = [
