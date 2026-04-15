@@ -58,12 +58,19 @@
     <div id="game-arena-screen" style="display: none;">
         <div class="arena-header-tools">
             <div class="arena-header-left-actions">
-                <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">☓部屋を閉じる</div>
-                <button id="start-game-btn" class="start-game-btn hidden" type="button">ゲーム開始</button>
+                <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">✕ 部屋を閉じる</div>
             </div>
-            <button id="rulebook-btn-arena" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
-                <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
-            </button>
+            <div class="arena-header-right-actions">
+                <button id="start-game-btn" class="start-game-btn hidden" type="button">ゲーム開始</button>
+                <button id="shuffle-participants-btn" class="shuffle-btn hidden" type="button" aria-label="参加者をシャッフル"
+                    title="参加者をシャッフル">
+                    <img src="img/shuffle.png" alt="シャッフル" class="shuffle-icon">
+                </button>
+                <button id="rulebook-btn-arena" class="rulebook-btn rulebook-trigger" aria-label="ルールブック"
+                    title="ルールを見る">
+                    <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
+                </button>
+            </div>
         </div>
 
         <h3 id="arena-room-title">出題者: -</h3>

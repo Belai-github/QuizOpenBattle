@@ -119,6 +119,12 @@ button:hover {
     gap: 8px;
 }
 
+.arena-header-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .start-game-btn {
     width: auto;
     min-height: 32px;
@@ -133,6 +139,39 @@ button:hover {
 .start-game-btn:disabled {
     background: #94a3b8;
     cursor: not-allowed;
+}
+
+.shuffle-btn {
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    min-height: auto !important;
+    margin-top: 0 !important;
+    padding: 0 !important;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.shuffle-btn:hover {
+    background: transparent;
+    transform: scale(1.08);
+}
+
+.shuffle-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.shuffle-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 .rulebook-btn {
@@ -323,7 +362,8 @@ button:hover {
 }
 
 .chat-send-btn:hover {
-    background: #15803d;
+    transform: scale(1.1);
+    background: #115e59;
 }
 
 .chat-send-btn:disabled {

@@ -287,6 +287,45 @@ class QuizGameManager:
             event_room_id=client_id,
         )
 
+    async def shuffle_participants(self, client_id: str):
+        room = self.rooms.get(client_id)
+        if room is None:
+            await self.send_private_info(client_id, "参加者シャッフルは出題者のみ実行できます。")
+            return
+
+        if room.get("game_state", "waiting") != "waiting":
+            await self.send_private_info(client_id, "ゲーム開始後は参加者シャッフルできません。")
+            return
+
+        participants = list(set(room["left_participants"]) | set(room["right_participants"]))
+        if len(participants) < 2:
+            await self.send_private_info(client_id, "参加者が2人以上いるときにシャッフルできます。")
+            return
+
+        random.shuffle(participants)
+        odd_to_left = random.choice([True, False])
+
+        new_left = set()
+        new_right = set()
+        for idx, pid in enumerate(participants, start=1):
+            is_odd = idx % 2 == 1
+            assign_left = is_odd if odd_to_left else not is_odd
+            if assign_left:
+                new_left.add(pid)
+            else:
+                new_right.add(pid)
+
+        room["left_participants"] = new_left
+        room["right_participants"] = new_right
+
+        questioner_name = room["questioner_name"]
+        await self.broadcast_state(
+            public_info=f"{questioner_name} が参加者をシャッフルしました",
+            event_type="room_shuffle",
+            event_message=f"{questioner_name} が参加者をシャッフルしました",
+            event_room_id=client_id,
+        )
+
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         await websocket.accept()
 
@@ -567,6 +606,10 @@ class QuizGameManager:
 
         if payload_type == "start_game":
             await self.start_game(client_id)
+            return
+
+        if payload_type == "shuffle_participants":
+            await self.shuffle_participants(client_id)
             return
 
         if payload_type == "room_entry":

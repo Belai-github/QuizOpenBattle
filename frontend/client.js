@@ -11,6 +11,7 @@ const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const startGameBtnEl = document.getElementById("start-game-btn");
+const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
@@ -218,7 +219,7 @@ function updateArenaLeaveLabel(mode) {
     if (!leaveGameArenaEl) return;
 
     if (mode === "owner") {
-        leaveGameArenaEl.textContent = "☓部屋を閉じる";
+        leaveGameArenaEl.textContent = "✕ 部屋を閉じる";
         leaveGameArenaEl.setAttribute("aria-label", "部屋を閉じる");
         return;
     }
@@ -241,22 +242,33 @@ function showGameArenaScreen() {
 }
 
 function updateStartGameButtonVisibility(currentRoom) {
-    if (!startGameBtnEl) return;
+    if (!startGameBtnEl && !shuffleParticipantsBtnEl) return;
 
     const roomState = currentRoom?.game_state ?? currentRoomGameState ?? null;
     const canSee = isInGameArena() && userRole === "questioner" && roomState === "waiting";
-    startGameBtnEl.classList.toggle("hidden", !canSee);
+    startGameBtnEl?.classList.toggle("hidden", !canSee);
+    shuffleParticipantsBtnEl?.classList.toggle("hidden", !canSee);
 
     if (!canSee) {
-        startGameBtnEl.disabled = true;
+        if (startGameBtnEl) startGameBtnEl.disabled = true;
+        if (shuffleParticipantsBtnEl) shuffleParticipantsBtnEl.disabled = true;
         return;
     }
 
     const leftCount = Array.isArray(currentRoom?.left_participants) ? currentRoom.left_participants.length : 0;
     const rightCount = Array.isArray(currentRoom?.right_participants) ? currentRoom.right_participants.length : 0;
     const canStart = leftCount > 0 && rightCount > 0;
-    startGameBtnEl.disabled = !canStart;
-    startGameBtnEl.title = canStart ? "ゲームを開始" : "先攻と後攻に参加者が必要です";
+    if (startGameBtnEl) {
+        startGameBtnEl.disabled = !canStart;
+        startGameBtnEl.title = canStart ? "ゲームを開始" : "先攻と後攻に参加者が必要です";
+    }
+
+    const participantCount = leftCount + rightCount;
+    const canShuffle = participantCount >= 2;
+    if (shuffleParticipantsBtnEl) {
+        shuffleParticipantsBtnEl.disabled = !canShuffle;
+        shuffleParticipantsBtnEl.title = canShuffle ? "参加者をシャッフル" : "参加者が2人以上必要です";
+    }
 }
 
 function showAlertModal(message) {
@@ -589,7 +601,7 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
 }
 
 function appendEventLog(eventType, eventMessage, eventChatType = null) {
-    const allowedTypes = new Set(["join", "leave", "question", "chat"]);
+    const allowedTypes = new Set(["join", "leave", "question", "chat", "room_shuffle"]);
     if (!allowedTypes.has(eventType) || !eventMessage) {
         return;
     }
@@ -832,6 +844,29 @@ startGameBtnEl?.addEventListener("click", async () => {
     ws.send(
         JSON.stringify({
             type: "start_game",
+            timestamp: Date.now()
+        })
+    );
+});
+
+shuffleParticipantsBtnEl?.addEventListener("click", async () => {
+    const confirmed = await showConfirmModal(
+        "参加者をシャッフルして先攻・後攻を再割り当てします。\n実行しますか？",
+        {
+            okLabel: "シャッフル",
+            cancelLabel: "キャンセル"
+        }
+    );
+    if (!confirmed) return;
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        void showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "shuffle_participants",
             timestamp: Date.now()
         })
     );
