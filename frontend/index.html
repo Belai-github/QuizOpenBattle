@@ -79,7 +79,15 @@
 
         <div id="arena-board-layout">
             <div id="arena-player-left" class="arena-player-box left">
-                <div class="arena-player-label">先攻</div>
+                <div class="arena-player-header">
+                    <div class="arena-player-label">先攻</div>
+                    <div class="arena-action-points-display arena-action-points-hidden" id="arena-action-points-left">
+                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span
+                            class="times-symbol">×</span><span class="action-count">1</span>
+                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span
+                            class="times-symbol">×</span><span class="bonus-count">0</span>
+                    </div>
+                </div>
                 <ul id="arena-player-left-list"></ul>
 
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-left"
@@ -99,7 +107,15 @@
             </div>
 
             <div id="arena-player-right" class="arena-player-box right">
-                <div class="arena-player-label">後攻</div>
+                <div class="arena-player-header">
+                    <div class="arena-player-label">後攻</div>
+                    <div class="arena-action-points-display arena-action-points-hidden" id="arena-action-points-right">
+                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span
+                            class="times-symbol">×</span><span class="action-count">1</span>
+                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span
+                            class="times-symbol">×</span><span class="bonus-count">0</span>
+                    </div>
+                </div>
                 <ul id="arena-player-right-list"></ul>
 
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-right"

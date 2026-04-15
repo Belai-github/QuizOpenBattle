@@ -21,6 +21,7 @@ const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
 let currentRoomGameState = null; // "waiting" | "playing" | null
+let currentGameState = null; // game中の詳細状態: {current_turn_team, team_left: {...}, team_right: {...}, ...}
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const ARENA_MASK_CHAR = "■";
@@ -238,6 +239,62 @@ function updateArenaLeaveLabel(mode) {
 
     leaveGameArenaEl.textContent = "←退室";
     leaveGameArenaEl.setAttribute("aria-label", "退室");
+}
+
+function updateGameStateUI() {
+    if (!currentGameState || currentRoomGameState !== "playing") {
+        // ゲーム中でない場合はアクション権表示をリセット・非表示
+        const leftDisplay = document.getElementById("arena-action-points-left");
+        const rightDisplay = document.getElementById("arena-action-points-right");
+        if (leftDisplay) {
+            leftDisplay.classList.add("arena-action-points-hidden");
+            leftDisplay.querySelector(".action-count").textContent = "0";
+            leftDisplay.querySelector(".bonus-count").textContent = "0";
+        }
+        if (rightDisplay) {
+            rightDisplay.classList.add("arena-action-points-hidden");
+            rightDisplay.querySelector(".action-count").textContent = "0";
+            rightDisplay.querySelector(".bonus-count").textContent = "0";
+        }
+
+        // ターン表示をリセット
+        const leftBox = document.getElementById("arena-player-left");
+        const rightBox = document.getElementById("arena-player-right");
+        if (leftBox) leftBox.classList.remove("is-current-turn");
+        if (rightBox) rightBox.classList.remove("is-current-turn");
+        return;
+    }
+
+    // アクション権表示を更新
+    const leftTeamState = currentGameState.team_left || {};
+    const rightTeamState = currentGameState.team_right || {};
+    const currentTurn = currentGameState.current_turn_team;
+
+    // 先攻（左）のアクション権
+    const leftDisplay = document.getElementById("arena-action-points-left");
+    if (leftDisplay) {
+        leftDisplay.classList.remove("arena-action-points-hidden");
+        leftDisplay.querySelector(".action-count").textContent = leftTeamState.action_points || 0;
+        leftDisplay.querySelector(".bonus-count").textContent = leftTeamState.bonus_action_points || 0;
+    }
+
+    // 後攻（右）のアクション権
+    const rightDisplay = document.getElementById("arena-action-points-right");
+    if (rightDisplay) {
+        rightDisplay.classList.remove("arena-action-points-hidden");
+        rightDisplay.querySelector(".action-count").textContent = rightTeamState.action_points || 0;
+        rightDisplay.querySelector(".bonus-count").textContent = rightTeamState.bonus_action_points || 0;
+    }
+
+    // ターン表示（ボックスを光らせる）
+    const leftBox = document.getElementById("arena-player-left");
+    const rightBox = document.getElementById("arena-player-right");
+    if (leftBox) {
+        leftBox.classList.toggle("is-current-turn", currentTurn === "team-left");
+    }
+    if (rightBox) {
+        rightBox.classList.toggle("is-current-turn", currentTurn === "team-right");
+    }
 }
 
 function showWaitingRoomScreen() {
@@ -939,6 +996,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         const data = JSON.parse(event.data);
         userRole = data.current_room?.chat_role ?? null;
         currentRoomGameState = data.current_room?.game_state ?? null;
+        currentGameState = data.current_room?.game ?? null;
         if (data.target_screen === "game_arena") {
             updateArenaLeaveLabel(pendingArenaMode === "owner" ? "owner" : "guest");
             showGameArenaScreen();
@@ -958,6 +1016,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         renderRooms(data.rooms);
         renderParticipants(data.participants);
         renderArena(data.current_room);
+        updateGameStateUI();
         updateStartGameButtonVisibility(data.current_room);
         updateChatBoxVisibility();
     };

@@ -707,6 +707,7 @@ button:hover {
     min-height: 120px;
     display: flex;
     flex-direction: column;
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
 }
 
 .arena-player-box.left {
@@ -719,9 +720,58 @@ button:hover {
     border: 1px solid #93c5fd;
 }
 
+/* ターン時のボックスの光の効果 */
+.arena-player-box.is-current-turn.left {
+    box-shadow: 0 0 20px rgba(252, 165, 165, 0.6), inset 0 0 10px rgba(252, 165, 165, 0.3);
+    transform: scale(1.02);
+}
+
+.arena-player-box.is-current-turn.right {
+    box-shadow: 0 0 20px rgba(147, 197, 253, 0.6), inset 0 0 10px rgba(147, 197, 253, 0.3);
+    transform: scale(1.02);
+}
+
 .arena-player-label {
     font-weight: 700;
     margin-bottom: 6px;
+}
+
+.arena-player-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.arena-action-points-display {
+    display: flex;
+    gap: 6px;
+    font-size: 0.95rem;
+    align-items: center;
+    font-weight: 700;
+}
+
+.arena-action-points-display.arena-action-points-hidden {
+    display: none;
+}
+
+.action-icon,
+.bonus-action-icon {
+    display: inline-block;
+    cursor: help;
+    font-size: 1rem;
+}
+
+.action-count,
+.bonus-count {
+    display: inline-block;
+    min-width: 18px;
+    text-align: left;
+}
+
+.times-symbol {
+    font-size: 0.85rem;
+    opacity: 0.7;
 }
 
 #arena-player-left-list,

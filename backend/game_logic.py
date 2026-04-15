@@ -84,6 +84,19 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
     raw_question_text = str(room.get("question_text", ""))
     question_text_for_client = raw_question_text if chat_role == "questioner" else ""
 
+    # ゲーム状態をJSON シリアライズ可能な形式に変換
+    game_state = room.get("game")
+    if game_state:
+        game_state = {
+            "current_turn_team": game_state.get("current_turn_team"),
+            "game_status": game_state.get("game_status"),
+            "winner": game_state.get("winner"),
+            "team_left": game_state.get("team_left", {}),
+            "team_right": game_state.get("team_right", {}),
+            "opened_char_indexes": sorted(list(game_state.get("opened_char_indexes", set()))),
+            "opened_by_team": {str(k): v for k, v in game_state.get("opened_by_team", {}).items()},
+        }
+
     return {
         "room_owner_id": owner_id,
         "questioner_id": owner_id,
@@ -92,6 +105,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "question_length": len(raw_question_text),
         "yakumono_indexes": sorted(list(room.get("yakumono_indexes", set()))),
         "game_state": room.get("game_state", "waiting"),
+        "game": game_state,
         "role": ctx["role"],
         "chat_role": chat_role,
         "left_participants": left_participants,
@@ -490,9 +504,10 @@ def yield_turn(game: dict):
     game["current_turn_team"] = next_team
 
     # 次のターンのチームにアクション権を付与（＋アクション権は持ち越し）
-    next_team_state = game.get(next_team, {})
-    if next_team_state.get("action_points", 0) == 0:
-        next_team_state["action_points"] = 1
+    if next_team in game:
+        next_team_state = game[next_team]
+        if next_team_state.get("action_points", 0) == 0:
+            next_team_state["action_points"] = 1
 
 
 def build_game_state_for_client(room: dict, client_id: str, viewer_team: str):
