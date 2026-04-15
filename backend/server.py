@@ -215,14 +215,20 @@ class QuizGameManager:
             "room_reconnected",
         }
         history_message = str(event_message or public_info or "").strip()
+        log_marker_id = None
+        if isinstance(event_payload, dict):
+            payload_marker = event_payload.get("log_marker_id") or event_payload.get("vote_id")
+            payload_marker_text = str(payload_marker or "").strip()
+            if payload_marker_text != "":
+                log_marker_id = payload_marker_text
 
         if event_room_id and history_message:
             if event_chat_type in {"team-left", "team-right", "game-global"}:
-                self._append_arena_chat_history(event_room_id, event_type or "", history_message, event_chat_type)
+                self._append_arena_chat_history(event_room_id, event_type or "", history_message, event_chat_type, log_marker_id)
             elif event_type in {"room_entry", "room_exit"}:
-                self._append_arena_chat_history(event_room_id, event_type, history_message, "game-global")
+                self._append_arena_chat_history(event_room_id, event_type, history_message, "game-global", log_marker_id)
             elif event_type in arena_progress_event_types:
-                self._append_arena_chat_history(event_room_id, event_type or "", history_message, "game-global")
+                self._append_arena_chat_history(event_room_id, event_type or "", history_message, "game-global", log_marker_id)
 
         participants = self.build_participants()
         for client_id, ws in self.active_connections.items():
@@ -266,7 +272,65 @@ class QuizGameManager:
             return set(room["right_participants"])
         return set()
 
-    def _append_arena_chat_history(self, room_owner_id: str, event_type: str, event_message: str, event_chat_type: str):
+    def _team_label(self, team: str):
+        if team == "team-left":
+            return "先攻"
+        if team == "team-right":
+            return "後攻"
+        return ""
+
+    def _format_turn_changed_message(self, next_turn_team: str | None):
+        next_label = self._team_label(str(next_turn_team or ""))
+        if next_label == "":
+            return "ターン終了。"
+        return f"ターン終了。{next_label}のターンになりました。"
+
+    def _format_open_vote_request_message(self, requester_name: str, char_index: int, should_emit_vote_log: bool):
+        if not should_emit_vote_log:
+            return None
+        return f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。"
+
+    def _format_open_vote_resolution_message(self, char_index: int, approved: bool, should_emit_vote_log: bool):
+        if not should_emit_vote_log:
+            return None
+        status = "可決" if approved else "否決"
+        return f"オープン投票{status}: {char_index + 1}文字目"
+
+    def _format_answer_attempt_message(self, team_label: str, answer_text: str):
+        return f"{team_label}が「{answer_text}」と解答しました。"
+
+    def _format_answer_vote_request_message(self, requester_name: str, answer_text: str, should_emit_vote_log: bool):
+        if not should_emit_vote_log:
+            return None
+        return f"{requester_name} が「{answer_text}」と解答しました。"
+
+    def _format_answer_vote_resolution_message(self, requester_name: str, answer_text: str, approved: bool, should_emit_vote_log: bool):
+        if not should_emit_vote_log:
+            return None
+        if approved:
+            return f"{requester_name} が「{answer_text}」と解答しました。"
+        return "解答送信投票否決"
+
+    def _format_turn_end_vote_request_message(self, requester_name: str, should_emit_vote_log: bool):
+        if not should_emit_vote_log:
+            return None
+        return f"{requester_name} がターンエンド投票を開始しました。"
+
+    def _format_turn_end_vote_resolution_message(self, approved: bool):
+        return "ターンエンド投票可決" if approved else "ターンエンド投票否決"
+
+    def _format_answer_result_message(self, team_label: str, is_correct: bool):
+        result_label = "正解" if is_correct else "誤答"
+        return f"{team_label}の解答は{result_label}でした。"
+
+    def _append_arena_chat_history(
+        self,
+        room_owner_id: str,
+        event_type: str,
+        event_message: str,
+        event_chat_type: str,
+        log_marker_id: str | None = None,
+    ):
         room = self.rooms.get(room_owner_id)
         if room is None:
             return
@@ -292,6 +356,7 @@ class QuizGameManager:
                 "event_type": str(event_type or ""),
                 "event_message": message,
                 "event_chat_type": event_chat_type,
+                "log_marker_id": str(log_marker_id or "").strip() or None,
             }
         )
 
@@ -633,12 +698,12 @@ class QuizGameManager:
 
         event_recipient_ids = voter_ids - {client_id} if total_voters > 1 else voter_ids
 
-        team_label = "先攻" if team == "team-left" else "後攻"
+        team_label = self._team_label(team)
         requester_name = self.nicknames.get(client_id, "ゲスト")
         await self.broadcast_state(
             public_info=f"{team_label}陣営で文字オープン投票を開始しました。",
             event_type="open_vote_request",
-            event_message=(f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。" if should_emit_vote_log else None),
+            event_message=self._format_open_vote_request_message(requester_name, char_index, should_emit_vote_log),
             event_chat_type=team,
             event_room_id=owner_id,
             event_recipient_ids=event_recipient_ids,
@@ -648,6 +713,7 @@ class QuizGameManager:
                 "char_index": char_index,
                 "required_approvals": required_approvals,
                 "total_voters": total_voters,
+                "log_marker_id": vote_id,
             },
         )
 
@@ -715,6 +781,7 @@ class QuizGameManager:
                         "approved": False,
                         "char_index": char_index,
                         "reason": result.get("error", "open_failed"),
+                        "log_marker_id": vote_id,
                     },
                     event_recipient_ids=team_chat_recipients,
                 )
@@ -724,7 +791,7 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{char_index + 1}文字目がオープンされました。",
                 event_type="open_vote_resolved",
-                event_message=(f"オープン投票可決: {char_index + 1}文字目" if should_emit_vote_log else None),
+                event_message=self._format_open_vote_resolution_message(char_index, True, should_emit_vote_log),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
@@ -732,6 +799,7 @@ class QuizGameManager:
                     "approved": True,
                     "char_index": char_index,
                     "is_yakumono": is_yakumono,
+                    "log_marker_id": vote_id,
                 },
                 event_recipient_ids=team_chat_recipients,
             )
@@ -739,8 +807,7 @@ class QuizGameManager:
             next_turn_team = (room.get("game") or {}).get("current_turn_team")
             should_notify_turn_changed = (room.get("game") or {}).get("game_status") == "playing" and previous_turn_team != next_turn_team
             if should_notify_turn_changed:
-                next_label = "先攻" if next_turn_team == "team-left" else "後攻"
-                turn_changed_message = f"ターン終了。{next_label}のターンになりました。"
+                turn_changed_message = self._format_turn_changed_message(next_turn_team)
                 await self.broadcast_state(
                     public_info=turn_changed_message,
                     event_type="turn_changed",
@@ -756,7 +823,7 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{char_index + 1}文字目のオープン投票は否決されました。",
                 event_type="open_vote_resolved",
-                event_message=(f"オープン投票否決: {char_index + 1}文字目" if should_emit_vote_log else None),
+                event_message=self._format_open_vote_resolution_message(char_index, False, should_emit_vote_log),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
@@ -764,6 +831,7 @@ class QuizGameManager:
                     "approved": False,
                     "char_index": char_index,
                     "reason": "rejected",
+                    "log_marker_id": vote_id,
                 },
                 event_recipient_ids=team_chat_recipients,
             )
@@ -804,8 +872,11 @@ class QuizGameManager:
         rejections = len(pending_vote["rejected_ids"])
         required = pending_vote["required_approvals"]
         team = pending_vote["team"]
-        team_label = "先攻" if team == "team-left" else "後攻"
+        team_label = self._team_label(team)
         should_emit_vote_log = len(voter_ids) > 1
+        answer_text = str(pending_vote.get("answer_text", "")).strip()
+        requester_id = pending_vote.get("requester_id")
+        requester_name = self.nicknames.get(requester_id, "ゲスト")
 
         team_chat_recipients = set(voter_ids)
         team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
@@ -828,13 +899,10 @@ class QuizGameManager:
                         "vote_id": vote_id,
                         "approved": False,
                         "reason": "judgement_pending",
+                        "log_marker_id": vote_id,
                     },
                 )
                 return
-
-            answer_text = str(pending_vote.get("answer_text", "")).strip()
-            requester_id = pending_vote.get("requester_id")
-            requester_name = self.nicknames.get(requester_id, "ゲスト")
 
             game["pending_answer_judgement"] = {
                 "team": team,
@@ -851,7 +919,7 @@ class QuizGameManager:
                 owner_id,
                 room,
                 "answer_attempt",
-                f"{team_label}が解答を提出しました。",
+                self._format_answer_attempt_message(team_label, answer_text),
             )
 
             await self.broadcast_state(
@@ -870,13 +938,14 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{team_label}陣営の解答送信投票が可決されました。",
                 event_type="answer_vote_resolved",
-                event_message=(f"解答送信投票可決: {requester_name}" if should_emit_vote_log else None),
+                event_message=self._format_answer_vote_resolution_message(requester_name, answer_text, True, should_emit_vote_log),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
                 event_payload={
                     "vote_id": vote_id,
                     "approved": True,
+                    "log_marker_id": vote_id,
                 },
             )
             return
@@ -888,7 +957,7 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{team_label}陣営の解答送信投票は否決されました。",
                 event_type="answer_vote_resolved",
-                event_message=("解答送信投票否決" if should_emit_vote_log else None),
+                event_message=self._format_answer_vote_resolution_message(requester_name, answer_text, False, should_emit_vote_log),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -896,6 +965,7 @@ class QuizGameManager:
                     "vote_id": vote_id,
                     "approved": False,
                     "reason": "rejected",
+                    "log_marker_id": vote_id,
                 },
             )
             return
@@ -954,16 +1024,15 @@ class QuizGameManager:
                 return
 
             next_team = result.get("current_turn_team")
-            next_label = "先攻" if next_team == "team-left" else "後攻"
             await self.broadcast_state(
-                public_info=f"ターン終了。{next_label}のターンになりました。",
+                public_info=self._format_turn_changed_message(next_team),
                 event_type="turn_changed",
                 event_room_id=owner_id,
             )
             await self._broadcast_turn_changed_logs(
                 owner_id,
                 room,
-                f"ターン終了。{next_label}のターンになりました。",
+                self._format_turn_changed_message(next_team),
             )
             await self.send_private_info(client_id, "ターンエンドしました。")
             return
@@ -981,12 +1050,12 @@ class QuizGameManager:
             "status": "pending",
         }
 
-        team_label = "先攻" if team == "team-left" else "後攻"
+        team_label = self._team_label(team)
         requester_name = self.nicknames.get(client_id, "ゲスト")
         await self.broadcast_state(
             public_info=f"{team_label}陣営でターンエンド投票を開始しました。",
             event_type="turn_end_vote_request",
-            event_message=f"{requester_name} がターンエンド投票を開始しました。",
+            event_message=self._format_turn_end_vote_request_message(requester_name, True),
             event_chat_type=team,
             event_room_id=owner_id,
             event_recipient_ids=voter_ids - {client_id},
@@ -996,6 +1065,7 @@ class QuizGameManager:
                 "team_label": team_label,
                 "required_approvals": required_approvals,
                 "total_voters": total_voters,
+                "log_marker_id": vote_id,
             },
         )
 
@@ -1037,7 +1107,7 @@ class QuizGameManager:
         rejections = len(pending_vote["rejected_ids"])
         required = pending_vote["required_approvals"]
         team = pending_vote["team"]
-        team_label = "先攻" if team == "team-left" else "後攻"
+        team_label = self._team_label(team)
 
         team_chat_recipients = set(voter_ids)
         team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
@@ -1060,6 +1130,7 @@ class QuizGameManager:
                         "vote_id": vote_id,
                         "approved": False,
                         "reason": result.get("error", "end_turn_failed"),
+                        "log_marker_id": vote_id,
                     },
                 )
                 return
@@ -1067,27 +1138,27 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{team_label}陣営のターンエンド投票が可決されました。",
                 event_type="turn_end_vote_resolved",
-                event_message="ターンエンド投票可決",
+                event_message=self._format_turn_end_vote_resolution_message(True),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
                 event_payload={
                     "vote_id": vote_id,
                     "approved": True,
+                    "log_marker_id": vote_id,
                 },
             )
 
             next_team = result.get("current_turn_team")
-            next_label = "先攻" if next_team == "team-left" else "後攻"
             await self.broadcast_state(
-                public_info=f"ターン終了。{next_label}のターンになりました。",
+                public_info=self._format_turn_changed_message(next_team),
                 event_type="turn_changed",
                 event_room_id=owner_id,
             )
             await self._broadcast_turn_changed_logs(
                 owner_id,
                 room,
-                f"ターン終了。{next_label}のターンになりました。",
+                self._format_turn_changed_message(next_team),
             )
             return
 
@@ -1098,7 +1169,7 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{team_label}陣営のターンエンド投票は否決されました。",
                 event_type="turn_end_vote_resolved",
-                event_message="ターンエンド投票否決",
+                event_message=self._format_turn_end_vote_resolution_message(False),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -1106,6 +1177,7 @@ class QuizGameManager:
                     "vote_id": vote_id,
                     "approved": False,
                     "reason": "rejected",
+                    "log_marker_id": vote_id,
                 },
             )
             return
@@ -1368,7 +1440,7 @@ class QuizGameManager:
             team_label = "先攻"
         elif client_id in room["right_participants"]:
             team = "team-right"
-            team_label = "後攻"
+            team_label = self._team_label(team)
         else:
             await self.send_private_info(client_id, "参加者のみ解答できます。")
             return
@@ -1420,7 +1492,7 @@ class QuizGameManager:
                 owner_id,
                 room,
                 "answer_attempt",
-                f"{team_label}が解答を提出しました。",
+                self._format_answer_attempt_message(team_label, text),
             )
 
             await self.broadcast_state(
@@ -1460,7 +1532,7 @@ class QuizGameManager:
         await self.broadcast_state(
             public_info=f"{team_label}陣営で解答送信投票を開始しました。",
             event_type="answer_vote_request",
-            event_message=(f"{nickname} が解答送信投票を開始しました。" if should_emit_vote_log else None),
+            event_message=self._format_answer_vote_request_message(nickname, text, should_emit_vote_log),
             event_chat_type=team,
             event_room_id=owner_id,
             event_recipient_ids=event_recipient_ids,
@@ -1472,6 +1544,7 @@ class QuizGameManager:
                 "answerer_name": nickname,
                 "required_approvals": required_approvals,
                 "total_voters": total_voters,
+                "log_marker_id": vote_id,
             },
         )
 
@@ -1557,20 +1630,19 @@ class QuizGameManager:
             event_room_id=owner_id,
         )
 
-        team_label = "先攻" if team == "team-left" else "後攻"
+        team_label = self._team_label(team)
         result_label = "正解" if is_correct else "誤答"
         await self._broadcast_team_log_message(
             owner_id,
             room,
             "answer_result",
-            f"{team_label}の解答は{result_label}でした。",
+            self._format_answer_result_message(team_label, is_correct),
         )
 
         next_turn_team = (room.get("game") or {}).get("current_turn_team")
         should_notify_turn_changed = result.get("game_status") == "playing" and previous_turn_team != next_turn_team
         if should_notify_turn_changed:
-            next_label = "先攻" if next_turn_team == "team-left" else "後攻"
-            turn_changed_message = f"ターン終了。{next_label}のターンになりました。"
+            turn_changed_message = self._format_turn_changed_message(next_turn_team)
             await self.broadcast_state(
                 public_info=turn_changed_message,
                 event_type="turn_changed",
@@ -1661,7 +1733,7 @@ class QuizGameManager:
                     self._schedule_participant_disconnect_grace(client_id, room_owner_id, expires_at, nickname)
 
                     remaining_seconds = max(1, int(expires_at - time.time()))
-                    team_label = "先攻" if team == "team-left" else "後攻"
+                    team_label = self._team_label(team)
                     await self.broadcast_state(
                         public_info=f"{nickname} が切断されました。再接続を待っています。",
                         event_type="participant_timeout_pending",

@@ -229,6 +229,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
                     "event_type": event_type,
                     "event_message": event_message,
                     "event_chat_type": event_chat_type,
+                    "log_marker_id": str(entry.get("log_marker_id", "")).strip() or None,
                 }
             )
 

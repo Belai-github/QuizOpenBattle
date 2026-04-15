@@ -235,14 +235,44 @@ function getOrCreateArenaRoomLogState(roomOwnerId) {
     return state;
 }
 
-function pushArenaRoomLog(roomOwnerId, chatType, eventType, eventMessage, eventTimestamp = null) {
+function pushArenaRoomLog(roomOwnerId, chatType, eventType, eventMessage, eventTimestamp = null, logMarkerId = null) {
     const state = getOrCreateArenaRoomLogState(roomOwnerId);
     if (!state || !ARENA_CHAT_TYPES.includes(chatType)) {
         return;
     }
 
     const logs = state[chatType];
-    logs.push({ eventType, eventMessage, eventTimestamp });
+
+    // If logMarkerId is provided and there's an existing log with the same marker, replace it
+    if (logMarkerId) {
+        const existingIndex = logs.findIndex(log => log.logMarkerId === logMarkerId);
+        if (existingIndex !== -1) {
+            logs[existingIndex] = { eventType, eventMessage, eventTimestamp, logMarkerId };
+            return;
+        }
+    }
+
+    logs.push({ eventType, eventMessage, eventTimestamp, logMarkerId });
+    while (logs.length > 50) {
+        logs.shift();
+    }
+}
+
+function upsertHydratedArenaLog(roomStateLogs, chatType, eventType, eventMessage, eventTimestamp, logMarkerId = null) {
+    const logs = roomStateLogs[chatType];
+    if (!Array.isArray(logs)) {
+        return;
+    }
+
+    if (logMarkerId) {
+        const existingIndex = logs.findIndex((log) => log.logMarkerId === logMarkerId);
+        if (existingIndex !== -1) {
+            logs[existingIndex] = { eventType, eventMessage, eventTimestamp, logMarkerId };
+            return;
+        }
+    }
+
+    logs.push({ eventType, eventMessage, eventTimestamp, logMarkerId });
     while (logs.length > 50) {
         logs.shift();
     }
@@ -302,8 +332,8 @@ function renderArenaLogsForRoom(roomOwnerId, options = {}) {
         if (!logEl) return;
 
         const entries = state[chatType] || [];
-        entries.forEach(({ eventType, eventMessage, eventTimestamp }) => {
-            const item = createEventLogItem(eventType, eventMessage, eventTimestamp);
+        entries.forEach(({ eventType, eventMessage, eventTimestamp, logMarkerId }) => {
+            const item = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId);
             if (item) {
                 logEl.appendChild(item);
                 applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
@@ -373,11 +403,21 @@ function hydrateArenaChatHistoryIfNeeded(currentRoom) {
         return Number(a?.seq || 0) - Number(b?.seq || 0);
     });
 
+    const voteEventTypes = new Set([
+        "open_vote_request",
+        "open_vote_resolved",
+        "answer_vote_request",
+        "answer_vote_resolved",
+        "turn_end_vote_request",
+        "turn_end_vote_resolved",
+    ]);
+
     sortedHistory.forEach((entry) => {
         const seq = Number(entry?.seq || 0);
         const eventChatType = String(entry?.event_chat_type || "").trim();
         const eventType = String(entry?.event_type || "").trim();
-        const eventMessage = String(entry?.event_message || "").trim();
+        let eventMessage = String(entry?.event_message || "").trim();
+        const logMarkerId = String(entry?.log_marker_id || "").trim() || null;
         if (!Number.isFinite(seq) || seenSeqSet.has(seq) || eventMessage === "") {
             return;
         }
@@ -385,13 +425,20 @@ function hydrateArenaChatHistoryIfNeeded(currentRoom) {
             return;
         }
 
-        roomStateLogs[eventChatType].push({
-            eventType,
-            eventMessage,
-            eventTimestamp: Number(entry?.timestamp || 0),
-        });
-        while (roomStateLogs[eventChatType].length > 50) {
-            roomStateLogs[eventChatType].shift();
+        // Hide answer text for opponent players in answer vote logs
+        if ((eventType === "answer_vote_request" || eventType === "answer_vote_resolved" || eventType === "answer_attempt")
+            && isPlayerRole()
+            && eventChatType
+            && eventChatType !== userRole) {
+            eventMessage = eventMessage.replace(/が「[^」]*」と/, "が");
+        }
+
+        const eventTimestamp = Number(entry?.timestamp || 0);
+        upsertHydratedArenaLog(roomStateLogs, eventChatType, eventType, eventMessage, eventTimestamp, logMarkerId);
+
+        const shouldMirrorVoteToGlobal = voteEventTypes.has(eventType) && (eventChatType === "team-left" || eventChatType === "team-right");
+        if (shouldMirrorVoteToGlobal) {
+            upsertHydratedArenaLog(roomStateLogs, "game-global", eventType, eventMessage, eventTimestamp, logMarkerId);
         }
 
         seenSeqSet.add(seq);
@@ -447,11 +494,17 @@ function hydratePreGameGlobalHistoryIfNeeded(currentRoom) {
     sortedHistory.forEach((entry) => {
         const seq = Number(entry?.seq || 0);
         const eventType = String(entry?.event_type || "chat").trim() || "chat";
-        const eventMessage = String(entry?.event_message || "").trim();
+        let eventMessage = String(entry?.event_message || "").trim();
         const eventTimestamp = Number(entry?.timestamp || 0);
 
         if (!Number.isFinite(seq) || seenSeqSet.has(seq) || eventMessage === "") {
             return;
+        }
+
+        // Hide answer text for opponent players in answer vote logs
+        if ((eventType === "answer_vote_request" || eventType === "answer_vote_resolved")
+            && isPlayerRole()) {
+            eventMessage = eventMessage.replace(/が「[^」]*」と/, "が");
         }
 
         roomStateLogs["game-global"].push({
@@ -2042,7 +2095,7 @@ function renderRooms(rooms) {
     });
 }
 
-function createEventLogItem(eventType, eventMessage, eventTimestamp = null) {
+function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logMarkerId = null) {
     if (!eventMessage) {
         return null;
     }
@@ -2050,6 +2103,9 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null) {
     const item = document.createElement("div");
     item.className = "event-log-item";
     item.dataset.eventType = String(eventType || "");
+    if (logMarkerId) {
+        item.dataset.logMarkerId = String(logMarkerId);
+    }
 
     const messageEl = document.createElement("span");
     messageEl.className = "event-log-message";
@@ -2110,7 +2166,7 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null) {
     return item;
 }
 
-function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = null) {
+function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = null, logMarkerId = null) {
     if (!logEl) {
         return;
     }
@@ -2119,7 +2175,22 @@ function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = n
     const wasNearBottom = isLogNearBottom(scrollContainer);
     const indicatorEl = ensureLogNewIndicator(scrollContainer);
 
-    const item = createEventLogItem(eventType, eventMessage, eventTimestamp);
+    // If logMarkerId is provided and there's an existing log with the same marker, replace it
+    if (logMarkerId) {
+        const existingItem = logEl.querySelector(`[data-log-marker-id="${CSS.escape(String(logMarkerId))}"]`);
+        if (existingItem) {
+            const newItem = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId);
+            if (newItem) {
+                existingItem.replaceWith(newItem);
+                if (logEl.classList.contains("chat-log")) {
+                    applyChatLogFilterToItem(newItem, getChatLogFilterState(logEl));
+                }
+            }
+            return;
+        }
+    }
+
+    const item = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId);
     if (!item) {
         return;
     }
@@ -2149,7 +2220,15 @@ function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = n
     }
 }
 
-function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoomId = null) {
+function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoomId = null, logMarkerId = null) {
+    const voteEventTypes = new Set([
+        "open_vote_request",
+        "open_vote_resolved",
+        "answer_vote_request",
+        "answer_vote_resolved",
+        "turn_end_vote_request",
+        "turn_end_vote_resolved",
+    ]);
     const allowedTypes = new Set([
         "join",
         "leave",
@@ -2181,18 +2260,22 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
     if (eventChatType && eventChatType !== "lobby") {
         const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
         const isTeamLog = eventChatType === "team-left" || eventChatType === "team-right";
+        const isVoteEvent = voteEventTypes.has(eventType);
         // teamチャット本文は進行ログへミラーしない。
         // 非chatログは、プレイヤーには自チーム分のみ、出題者/観戦者には片側(team-left)のみミラーして重複を防ぐ。
         const shouldMirrorToGlobal = isTeamLog
             && eventType !== "chat"
             && (
-                (isPlayerRole() && eventChatType === userRole)
-                || (!isPlayerRole() && eventChatType === "team-left")
+                isVoteEvent
+                || (
+                    (isPlayerRole() && eventChatType === userRole)
+                    || (!isPlayerRole() && eventChatType === "team-left")
+                )
             );
         if (resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, eventChatType, eventType, eventMessage);
+            pushArenaRoomLog(resolvedRoomId, eventChatType, eventType, eventMessage, null, logMarkerId);
             if (shouldMirrorToGlobal) {
-                pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage);
+                pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage, null, logMarkerId);
             }
         }
 
@@ -2201,10 +2284,10 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
         }
 
         const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
-        appendLogToContainer(roomLogEl, eventType, eventMessage);
+        appendLogToContainer(roomLogEl, eventType, eventMessage, null, logMarkerId);
         if (shouldMirrorToGlobal) {
             const globalLogEl = document.getElementById("game-chat-log-game-global");
-            appendLogToContainer(globalLogEl, eventType, eventMessage);
+            appendLogToContainer(globalLogEl, eventType, eventMessage, null, logMarkerId);
         }
         return;
     }
@@ -2213,12 +2296,12 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
     if ((eventType === "room_entry" || eventType === "room_exit") && isInGameArena()) {
         const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
         if (resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage);
+            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage, null, logMarkerId);
         }
 
         if (resolvedRoomId === "" || currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
             const globalLogEl = document.getElementById("game-chat-log-game-global");
-            appendLogToContainer(globalLogEl, eventType, eventMessage);
+            appendLogToContainer(globalLogEl, eventType, eventMessage, null, logMarkerId);
         }
         return;
     }
@@ -2248,17 +2331,17 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
     if (arenaOnlyTypes.has(eventType)) {
         const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
         if (isInGameArena() && resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage);
+            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage, null, logMarkerId);
             if (currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
                 const globalLogEl = document.getElementById("game-chat-log-game-global");
-                appendLogToContainer(globalLogEl, eventType, eventMessage);
+                appendLogToContainer(globalLogEl, eventType, eventMessage, null, logMarkerId);
             }
         }
         return;
     }
 
     const waitingLogEl = document.getElementById("event-log");
-    appendLogToContainer(waitingLogEl, eventType, eventMessage);
+    appendLogToContainer(waitingLogEl, eventType, eventMessage, null, logMarkerId);
 }
 
 async function fetchWebSocketTicket(clientId, nickname) {
@@ -2460,9 +2543,27 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             hydratePreGameGlobalHistoryIfNeeded(data.current_room);
         }
 
+        // Hide answer text for opponent players in answer vote logs
+        let displayMessage = eventMessageForLog;
+        if ((data.event_type === "answer_vote_request" || data.event_type === "answer_vote_resolved" || data.event_type === "answer_attempt")
+            && isPlayerRole()
+            && data.event_chat_type
+            && data.event_chat_type !== userRole) {
+            // Replace "が「...」と" with "が" to hide answer content from opponent
+            displayMessage = eventMessageForLog.replace(/が「[^」]*」と/, "が");
+        }
+
         // 待機中はライブ追記、対戦開始後は履歴ドリブン描画に統一する。
         if ((!isInGameArena() || currentRoomGameState === "waiting") && !isEnteringArena) {
-            appendEventLog(data.event_type, eventMessageForLog, data.event_chat_type, data.event_room_id);
+            // Determine log marker ID
+            let logMarkerId = null;
+            if ((data.event_type === "answer_vote_request" || data.event_type === "answer_vote_resolved"
+                || data.event_type === "open_vote_request" || data.event_type === "open_vote_resolved"
+                || data.event_type === "turn_end_vote_request" || data.event_type === "turn_end_vote_resolved")
+                && data.event_payload?.vote_id) {
+                logMarkerId = data.event_payload.vote_id;
+            }
+            appendEventLog(data.event_type, displayMessage, data.event_chat_type, data.event_room_id, logMarkerId);
         }
         renderRooms(data.rooms);
         renderParticipants(data.participants);
