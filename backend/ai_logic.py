@@ -10,7 +10,7 @@ from google import genai
 from dotenv import load_dotenv
 
 try:
-    from backend.pronpt import (
+    from backend.prompt import (
         get_judge_system_prompt,
         get_judge_user_prompt,
         get_quiz_system_prompt,
@@ -28,7 +28,7 @@ try:
         normalize_model_id as normalize_model_id_from_catalog,
     )
 except ImportError:
-    from pronpt import (
+    from prompt import (
         get_judge_system_prompt,
         get_judge_user_prompt,
         get_quiz_system_prompt,
