@@ -347,6 +347,7 @@ button:hover {
 #event-log-box {
     margin-top: 8px;
     height: 280px;
+    position: relative;
     overflow-y: auto;
     background: #ffedd5;
     border: 1px solid #fdba74;
@@ -377,8 +378,13 @@ button:hover {
 }
 
 .chat-log {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 8px;
     flex: 1 1 auto;
     min-height: 140px;
+    position: relative;
     overflow: auto;
     background: #ffedd5;
     border: 1px solid #fdba74;
@@ -393,6 +399,30 @@ button:hover {
 
 .chat-log .event-log-time {
     color: #9a3412;
+}
+
+.new-log-indicator {
+    position: sticky;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    z-index: 3;
+    width: auto;
+    min-height: 28px;
+    margin: 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: none;
+    background: #dc2626;
+    color: #ffffff;
+    font-size: 0.74rem;
+    line-height: 1;
+    box-shadow: 0 4px 10px rgba(220, 38, 38, 0.28);
+    cursor: pointer;
+}
+
+.new-log-indicator:hover {
+    background: #b91c1c;
 }
 
 .chat-input {
@@ -532,7 +562,9 @@ button:hover {
 #event-log {
     display: flex;
     flex-direction: column;
+    justify-content: flex-end;
     gap: 8px;
+    min-height: 100%;
 }
 
 .event-log-item {

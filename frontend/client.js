@@ -55,6 +55,58 @@ let viewportDebugEl = null;
 let previousRoomGameState = null;
 let connectionTimeoutModalShown = false;
 let isConnecting = false;
+const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
+const logNewIndicatorMap = new WeakMap();
+const logScrollListenerBound = new WeakSet();
+
+function resolveLogScrollContainer(logEl) {
+    if (!logEl) return null;
+    return logEl.id === "event-log"
+        ? (logEl.parentElement || logEl)
+        : logEl;
+}
+
+function isLogNearBottom(scrollContainer) {
+    if (!scrollContainer) return true;
+
+    const remaining = scrollContainer.scrollHeight - (scrollContainer.scrollTop + scrollContainer.clientHeight);
+    return remaining <= LOG_AUTO_SCROLL_THRESHOLD_PX;
+}
+
+function ensureLogNewIndicator(scrollContainer) {
+    if (!scrollContainer) return null;
+
+    let indicatorEl = logNewIndicatorMap.get(scrollContainer);
+    if (!indicatorEl) {
+        indicatorEl = document.createElement("button");
+        indicatorEl.type = "button";
+        indicatorEl.className = "new-log-indicator hidden";
+        indicatorEl.textContent = "新規";
+        indicatorEl.setAttribute("aria-label", "最新メッセージへ移動");
+
+        indicatorEl.addEventListener("click", () => {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+            indicatorEl.classList.add("hidden");
+        });
+
+        scrollContainer.appendChild(indicatorEl);
+        logNewIndicatorMap.set(scrollContainer, indicatorEl);
+    }
+
+    if (!logScrollListenerBound.has(scrollContainer)) {
+        scrollContainer.addEventListener("scroll", () => {
+            if (isLogNearBottom(scrollContainer)) {
+                const btn = logNewIndicatorMap.get(scrollContainer);
+                if (btn) {
+                    btn.classList.add("hidden");
+                }
+            }
+        });
+        logScrollListenerBound.add(scrollContainer);
+    }
+
+    return indicatorEl;
+}
 
 function getOrCreatePersistentClientId() {
     const storageKey = "quiz_client_id";
@@ -1589,6 +1641,10 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
         return;
     }
 
+    const scrollContainer = resolveLogScrollContainer(logEl);
+    const wasNearBottom = isLogNearBottom(scrollContainer);
+    const indicatorEl = ensureLogNewIndicator(scrollContainer);
+
     const item = createEventLogItem(eventType, eventMessage);
     if (!item) {
         return;
@@ -1599,7 +1655,21 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
         logEl.removeChild(logEl.firstChild);
     }
 
-    logEl.scrollTop = logEl.scrollHeight;
+    if (!scrollContainer) {
+        return;
+    }
+
+    if (wasNearBottom) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        if (indicatorEl) {
+            indicatorEl.classList.add("hidden");
+        }
+        return;
+    }
+
+    if (indicatorEl) {
+        indicatorEl.classList.remove("hidden");
+    }
 }
 
 function appendEventLog(eventType, eventMessage, eventChatType = null) {
