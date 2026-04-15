@@ -146,7 +146,6 @@ class QuizGameManager:
         self.rooms = {}
         self.reconnect_reservations = {}
         self.pending_disconnect_tasks = {}
-        # 【対策1】同時に接続できる最大人数を設定
         self.MAX_CONNECTIONS = 4
         self.RECONNECT_RESERVATION_SECONDS = 120
         self.DISCONNECT_GRACE_SECONDS = 30
@@ -279,6 +278,8 @@ class QuizGameManager:
             return "後攻"
         return ""
 
+    # 以下、イベントメッセージのフォーマット関数
+
     def _format_turn_changed_message(self, next_turn_team: str | None):
         next_label = self._team_label(str(next_turn_team or ""))
         if next_label == "":
@@ -286,35 +287,34 @@ class QuizGameManager:
         return f"ターン終了。{next_label}のターンになりました。"
 
     def _format_open_vote_request_message(self, requester_name: str, char_index: int, should_emit_vote_log: bool):
-        if not should_emit_vote_log:
-            return None
-        return f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。"
+        if should_emit_vote_log:
+            return f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。"
+        return f"{requester_name} が {char_index + 1}文字目をオープンしました。"
 
-    def _format_open_vote_resolution_message(self, char_index: int, approved: bool, should_emit_vote_log: bool):
-        if not should_emit_vote_log:
-            return None
-        status = "可決" if approved else "否決"
-        return f"オープン投票{status}: {char_index + 1}文字目"
+    def _format_open_vote_resolution_message(self, team_label: str, char_index: int, approved: bool):
+        if approved:
+            return f"{team_label}が{char_index + 1}文字目をオープンしました。"
+        return f"{team_label}が{char_index + 1}文字目をオープンできませんでした。"
 
     def _format_answer_attempt_message(self, team_label: str, answer_text: str):
-        return f"{team_label}が「{answer_text}」と解答しました。"
+        return f"{team_label}が「{answer_text}」とアンサーしました。"
 
     def _format_answer_vote_request_message(self, requester_name: str, answer_text: str, should_emit_vote_log: bool):
-        if not should_emit_vote_log:
-            return None
-        return f"{requester_name} が「{answer_text}」と解答しました。"
+        if should_emit_vote_log:
+            return f"{requester_name} が「{answer_text}」とアンサーしました。"
+        return f"{requester_name} が「{answer_text}」とアンサーしました。"
 
-    def _format_answer_vote_resolution_message(self, requester_name: str, answer_text: str, approved: bool, should_emit_vote_log: bool):
-        if not should_emit_vote_log:
-            return None
+    def _format_answer_vote_resolution_message(self, team_label: str, answer_text: str, approved: bool, should_emit_vote_log: bool):
         if approved:
-            return f"{requester_name} が「{answer_text}」と解答しました。"
-        return "解答送信投票否決"
+            return f"{team_label}が「{answer_text}」とアンサーしました。"
+        if should_emit_vote_log:
+            return "アンサー投票否決"
+        return f"{team_label}の解答送信に失敗しました。"
 
     def _format_turn_end_vote_request_message(self, requester_name: str, should_emit_vote_log: bool):
-        if not should_emit_vote_log:
-            return None
-        return f"{requester_name} がターンエンド投票を開始しました。"
+        if should_emit_vote_log:
+            return f"{requester_name} がターンエンド投票を開始しました。"
+        return f"{requester_name} がターンエンドしました。"
 
     def _format_turn_end_vote_resolution_message(self, approved: bool):
         return "ターンエンド投票可決" if approved else "ターンエンド投票否決"
@@ -322,6 +322,8 @@ class QuizGameManager:
     def _format_answer_result_message(self, team_label: str, is_correct: bool):
         result_label = "正解" if is_correct else "誤答"
         return f"{team_label}の解答は{result_label}でした。"
+
+    # 以下、内部処理関数
 
     def _append_arena_chat_history(
         self,
@@ -648,7 +650,7 @@ class QuizGameManager:
 
         pending_answer_vote = room.get("pending_answer_vote")
         if pending_answer_vote and pending_answer_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "進行中の解答送信投票があります。")
+            await self.send_private_info(client_id, "進行中のアンサー投票があります。")
             return
 
         pending_turn_end_vote = room.get("pending_turn_end_vote")
@@ -757,6 +759,7 @@ class QuizGameManager:
         required = pending_vote["required_approvals"]
         team = pending_vote["team"]
         char_index = pending_vote["char_index"]
+        team_label = self._team_label(team)
         should_emit_vote_log = len(voter_ids) > 1
 
         team_chat_recipients = set(voter_ids)
@@ -791,7 +794,7 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{char_index + 1}文字目がオープンされました。",
                 event_type="open_vote_resolved",
-                event_message=self._format_open_vote_resolution_message(char_index, True, should_emit_vote_log),
+                event_message=self._format_open_vote_resolution_message(team_label, char_index, True),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
@@ -823,7 +826,7 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{char_index + 1}文字目のオープン投票は否決されました。",
                 event_type="open_vote_resolved",
-                event_message=self._format_open_vote_resolution_message(char_index, False, should_emit_vote_log),
+                event_message=self._format_open_vote_resolution_message(team_label, char_index, False),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
@@ -847,7 +850,7 @@ class QuizGameManager:
         pending_vote = room.get("pending_answer_vote")
 
         if not pending_vote or pending_vote.get("status") != "pending":
-            await self.send_private_info(client_id, "進行中の解答送信投票がありません。")
+            await self.send_private_info(client_id, "進行中のアンサー投票がありません。")
             return
 
         if pending_vote.get("vote_id") != vote_id:
@@ -890,7 +893,7 @@ class QuizGameManager:
             game = room.get("game") or {}
             if game.get("pending_answer_judgement") is not None:
                 await self.broadcast_state(
-                    public_info="解答送信投票は可決されましたが、判定待ちの解答があるため送信できませんでした。",
+                    public_info="アンサー投票は可決されましたが、判定待ちの解答があるため送信できませんでした。",
                     event_type="answer_vote_resolved",
                     event_chat_type=team,
                     event_room_id=owner_id,
@@ -936,9 +939,9 @@ class QuizGameManager:
             )
 
             await self.broadcast_state(
-                public_info=f"{team_label}陣営の解答送信投票が可決されました。",
+                public_info=f"{team_label}陣営のアンサー投票が可決されました。",
                 event_type="answer_vote_resolved",
-                event_message=self._format_answer_vote_resolution_message(requester_name, answer_text, True, should_emit_vote_log),
+                event_message=self._format_answer_vote_resolution_message(team_label, answer_text, True, should_emit_vote_log),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -955,9 +958,9 @@ class QuizGameManager:
             pending_vote["status"] = "rejected"
             room["pending_answer_vote"] = None
             await self.broadcast_state(
-                public_info=f"{team_label}陣営の解答送信投票は否決されました。",
+                public_info=f"{team_label}陣営のアンサー投票は否決されました。",
                 event_type="answer_vote_resolved",
-                event_message=self._format_answer_vote_resolution_message(requester_name, answer_text, False, should_emit_vote_log),
+                event_message=self._format_answer_vote_resolution_message(team_label, answer_text, False, should_emit_vote_log),
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -994,7 +997,7 @@ class QuizGameManager:
 
         pending_answer_vote = room.get("pending_answer_vote")
         if pending_answer_vote and pending_answer_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "解答送信投票中はターンエンドできません。")
+            await self.send_private_info(client_id, "アンサー投票中はターンエンドできません。")
             return
 
         pending_turn_end_vote = room.get("pending_turn_end_vote")
@@ -1412,7 +1415,7 @@ class QuizGameManager:
         owner_id = ctx["room_owner_id"]
         room_state = room.get("game_state", "waiting")
         if room_state != "playing":
-            await self.send_private_info(client_id, "対戦中のみ解答できます。")
+            await self.send_private_info(client_id, "対戦中のみアンサーできます。")
             return
 
         game = room.get("game") or {}
@@ -1422,7 +1425,7 @@ class QuizGameManager:
 
         pending_answer_vote = room.get("pending_answer_vote")
         if pending_answer_vote and pending_answer_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "現在、別の解答送信投票が進行中です。")
+            await self.send_private_info(client_id, "現在、別のアンサー投票が進行中です。")
             return
 
         pending_turn_end_vote = room.get("pending_turn_end_vote")
@@ -1442,11 +1445,11 @@ class QuizGameManager:
             team = "team-right"
             team_label = self._team_label(team)
         else:
-            await self.send_private_info(client_id, "参加者のみ解答できます。")
+            await self.send_private_info(client_id, "参加者のみアンサーできます。")
             return
 
         if game.get("current_turn_team") != team:
-            await self.send_private_info(client_id, "自分のターンでのみ解答できます。")
+            await self.send_private_info(client_id, "自分のターンでのみアンサーできます。")
             return
 
         team_state_key = "team_left" if team == "team-left" else "team_right"
@@ -1484,7 +1487,7 @@ class QuizGameManager:
             }
 
             await self.broadcast_state(
-                public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
+                public_info=f"{team_label}がアンサーしました。出題者が正誤判定中です。",
                 event_type="answer_attempt",
                 event_room_id=owner_id,
             )
@@ -1530,7 +1533,7 @@ class QuizGameManager:
         event_recipient_ids = voter_ids - {client_id}
 
         await self.broadcast_state(
-            public_info=f"{team_label}陣営で解答送信投票を開始しました。",
+            public_info=f"{team_label}陣営でアンサー投票を開始しました。",
             event_type="answer_vote_request",
             event_message=self._format_answer_vote_request_message(nickname, text, should_emit_vote_log),
             event_chat_type=team,
@@ -2088,7 +2091,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         while True:
             data = await websocket.receive_text()
             try:
-                # 【対策2】受信したデータが正しいJSONかチェックする
                 payload = json.loads(data)
                 await manager.process_client_payload(client_id, payload)
 
