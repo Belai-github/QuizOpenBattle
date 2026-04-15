@@ -2803,7 +2803,36 @@ function renderParticipants(participants) {
     });
 }
 
-function renderNameList(listEl, names) {
+function canSwapParticipantsInWaitingRoom() {
+    if (isKifuMode) {
+        return false;
+    }
+    if (!isInGameArena()) {
+        return false;
+    }
+    return (currentRoomGameState || "waiting") === "waiting"
+        && Boolean(currentRoomSnapshot?.can_manage_room);
+}
+
+function requestSwapParticipantTeam(targetClientId) {
+    const targetId = String(targetClientId || "").trim();
+    if (targetId === "") {
+        return;
+    }
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "swap_participant_team",
+            target_client_id: targetId,
+            timestamp: Date.now(),
+        })
+    );
+}
+
+function renderNameList(listEl, names, options = {}) {
     listEl.innerHTML = "";
     if (!Array.isArray(names) || names.length === 0) {
         const emptyItem = document.createElement("li");
@@ -2812,6 +2841,10 @@ function renderNameList(listEl, names) {
         listEl.appendChild(emptyItem);
         return;
     }
+
+    const team = String(options?.team || "").trim();
+    const allowSwap = Boolean(options?.allowSwap)
+        && (team === "team-left" || team === "team-right");
 
     names.forEach((entry) => {
         const item = document.createElement("li");
@@ -2839,6 +2872,28 @@ function renderNameList(listEl, names) {
             meTagEl.className = "player-list-item-tag";
             meTagEl.textContent = "You";
             item.appendChild(meTagEl);
+        }
+
+        if (allowSwap && entry?.client_id) {
+            const swapBtnEl = document.createElement("button");
+            swapBtnEl.type = "button";
+            swapBtnEl.className = "player-swap-btn";
+            swapBtnEl.title = team === "team-left" ? "後攻へ移動" : "先攻へ移動";
+            swapBtnEl.setAttribute("aria-label", `${nickname} を ${team === "team-left" ? "後攻" : "先攻"}に入れ替える`);
+
+            const iconEl = document.createElement("img");
+            iconEl.src = "img/swap.png";
+            iconEl.alt = "";
+            iconEl.className = "player-swap-icon";
+            swapBtnEl.appendChild(iconEl);
+
+            swapBtnEl.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                requestSwapParticipantTeam(entry.client_id);
+            });
+
+            item.insertBefore(swapBtnEl, item.firstChild);
         }
 
         listEl.appendChild(item);
@@ -3226,9 +3281,9 @@ function renderArena(currentRoom) {
         lastAutoSelectedQuestionKey = null;
         questionEl.textContent = "問題文を準備中...";
         updateQuestionVisibilityButton();
-        renderNameList(leftListEl, []);
-        renderNameList(rightListEl, []);
-        renderNameList(spectatorListEl, []);
+        renderNameList(leftListEl, [], { team: "team-left", allowSwap: false });
+        renderNameList(rightListEl, [], { team: "team-right", allowSwap: false });
+        renderNameList(spectatorListEl, [], { team: "spectator", allowSwap: false });
         updateArenaProgressAnnouncement();
         return;
     }
@@ -3287,9 +3342,10 @@ function renderArena(currentRoom) {
     const leftPlayers = Array.isArray(currentRoom.left_participants) ? currentRoom.left_participants : [];
     const rightPlayers = Array.isArray(currentRoom.right_participants) ? currentRoom.right_participants : [];
 
-    renderNameList(leftListEl, leftPlayers);
-    renderNameList(rightListEl, rightPlayers);
-    renderNameList(spectatorListEl, currentRoom.spectators || []);
+    const canSwap = canSwapParticipantsInWaitingRoom();
+    renderNameList(leftListEl, leftPlayers, { team: "team-left", allowSwap: canSwap });
+    renderNameList(rightListEl, rightPlayers, { team: "team-right", allowSwap: canSwap });
+    renderNameList(spectatorListEl, currentRoom.spectators || [], { team: "spectator", allowSwap: false });
     updateArenaProgressAnnouncement();
 }
 

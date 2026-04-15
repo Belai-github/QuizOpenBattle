@@ -1307,7 +1307,7 @@ body.modal-open #arena-question-text .arena-question-line {
 .player-list-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 8px;
     min-height: 34px;
     padding: 7px 10px;
@@ -1385,6 +1385,33 @@ body.modal-open #arena-question-text .arena-question-line {
     font-weight: 700;
     white-space: nowrap;
     letter-spacing: 0.02em;
+    margin-left: auto;
+}
+
+.player-swap-btn {
+    width: 30px;
+    min-height: 30px;
+    height: 30px;
+    margin: 0;
+    padding: 0;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.player-swap-btn:hover {
+    background: #e2e8f0;
+}
+
+.player-swap-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+    opacity: 0.85;
 }
 
 #arena-question-board {

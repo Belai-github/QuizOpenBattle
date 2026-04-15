@@ -19,6 +19,7 @@ from backend.game_logic import (
     apply_exit_room,
     apply_join_room,
     apply_shuffle_participants,
+    apply_swap_participant_team,
     apply_start_game,
     apply_open_character,
     apply_submit_answer,
@@ -2185,6 +2186,27 @@ class QuizGameManager:
             event_room_id=client_id,
         )
 
+    async def swap_participant_team(self, client_id: str, target_client_id: str):
+        result = apply_swap_participant_team(self.rooms, client_id, target_client_id)
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "参加者入れ替えに失敗しました。"))
+            return
+
+        questioner_name = result["questioner_name"]
+        target_id = str(result.get("target_client_id") or "").strip()
+        from_team = str(result.get("from_team") or "")
+        to_team = str(result.get("to_team") or "")
+        target_name = self.nicknames.get(target_id, "ゲスト")
+        from_label = self._team_label(from_team)
+        to_label = self._team_label(to_team)
+
+        await self.broadcast_state(
+            public_info=f"{questioner_name} が参加者を入れ替えました",
+            event_type="room_shuffle",
+            event_message=f"{questioner_name} が {target_name} を {from_label}から{to_label} に入れ替えました",
+            event_room_id=client_id,
+        )
+
     async def open_character(self, client_id: str, char_index):
         """文字をオープンするアクション"""
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -2844,6 +2866,11 @@ class QuizGameManager:
 
         if payload_type == "shuffle_participants":
             await self.shuffle_participants(client_id)
+            return
+
+        if payload_type == "swap_participant_team":
+            target_client_id = str(payload.get("target_client_id", "")).strip()
+            await self.swap_participant_team(client_id, target_client_id)
             return
 
         if payload_type == "open_character":

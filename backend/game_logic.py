@@ -597,6 +597,46 @@ def apply_shuffle_participants(rooms: dict, client_id: str):
     return {"ok": True, "questioner_name": room["questioner_name"]}
 
 
+def apply_swap_participant_team(rooms: dict, client_id: str, target_client_id: str):
+    room = rooms.get(client_id)
+    if room is None:
+        return {"ok": False, "error": "参加者入れ替えは出題者のみ実行できます。"}
+
+    if room.get("game_state", "waiting") != "waiting":
+        return {"ok": False, "error": "ゲーム開始後は参加者入れ替えできません。"}
+
+    target_id = str(target_client_id or "").strip()
+    if target_id == "":
+        return {"ok": False, "error": "入れ替え対象の参加者が見つかりません。"}
+
+    left_participants = room.get("left_participants", set())
+    right_participants = room.get("right_participants", set())
+
+    if target_id in left_participants:
+        left_participants.discard(target_id)
+        right_participants.add(target_id)
+        return {
+            "ok": True,
+            "questioner_name": room["questioner_name"],
+            "target_client_id": target_id,
+            "from_team": "team-left",
+            "to_team": "team-right",
+        }
+
+    if target_id in right_participants:
+        right_participants.discard(target_id)
+        left_participants.add(target_id)
+        return {
+            "ok": True,
+            "questioner_name": room["questioner_name"],
+            "target_client_id": target_id,
+            "from_team": "team-right",
+            "to_team": "team-left",
+        }
+
+    return {"ok": False, "error": "参加者のみ入れ替えできます。"}
+
+
 def apply_exit_room(rooms: dict, client_id: str):
     if client_id in rooms:
         room = rooms[client_id]
