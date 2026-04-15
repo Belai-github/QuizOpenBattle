@@ -159,6 +159,10 @@ def _build_visible_question_text(normalized_chars: list[str], game: dict | None,
     if chat_role == "spectator" and game and game.get("game_status") == "playing":
         return "".join(normalized_chars)
 
+    full_open = game.get("full_open_settlement") if isinstance(game, dict) else None
+    if isinstance(full_open, dict) and str(full_open.get("state") or "idle") in {"answering", "judging", "finished"}:
+        return "".join(normalized_chars)
+
     masked = [QUESTION_MASK_CHAR] * len(normalized_chars)
     if not game or game.get("game_status") != "playing":
         return "".join(masked)
@@ -317,12 +321,39 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
     # ゲーム状態をJSON シリアライズ可能な形式に変換
     game_state = room.get("game")
     if game_state:
+        full_open_settlement = game_state.get("full_open_settlement")
+        if isinstance(full_open_settlement, dict):
+            answers = dict(full_open_settlement.get("answers") or {})
+            judgements = dict(full_open_settlement.get("judgements") or {})
+            if ctx["role"] != "owner":
+                own_team = chat_role if chat_role in {"team-left", "team-right"} else None
+                if own_team:
+                    answers = {
+                        own_team: answers.get(own_team),
+                        "team-left" if own_team == "team-right" else "team-right": None,
+                    }
+                else:
+                    answers = {
+                        "team-left": None,
+                        "team-right": None,
+                    }
+
+            full_open_settlement = {
+                "state": str(full_open_settlement.get("state") or "idle"),
+                "vote_id": str(full_open_settlement.get("vote_id") or "") or None,
+                "submitted_teams": list(full_open_settlement.get("submitted_teams") or []),
+                "answers": answers,
+                "judgements": judgements,
+                "final_winner": str(full_open_settlement.get("final_winner") or "") or None,
+            }
+
         game_state = {
             "current_turn_team": game_state.get("current_turn_team"),
             "game_status": game_state.get("game_status"),
             "winner": game_state.get("winner"),
             "left_correct_waiting": bool(game_state.get("left_correct_waiting")),
             "is_judging_answer": game_state.get("pending_answer_judgement") is not None,
+            "full_open_settlement": full_open_settlement if isinstance(full_open_settlement, dict) else None,
             "team_left": game_state.get("team_left", {}),
             "team_right": game_state.get("team_right", {}),
             "opened_char_indexes": sorted(list(game_state.get("opened_char_indexes", set()))),
@@ -551,6 +582,20 @@ def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
         "game_status": "playing",  # "playing" | "finished"
         "winner": None,  # None | "team-left" | "team-right"
         "pending_answer_judgement": None,  # {team, answer_text, answerer_id} | None
+        "full_open_settlement": {
+            "state": "idle",  # idle | pending | answering | judging | finished
+            "vote_id": None,
+            "submitted_teams": [],
+            "answers": {
+                "team-left": None,
+                "team-right": None,
+            },
+            "judgements": {
+                "team-left": None,
+                "team-right": None,
+            },
+            "final_winner": None,
+        },
         "left_correct_waiting": False,  # 先攻正解後、後攻の最終ターン待ち
         # チームごとのアクション権
         "team_left": {

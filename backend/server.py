@@ -481,6 +481,10 @@ class QuizGameManager:
             "room_shuffle",
             "character_opened",
             "answer_submitted",
+            "full_open_settlement_start",
+            "full_open_settlement_answer",
+            "full_open_settlement_ready",
+            "full_open_settlement_finished",
             "open_vote_request",
             "open_vote_resolved",
             "answer_attempt",
@@ -700,7 +704,41 @@ class QuizGameManager:
         return "ターンエンド投票可決" if approved else "ターンエンド投票否決"
 
     def _format_intentional_draw_vote_resolution_message(self, approved: bool):
-        return "ID(インテンショナルドロー)が成立し、引き分けになりました。" if approved else "ID(インテンショナルドロー)は否決されました。"
+        return "フルオープン決着が成立しました。" if approved else "フルオープン決着は否決されました。"
+
+    def _start_full_open_settlement(self, room: dict, vote_id: str, requester_id: str):
+        game = room.get("game") or {}
+        raw_team_left = game.get("team_left")
+        team_left = raw_team_left if isinstance(raw_team_left, dict) else {}
+        raw_team_right = game.get("team_right")
+        team_right = raw_team_right if isinstance(raw_team_right, dict) else {}
+        team_left["action_points"] = 1
+        team_left["bonus_action_points"] = 0
+        team_right["action_points"] = 1
+        team_right["bonus_action_points"] = 0
+        game["team_left"] = team_left
+        game["team_right"] = team_right
+
+        game["full_open_settlement"] = {
+            "state": "answering",
+            "vote_id": vote_id,
+            "submitted_teams": [],
+            "answers": {
+                "team-left": None,
+                "team-right": None,
+            },
+            "judgements": {
+                "team-left": None,
+                "team-right": None,
+            },
+            "final_winner": None,
+            "requester_id": requester_id,
+        }
+
+    def _get_full_open_settlement_state(self, room: dict):
+        game = room.get("game") or {}
+        state = game.get("full_open_settlement")
+        return state if isinstance(state, dict) else None
 
     def _format_answer_result_message(self, team_label: str, is_correct: bool):
         result_label = "正解" if is_correct else "誤答"
@@ -728,6 +766,10 @@ class QuizGameManager:
             return False
 
         game = room.get("game") or {}
+        full_open = game.get("full_open_settlement")
+        if isinstance(full_open, dict) and str(full_open.get("state") or "idle") != "idle":
+            return False
+
         if game.get("game_status") != "playing":
             return False
 
@@ -1528,7 +1570,7 @@ class QuizGameManager:
 
         pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
         if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "ID(インテンショナルドロー)投票中はオープンを申請できません。")
+            await self.send_private_info(client_id, "フルオープン決着投票中はオープンを申請できません。")
             return
 
         if game.get("current_turn_team") != team:
@@ -2016,6 +2058,11 @@ class QuizGameManager:
             await self.send_private_info(client_id, "正誤判定中は行動できません。")
             return
 
+        full_open = self._get_full_open_settlement_state(room)
+        if isinstance(full_open, dict) and str(full_open.get("state") or "idle") != "idle":
+            await self.send_private_info(client_id, "フルオープン決着中はターンエンドできません。")
+            return
+
         pending_open_vote = room.get("pending_open_vote")
         if pending_open_vote and pending_open_vote.get("status") == "pending":
             await self.send_private_info(client_id, "文字オープン投票中はターンエンドできません。")
@@ -2033,7 +2080,7 @@ class QuizGameManager:
 
         pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
         if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "ID(インテンショナルドロー)投票中はターンエンドできません。")
+            await self.send_private_info(client_id, "フルオープン決着投票中はターンエンドできません。")
             return
 
         team = self._resolve_team_for_client(room, client_id)
@@ -2130,36 +2177,36 @@ class QuizGameManager:
         owner_id = ctx["room_owner_id"]
 
         if room.get("game_state") != "playing":
-            await self.send_private_info(client_id, "対戦中のみID(インテンショナルドロー)を提案できます。")
+            await self.send_private_info(client_id, "対戦中のみフルオープン決着を提案できます。")
             return
 
         game = room.get("game") or {}
         if game.get("pending_answer_judgement") is not None:
-            await self.send_private_info(client_id, "正誤判定中はID(インテンショナルドロー)を提案できません。")
+            await self.send_private_info(client_id, "正誤判定中はフルオープン決着を提案できません。")
             return
 
         pending_open_vote = room.get("pending_open_vote")
         if pending_open_vote and pending_open_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "文字オープン投票中はID(インテンショナルドロー)を提案できません。")
+            await self.send_private_info(client_id, "文字オープン投票中はフルオープン決着を提案できません。")
             return
 
         pending_answer_vote = room.get("pending_answer_vote")
         if pending_answer_vote and pending_answer_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "アンサー投票中はID(インテンショナルドロー)を提案できません。")
+            await self.send_private_info(client_id, "アンサー投票中はフルオープン決着を提案できません。")
             return
 
         pending_turn_end_vote = room.get("pending_turn_end_vote")
         if pending_turn_end_vote and pending_turn_end_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "ターンエンド投票中はID(インテンショナルドロー)を提案できません。")
+            await self.send_private_info(client_id, "ターンエンド投票中はフルオープン決着を提案できません。")
             return
 
         pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
         if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "進行中のID(インテンショナルドロー)投票があります。")
+            await self.send_private_info(client_id, "進行中のフルオープン決着投票があります。")
             return
 
         if not self._is_intentional_draw_eligible(room):
-            await self.send_private_info(client_id, "ID(インテンショナルドロー)を提案できる条件を満たしていません。")
+            await self.send_private_info(client_id, "フルオープン決着を提案できる条件を満たしていません。")
             return
 
         voter_ids = set(room.get("left_participants", set())) | set(room.get("right_participants", set()))
@@ -2196,7 +2243,7 @@ class QuizGameManager:
             },
         )
 
-        await self.send_private_info(client_id, "ID(インテンショナルドロー)を提案しました。")
+        await self.send_private_info(client_id, "フルオープン決着を提案しました。")
 
     async def respond_intentional_draw_vote(self, client_id: str, vote_id: str, approve: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -2209,7 +2256,7 @@ class QuizGameManager:
         pending_vote = room.get("pending_intentional_draw_vote")
 
         if not pending_vote or pending_vote.get("status") != "pending":
-            await self.send_private_info(client_id, "進行中のID(インテンショナルドロー)投票がありません。")
+            await self.send_private_info(client_id, "進行中のフルオープン決着投票がありません。")
             return
 
         if pending_vote.get("vote_id") != vote_id:
@@ -2244,6 +2291,7 @@ class QuizGameManager:
             room["pending_intentional_draw_vote"] = None
 
             game = room.get("game") or {}
+            self._start_full_open_settlement(room, vote_id, str(pending_vote.get("requester_id") or ""))
             self._append_kifu_action(
                 owner_id,
                 "intentional_draw",
@@ -2254,11 +2302,6 @@ class QuizGameManager:
                     "vote_id": vote_id,
                 },
             )
-            game["winner"] = "draw"
-            game["game_status"] = "finished"
-            game["left_correct_waiting"] = False
-            game["pending_answer_judgement"] = None
-            room["game_state"] = "finished"
             room["pending_open_vote"] = None
             room["pending_answer_vote"] = None
             room["pending_turn_end_vote"] = None
@@ -2278,9 +2321,9 @@ class QuizGameManager:
             )
 
             await self.broadcast_state(
-                public_info="ID(インテンショナルドロー)が成立しました。",
-                event_type="intentional_draw",
-                event_message="IDが成立しました。",
+                public_info="フルオープン決着が成立しました。回答待機を開始します。",
+                event_type="full_open_settlement_start",
+                event_message="フルオープン決着が成立しました。回答待機を開始します。",
                 event_chat_type="game-global",
                 event_room_id=owner_id,
                 event_recipient_ids=recipients,
@@ -2290,9 +2333,18 @@ class QuizGameManager:
                 },
             )
 
-            game_finished_message = self._format_game_finished_message("draw")
-            await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
-            self._finalize_kifu_if_tracking(owner_id, room, "intentional_draw")
+            await self.broadcast_state(
+                public_info="フルオープン決着が成立しました。問題文の全文を開示して、両陣営の回答を待機します。",
+                event_type="intentional_draw",
+                event_message="フルオープン決着が成立しました。全文を開示して回答待機に移行します。",
+                event_chat_type="game-global",
+                event_room_id=owner_id,
+                event_recipient_ids=recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "log_marker_id": vote_id,
+                },
+            )
             return
 
         if len(rejected_ids) > 0:
@@ -2317,7 +2369,7 @@ class QuizGameManager:
             notify_targets = set(approved_ids)
             if requester_id:
                 notify_targets.add(str(requester_id))
-            private_map = {target_id: "ID(インテンショナルドロー)の提案が否決されました。" for target_id in notify_targets}
+            private_map = {target_id: "フルオープン決着の提案が否決されました。" for target_id in notify_targets}
             await self.broadcast_state(
                 public_info="",
                 private_map=private_map,
@@ -2646,6 +2698,11 @@ class QuizGameManager:
             await self.send_private_info(client_id, "正誤判定中は行動できません。")
             return
 
+        full_open = self._get_full_open_settlement_state(room)
+        if isinstance(full_open, dict) and str(full_open.get("state") or "idle") != "idle":
+            await self.send_private_info(client_id, "フルオープン決着中は文字オープンできません。")
+            return
+
         # チームを特定
         team = None
         if client_id in room["left_participants"]:
@@ -2719,7 +2776,105 @@ class QuizGameManager:
 
         pending_intentional_draw_vote = room.get("pending_intentional_draw_vote")
         if pending_intentional_draw_vote and pending_intentional_draw_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "ID(インテンショナルドロー)投票中は解答を送信できません。")
+            await self.send_private_info(client_id, "フルオープン決着投票中は解答を送信できません。")
+            return
+
+        full_open_settlement = self._get_full_open_settlement_state(room)
+        if not isinstance(full_open_settlement, dict):
+            full_open_settlement = {}
+        full_open_state = str(full_open_settlement.get("state") or "").strip()
+        if full_open_state in {"answering", "judging"}:
+            if client_id in room["left_participants"]:
+                team = "team-left"
+                team_label = "先攻"
+            elif client_id in room["right_participants"]:
+                team = "team-right"
+                team_label = "後攻"
+            else:
+                await self.send_private_info(client_id, "参加者のみアンサーできます。")
+                return
+
+            if full_open_state != "answering":
+                await self.send_private_info(client_id, "現在は判定待機中のため、追加のアンサーはできません。")
+                return
+
+            submitted_teams = list(full_open_settlement.get("submitted_teams") or [])
+            if team in submitted_teams:
+                await self.send_private_info(client_id, "この陣営はすでに回答済みです。")
+                return
+
+            text = str(answer_text or "").strip()
+            if text == "":
+                await self.send_private_info(client_id, "解答を入力してください。")
+                return
+
+            if len(text) > self.ANSWER_MAX_LENGTH:
+                await self.send_private_info(
+                    client_id,
+                    f"解答は{self.ANSWER_MAX_LENGTH}文字以内で入力してください。",
+                )
+                return
+
+            answers = dict(full_open_settlement.get("answers") or {})
+            answers[team] = text
+            if team not in submitted_teams:
+                submitted_teams.append(team)
+
+            full_open_settlement["answers"] = answers
+            full_open_settlement["submitted_teams"] = submitted_teams
+
+            self._append_kifu_action(
+                owner_id,
+                "answer",
+                team,
+                client_id,
+                {
+                    "answer_text": text,
+                    "full_open_settlement": True,
+                    "vote_id": str(full_open_settlement.get("vote_id") or ""),
+                },
+            )
+
+            recipients = self._room_member_ids(owner_id, room)
+            if len(submitted_teams) < 2:
+                await self.broadcast_state(
+                    public_info=f"{team_label}の回答が提出されました。",
+                    private_map={client_id: f"{team_label}の回答を受け付けました。相手の回答を待っています。"},
+                    event_type="full_open_settlement_answer",
+                    event_message=f"{team_label}の回答が提出されました。",
+                    event_room_id=owner_id,
+                    event_recipient_ids=recipients,
+                    event_payload={
+                        "vote_id": str(full_open_settlement.get("vote_id") or ""),
+                        "submitted_team": team,
+                        "submitted_teams": submitted_teams,
+                        "answers": answers,
+                        "log_marker_id": str(full_open_settlement.get("vote_id") or ""),
+                    },
+                )
+                return
+
+            full_open_settlement["state"] = "judging"
+            left_answer_text = str(answers.get("team-left") or "")
+            right_answer_text = str(answers.get("team-right") or "")
+            ready_message = f"先攻の解答は「{left_answer_text}」、後攻の解答は「{right_answer_text}」でした。"
+            vote_marker_base = str(full_open_settlement.get("vote_id") or "").strip()
+            ready_marker_id = f"{vote_marker_base}:ready" if vote_marker_base else str(uuid.uuid4())
+            await self.broadcast_state(
+                public_info="フルオープン決着の両陣営の回答がそろいました。判定してください。",
+                event_type="full_open_settlement_ready",
+                event_message=ready_message,
+                event_chat_type="game-global",
+                event_room_id=owner_id,
+                event_recipient_ids=recipients,
+                event_payload={
+                    "vote_id": str(full_open_settlement.get("vote_id") or ""),
+                    "answers": answers,
+                    "submitted_teams": submitted_teams,
+                    "log_marker_id": ready_marker_id,
+                    "event_id": ready_marker_id,
+                },
+            )
             return
 
         if client_id in room["left_participants"]:
@@ -2885,6 +3040,104 @@ class QuizGameManager:
         result = await self._finalize_answer_judgement(owner_id, room, team, answer_text, bool(is_correct))
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "正誤判定に失敗しました。"))
+
+    async def judge_full_open_settlement(self, client_id: str, vote_id: str, left_is_correct: bool, right_is_correct: bool):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        if ctx["role"] != "owner":
+            await self.send_private_info(client_id, "判定確定は出題者のみ実行できます。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        game = room.get("game") or {}
+        full_open = self._get_full_open_settlement_state(room)
+        if not isinstance(full_open, dict):
+            await self.send_private_info(client_id, "フルオープン決着の進行状態が見つかりません。")
+            return
+
+        if str(full_open.get("state") or "") != "judging":
+            await self.send_private_info(client_id, "現在は判定確定できる状態ではありません。")
+            return
+
+        active_vote_id = str(full_open.get("vote_id") or "")
+        if vote_id and active_vote_id and vote_id != active_vote_id:
+            await self.send_private_info(client_id, "投票IDが一致しません。")
+            return
+
+        answers = dict(full_open.get("answers") or {})
+        if str(answers.get("team-left") or "").strip() == "" or str(answers.get("team-right") or "").strip() == "":
+            await self.send_private_info(client_id, "両陣営の回答が揃っていません。")
+            return
+
+        left_correct = bool(left_is_correct)
+        right_correct = bool(right_is_correct)
+
+        if left_correct == right_correct:
+            winner = "draw"
+        elif left_correct:
+            winner = "team-left"
+        else:
+            winner = "team-right"
+
+        full_open["judgements"] = {
+            "team-left": left_correct,
+            "team-right": right_correct,
+        }
+        full_open["final_winner"] = winner
+        full_open["state"] = "finished"
+
+        game["winner"] = winner
+        game["game_status"] = "finished"
+        game["left_correct_waiting"] = False
+        game["pending_answer_judgement"] = None
+        room["game_state"] = "finished"
+        room["pending_open_vote"] = None
+        room["pending_answer_vote"] = None
+        room["pending_turn_end_vote"] = None
+        room["pending_intentional_draw_vote"] = None
+
+        recipients = self._room_member_ids(owner_id, room)
+        marker_id = active_vote_id or str(uuid.uuid4())
+        finished_marker_id = f"{marker_id}:finished"
+
+        self._append_kifu_action(
+            owner_id,
+            "intentional_draw",
+            "game-global",
+            client_id,
+            {
+                "full_open_settlement": True,
+                "vote_id": active_vote_id,
+                "left_is_correct": left_correct,
+                "right_is_correct": right_correct,
+                "winner": winner,
+            },
+        )
+
+        await self.broadcast_state(
+            public_info="フルオープン決着の判定が確定しました。",
+            event_type="full_open_settlement_finished",
+            event_message=(f"フルオープン決着の判定が確定しました。" f"先攻: {'正解' if left_correct else '誤答'} / " f"後攻: {'正解' if right_correct else '誤答'}"),
+            event_chat_type="game-global",
+            event_room_id=owner_id,
+            event_recipient_ids=recipients,
+            event_payload={
+                "vote_id": active_vote_id,
+                "left_is_correct": left_correct,
+                "right_is_correct": right_correct,
+                "winner": winner,
+                "log_marker_id": finished_marker_id,
+                "event_id": finished_marker_id,
+            },
+        )
+
+        game_finished_message = self._format_game_finished_message(winner)
+        await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
+        self._finalize_kifu_if_tracking(owner_id, room, "intentional_draw")
 
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         # 同一 client_id の二重接続は許可しない（別タブ重複やなりすまし抑止）。
@@ -3478,6 +3731,13 @@ class QuizGameManager:
         if payload_type == "judge_answer":
             is_correct = bool(payload.get("is_correct", False))
             await self.judge_answer(client_id, is_correct)
+            return
+
+        if payload_type == "full_open_settlement_judge":
+            vote_id = str(payload.get("vote_id", "")).strip()
+            left_is_correct = bool(payload.get("left_is_correct", False))
+            right_is_correct = bool(payload.get("right_is_correct", False))
+            await self.judge_full_open_settlement(client_id, vote_id, left_is_correct, right_is_correct)
             return
 
         if payload_type == "end_turn" or payload_type == "turn_end_attempt":

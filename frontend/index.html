@@ -145,8 +145,10 @@
                 <p id="arena-question-text">問題文を準備中...</p>
                 <div id="arena-answer-box" class="hidden">
                     <div class="arena-turn-end-row">
-                        <button id="arena-intentional-draw-btn" type="button" class="hidden"
-                            aria-label="ID(インテンショナルドロー)">ID</button>
+                        <button id="arena-intentional-draw-btn" type="button" class="hidden" aria-label="フルオープン決着"
+                            title="フルオープン決着">
+                            <img src="img/fullopen.png" alt="フルオープン決着" class="arena-intentional-draw-icon">
+                        </button>
                         <button id="arena-turn-end-btn" type="button" aria-label="ターンエンド">ターンエンド</button>
                     </div>
                     <div class="arena-answer-compose">
@@ -218,6 +220,31 @@
                 </div>
             </div>
         </dialog>
+
+        <dialog id="full-open-settlement-modal" class="modal full-open-settlement-modal"
+            aria-labelledby="full-open-settlement-title">
+            <div class="modal-card full-open-settlement-card">
+                <h2 id="full-open-settlement-title">フルオープン決着</h2>
+                <p id="full-open-settlement-status" class="full-open-settlement-status">回答待機中です。</p>
+                <div class="full-open-settlement-columns">
+                    <section class="full-open-settlement-panel left">
+                        <h3>先攻</h3>
+                        <p id="full-open-settlement-left-answer" class="full-open-settlement-answer">未回答</p>
+                        <button id="full-open-settlement-left-judge-btn" type="button"
+                            class="full-open-settlement-judge-btn" aria-pressed="false">正解</button>
+                    </section>
+                    <section class="full-open-settlement-panel right">
+                        <h3>後攻</h3>
+                        <p id="full-open-settlement-right-answer" class="full-open-settlement-answer">未回答</p>
+                        <button id="full-open-settlement-right-judge-btn" type="button"
+                            class="full-open-settlement-judge-btn" aria-pressed="false">正解</button>
+                    </section>
+                </div>
+                <div class="modal-actions single">
+                    <button id="full-open-settlement-confirm-btn" type="button" disabled>判定完了</button>
+                </div>
+            </div>
+        </dialog>
     </div>
 
     <div id="kifu-list-screen" style="display: none;">
@@ -279,14 +306,14 @@
                 <h3>約物について</h3>
                 <p>約物（句読点や記号などの読み上げられない文字）がオープンされた場合、その文字は相手にも公開される代わりに、<b>「アクション権」</b>を1回獲得します。</p>
                 <hr>
-                <h3>ID(インテンショナルドロー)について</h3>
+                <h3>フルオープン決着について</h3>
                 <ul>
                     <li>問題文の文字が7割以上オープンされている</li>
                     <li>先攻/後攻どちらも1回以上誤答している</li>
                 </ul>
-                <p>という状況で<b>ID(インテンショナルドロー、合意引き分け)</b>を提案する選択肢が表示されます。</p>
-                <p>IDとは、全員が合意してそのゲームを引き分けにする救済措置ルールです。</p>
-                <p>全員が合意すれば参加者は引き分けとなり、その場合<b>出題者の敗北</b>です。</p>
+                <p>という状況で<b>フルオープン決着</b>を提案する選択肢が表示されます。</p>
+                <p>全員が合意すると、両陣営に問題文の全文が開示され、両者に1回ずつアクション権が与えられます。</p>
+                <p>それぞれが1回ずつアンサーを行い、<b>両者がどちらも正解または誤答なら引き分け</b>、<b>一方のみ正解ならそのチームの勝利</b>です。</p>
             </div>
             <div class="modal-actions single">
                 <button id="rulebook-close-btn" type="button">閉じる</button>

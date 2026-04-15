@@ -21,6 +21,13 @@ const arenaGlobalChatBoxEl = document.getElementById("arena-global-chat-box");
 const arenaLogsModalEl = document.getElementById("arena-logs-modal");
 const arenaLogsModalSlotEl = document.getElementById("arena-logs-modal-slot");
 const arenaLogsUnreadBadgeEl = document.getElementById("arena-logs-unread-badge");
+const fullOpenSettlementModalEl = document.getElementById("full-open-settlement-modal");
+const fullOpenSettlementStatusEl = document.getElementById("full-open-settlement-status");
+const fullOpenSettlementLeftAnswerEl = document.getElementById("full-open-settlement-left-answer");
+const fullOpenSettlementRightAnswerEl = document.getElementById("full-open-settlement-right-answer");
+const fullOpenSettlementLeftJudgeBtnEl = document.getElementById("full-open-settlement-left-judge-btn");
+const fullOpenSettlementRightJudgeBtnEl = document.getElementById("full-open-settlement-right-judge-btn");
+const fullOpenSettlementConfirmBtnEl = document.getElementById("full-open-settlement-confirm-btn");
 const arenaAnswerBoxEl = document.getElementById("arena-answer-box");
 const arenaAnswerInputEl = document.getElementById("arena-answer-input");
 const arenaAnswerLengthWarningEl = document.getElementById("arena-answer-length-warning");
@@ -73,6 +80,11 @@ const handledIntentionalDrawVoteIds = new Set();
 let openVoteRequestPending = false;
 let turnEndRequestPending = false;
 let intentionalDrawVoteRequestPending = false;
+let fullOpenSettlementDraftVoteId = "";
+let fullOpenSettlementDraftJudgements = {
+    "team-left": null,
+    "team-right": null,
+};
 const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
@@ -107,7 +119,7 @@ const logScrollListenerBound = new WeakSet();
 const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
-const REPLAY_PROGRESS_EVENT_TYPES = new Set(["character_opened", "answer_attempt", "answer_result", "turn_changed", "intentional_draw"]);
+const REPLAY_PROGRESS_EVENT_TYPES = new Set(["character_opened", "answer_attempt", "answer_result", "turn_changed", "intentional_draw", "full_open_settlement_start", "full_open_settlement_answer", "full_open_settlement_ready", "full_open_settlement_finished"]);
 const ARENA_VOTE_EVENT_TYPES = new Set([
     "open_vote_request",
     "open_vote_resolved",
@@ -145,6 +157,10 @@ const ARENA_ALLOWED_EVENT_TYPES = new Set([
     "open_vote_resolved",
     "answer_attempt",
     "answer_result",
+    "full_open_settlement_start",
+    "full_open_settlement_answer",
+    "full_open_settlement_ready",
+    "full_open_settlement_finished",
     "answer_vote_request",
     "answer_vote_resolved",
     "turn_end_vote_request",
@@ -1741,6 +1757,7 @@ function canRequestOpenCharacter() {
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
     if (isAnswerJudgementPending()) return false;
+    if (String(currentGameState?.full_open_settlement?.state || "idle") !== "idle") return false;
     if (userRole !== "team-left" && userRole !== "team-right") return false;
     return currentGameState?.current_turn_team === userRole;
 }
@@ -1750,6 +1767,15 @@ function canSubmitArenaAnswer() {
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
     if (isAnswerJudgementPending()) return false;
+
+    const fullOpenState = String(currentGameState?.full_open_settlement?.state || "");
+    const submittedTeams = Array.isArray(currentGameState?.full_open_settlement?.submitted_teams)
+        ? currentGameState.full_open_settlement.submitted_teams
+        : [];
+    if (fullOpenState === "answering") {
+        return (userRole === "team-left" || userRole === "team-right") && !submittedTeams.includes(userRole);
+    }
+
     if (userRole !== "team-left" && userRole !== "team-right") return false;
     return currentGameState?.current_turn_team === userRole;
 }
@@ -1759,6 +1785,7 @@ function canRequestTurnEnd() {
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
     if (isAnswerJudgementPending()) return false;
+    if (String(currentGameState?.full_open_settlement?.state || "idle") !== "idle") return false;
     if (userRole !== "team-left" && userRole !== "team-right") return false;
     return currentGameState?.current_turn_team === userRole;
 }
@@ -1839,6 +1866,10 @@ function canViewArenaAnswerForm() {
     if (isKifuMode) return false;
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
+    const fullOpenState = String(currentGameState?.full_open_settlement?.state || "");
+    if (fullOpenState === "answering" || fullOpenState === "judging") {
+        return userRole === "team-left" || userRole === "team-right";
+    }
     if (currentRoomSnapshot?.role !== "participant") return false;
     return userRole === "team-left" || userRole === "team-right";
 }
@@ -1870,6 +1901,7 @@ function updateArenaAnswerFormVisibility() {
     const canSubmit = canSubmitArenaAnswer();
     const canEndTurn = canRequestTurnEnd();
     const canUseIntentionalDraw = canRequestIntentionalDraw();
+    const fullOpenState = String(currentGameState?.full_open_settlement?.state || "idle");
     const answerComposeEl = arenaAnswerInputEl.closest(".arena-answer-compose");
     const shouldShowBox = canView || canUseIntentionalDraw;
     arenaAnswerBoxEl.classList.toggle("hidden", !shouldShowBox);
@@ -1880,6 +1912,7 @@ function updateArenaAnswerFormVisibility() {
     arenaAnswerInputEl.disabled = !canSubmit;
     arenaAnswerSubmitBtnEl.disabled = !canSubmit;
     arenaAnswerSubmitBtnEl.classList.toggle("hidden", !canView);
+    arenaTurnEndBtnEl.classList.toggle("hidden", fullOpenState === "answering" || fullOpenState === "judging" ? true : !canView);
     arenaTurnEndBtnEl.disabled = !canEndTurn;
     if (arenaIntentionalDrawBtnEl) {
         arenaIntentionalDrawBtnEl.classList.toggle("hidden", !canUseIntentionalDraw);
@@ -1953,7 +1986,7 @@ async function submitIntentionalDrawProposal() {
     if (!canRequestIntentionalDraw()) return;
 
     if (intentionalDrawVoteRequestPending) {
-        await showAlertModal("ID(インテンショナルドロー)提案処理中です。少し待ってください。");
+        await showAlertModal("フルオープン決着の提案処理中です。少し待ってください。");
         return;
     }
 
@@ -1963,7 +1996,7 @@ async function submitIntentionalDrawProposal() {
     }
 
     const confirmed = await showConfirmModal(
-        "ID(インテンショナルドロー)は、ゲームが膠着状態になったときの救済措置として、全員の同意のもとこのゲームを引き分けにするルールです。\n\nIDを提案しますか？",
+        "フルオープン決着は、ゲームが膠着状態になったときの救済措置として、全員の同意のもと決着方式を切り替えるルールです。\n\nフルオープン決着を提案しますか？",
         {
             okLabel: "はい",
             cancelLabel: "いいえ",
@@ -2120,6 +2153,17 @@ function updateArenaLeaveLabel(modeOrRoom) {
 
 function getTeamLabel(team) {
     return team === "team-right" ? "後攻" : "先攻";
+}
+
+function getGameFinishedMessageByWinner(winner) {
+    const winnerKey = String(winner || "").trim();
+    if (winnerKey === "team-left") {
+        return "ゲーム終了！先攻の勝利";
+    }
+    if (winnerKey === "team-right") {
+        return "ゲーム終了！後攻の勝利";
+    }
+    return "ゲーム終了！引き分け";
 }
 
 function getPendingDisconnectAnnouncementText() {
@@ -2295,6 +2339,7 @@ function updateGameStateUI() {
         });
 
         updateArenaProgressAnnouncement();
+        syncFullOpenSettlementModal();
         return;
     }
 
@@ -2332,6 +2377,122 @@ function updateGameStateUI() {
     updateArenaReplayResultBadges({ show: false, winner: null });
 
     updateArenaProgressAnnouncement();
+    syncFullOpenSettlementModal();
+}
+
+function syncFullOpenSettlementModal() {
+    if (!fullOpenSettlementModalEl) return;
+
+    const state = currentGameState?.full_open_settlement;
+    const shouldShow = Boolean(state && state.state && state.state !== "idle" && currentRoomSnapshot?.role === "owner");
+    fullOpenSettlementModalEl.classList.toggle("hidden", !shouldShow);
+
+    if (!shouldShow) {
+        if (fullOpenSettlementModalEl.open) {
+            fullOpenSettlementModalEl.close();
+        }
+        return;
+    }
+
+    if (!fullOpenSettlementModalEl.open) {
+        fullOpenSettlementModalEl.showModal();
+    }
+
+    const voteId = String(state.vote_id || "");
+    const serverLeftJudged = state.judgements?.["team-left"];
+    const serverRightJudged = state.judgements?.["team-right"];
+    const normalizedServerLeft = typeof serverLeftJudged === "boolean" ? serverLeftJudged : null;
+    const normalizedServerRight = typeof serverRightJudged === "boolean" ? serverRightJudged : null;
+
+    if (fullOpenSettlementDraftVoteId !== voteId) {
+        fullOpenSettlementDraftVoteId = voteId;
+        fullOpenSettlementDraftJudgements = {
+            "team-left": normalizedServerLeft,
+            "team-right": normalizedServerRight,
+        };
+    }
+
+    if (state.state !== "judging") {
+        fullOpenSettlementDraftJudgements = {
+            "team-left": normalizedServerLeft,
+            "team-right": normalizedServerRight,
+        };
+    }
+
+    if (fullOpenSettlementStatusEl) {
+        fullOpenSettlementStatusEl.textContent = state.state === "judging"
+            ? "両陣営の回答が揃いました。判定を確定してください。"
+            : state.state === "answering"
+                ? "両陣営の回答を待機中です。"
+                : "フルオープン決着進行中です。";
+    }
+
+    if (fullOpenSettlementLeftAnswerEl) {
+        const leftAnswer = state.answers?.["team-left"];
+        fullOpenSettlementLeftAnswerEl.textContent = leftAnswer ? String(leftAnswer) : "未回答";
+    }
+
+    if (fullOpenSettlementRightAnswerEl) {
+        const rightAnswer = state.answers?.["team-right"];
+        fullOpenSettlementRightAnswerEl.textContent = rightAnswer ? String(rightAnswer) : "未回答";
+    }
+
+    const leftJudged = fullOpenSettlementDraftJudgements["team-left"];
+    const rightJudged = fullOpenSettlementDraftJudgements["team-right"];
+    if (fullOpenSettlementLeftJudgeBtnEl) {
+        fullOpenSettlementLeftJudgeBtnEl.dataset.judgement = leftJudged === null ? "pending" : leftJudged ? "correct" : "wrong";
+        fullOpenSettlementLeftJudgeBtnEl.setAttribute("aria-pressed", leftJudged === null ? "false" : "true");
+        fullOpenSettlementLeftJudgeBtnEl.textContent = leftJudged === null ? "未選択" : leftJudged ? "正解" : "誤答";
+        fullOpenSettlementLeftJudgeBtnEl.disabled = state.state !== "judging";
+    }
+    if (fullOpenSettlementRightJudgeBtnEl) {
+        fullOpenSettlementRightJudgeBtnEl.dataset.judgement = rightJudged === null ? "pending" : rightJudged ? "correct" : "wrong";
+        fullOpenSettlementRightJudgeBtnEl.setAttribute("aria-pressed", rightJudged === null ? "false" : "true");
+        fullOpenSettlementRightJudgeBtnEl.textContent = rightJudged === null ? "未選択" : rightJudged ? "正解" : "誤答";
+        fullOpenSettlementRightJudgeBtnEl.disabled = state.state !== "judging";
+    }
+    if (fullOpenSettlementConfirmBtnEl) {
+        fullOpenSettlementConfirmBtnEl.disabled = !(state.state === "judging" && leftJudged !== null && rightJudged !== null);
+    }
+}
+
+function toggleFullOpenSettlementJudgement(team) {
+    const currentValue = fullOpenSettlementDraftJudgements[team];
+    if (currentValue === null) {
+        fullOpenSettlementDraftJudgements[team] = true;
+    } else {
+        fullOpenSettlementDraftJudgements[team] = !currentValue;
+    }
+    syncFullOpenSettlementModal();
+}
+
+async function submitFullOpenSettlementJudgement() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    const state = currentGameState?.full_open_settlement;
+    if (!state || state.state !== "judging") {
+        return;
+    }
+
+    const leftValue = fullOpenSettlementDraftJudgements["team-left"];
+    const rightValue = fullOpenSettlementDraftJudgements["team-right"];
+    if (leftValue === null || rightValue === null) {
+        await showAlertModal("先攻・後攻の判定を選択してください。");
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "full_open_settlement_judge",
+            vote_id: String(state.vote_id || ""),
+            left_is_correct: Boolean(leftValue),
+            right_is_correct: Boolean(rightValue),
+            timestamp: Date.now(),
+        })
+    );
 }
 
 function showWaitingRoomScreen() {
@@ -2387,8 +2548,9 @@ function isReplayMode() {
 
 function syncReplayControlsVisibility() {
     if (kifuReplayControlsEl) {
-        const isGameFinished = (currentRoomGameState || "waiting") === "finished";
-        kifuReplayControlsEl.classList.toggle("hidden", !isGameFinished);
+        const hasReplaySteps = Array.isArray(currentKifuSteps) && currentKifuSteps.length > 0;
+        const shouldShowReplayControls = isReplayMode() && hasReplaySteps;
+        kifuReplayControlsEl.classList.toggle("hidden", !shouldShowReplayControls);
     }
 }
 
@@ -2483,8 +2645,9 @@ function highlightReplayCurrentLogFromDisplayedProgress() {
     const replayEventTypesByAction = {
         open: ["character_opened"],
         answer: ["answer_result", "answer_attempt"],
+        full_open_settlement_answers: ["full_open_settlement_ready"],
         turn_end: ["turn_changed"],
-        intentional_draw: ["intentional_draw"],
+        intentional_draw: ["full_open_settlement_finished", "intentional_draw"],
     };
     const targetEventTypes = replayEventTypesByAction[actionType] || [];
 
@@ -2538,6 +2701,36 @@ function highlightReplayCurrentLogFromDisplayedProgress() {
                     });
                     if (matchedByAnswerText.length > 0) {
                         targetItem = matchedByAnswerText[matchedByAnswerText.length - 1];
+                    }
+                }
+            }
+
+            if (!targetItem && actionType === "full_open_settlement_answers") {
+                const leftAnswer = String(payload?.team_left_answer || "").trim();
+                const rightAnswer = String(payload?.team_right_answer || "").trim();
+                if (leftAnswer !== "" && rightAnswer !== "") {
+                    const leftNeedle = `先攻の解答は「${leftAnswer}」`;
+                    const rightNeedle = `後攻の解答は「${rightAnswer}」`;
+                    const matchedByBothAnswers = typedItems.filter((itemEl) => {
+                        const message = getItemMessageText(itemEl);
+                        return message.includes(leftNeedle) && message.includes(rightNeedle);
+                    });
+                    if (matchedByBothAnswers.length > 0) {
+                        targetItem = matchedByBothAnswers[matchedByBothAnswers.length - 1];
+                    }
+                }
+            }
+
+            if (!targetItem && actionType === "intentional_draw" && Boolean(payload?.full_open_settlement)) {
+                const leftJudge = payload.left_is_correct === true ? "正解" : payload.left_is_correct === false ? "誤答" : "";
+                const rightJudge = payload.right_is_correct === true ? "正解" : payload.right_is_correct === false ? "誤答" : "";
+                if (leftJudge !== "" && rightJudge !== "") {
+                    const matchedByJudgements = typedItems.filter((itemEl) => {
+                        const message = getItemMessageText(itemEl);
+                        return message.includes(`先攻: ${leftJudge}`) && message.includes(`後攻: ${rightJudge}`);
+                    });
+                    if (matchedByJudgements.length > 0) {
+                        targetItem = matchedByJudgements[matchedByJudgements.length - 1];
                     }
                 }
             }
@@ -2706,6 +2899,20 @@ function initializeReplayGameState() {
         draw_reason: null,
         is_judging_answer: false,
         left_correct_waiting: false,
+        full_open_settlement: {
+            state: "idle",
+            vote_id: null,
+            submitted_teams: [],
+            answers: {
+                "team-left": null,
+                "team-right": null,
+            },
+            judgements: {
+                "team-left": null,
+                "team-right": null,
+            },
+            final_winner: null,
+        },
         team_left: {
             action_points: 1,
             bonus_action_points: 0,
@@ -2764,6 +2971,23 @@ function replayYieldTurn(state) {
 function applyReplayAction(state, action) {
     const team = String(action?.team || "");
     const payload = typeof action?.payload === "object" && action?.payload ? action.payload : {};
+    const fullOpenState = state.full_open_settlement && typeof state.full_open_settlement === "object"
+        ? state.full_open_settlement
+        : {
+            state: "idle",
+            vote_id: null,
+            submitted_teams: [],
+            answers: {
+                "team-left": null,
+                "team-right": null,
+            },
+            judgements: {
+                "team-left": null,
+                "team-right": null,
+            },
+            final_winner: null,
+        };
+    state.full_open_settlement = fullOpenState;
     const teamKey = replayTeamKey(team);
     const otherTeamKey = replayTeamKey(replayOtherTeam(team));
     const teamState = state[teamKey] || { action_points: 0, bonus_action_points: 0, correct_answer: null };
@@ -2796,6 +3020,33 @@ function applyReplayAction(state, action) {
     }
 
     if (action?.action_type === "answer") {
+        if (Boolean(payload.full_open_settlement)) {
+            const voteId = String(payload.vote_id || fullOpenState.vote_id || "").trim();
+            const submittedTeams = Array.isArray(fullOpenState.submitted_teams)
+                ? [...fullOpenState.submitted_teams]
+                : [];
+            const answers = {
+                "team-left": fullOpenState.answers?.["team-left"] ?? null,
+                "team-right": fullOpenState.answers?.["team-right"] ?? null,
+            };
+
+            if (team === "team-left" || team === "team-right") {
+                answers[team] = String(payload.answer_text || "");
+                if (!submittedTeams.includes(team)) {
+                    submittedTeams.push(team);
+                }
+            }
+
+            state.full_open_settlement = {
+                ...fullOpenState,
+                state: submittedTeams.length >= 2 ? "judging" : "answering",
+                vote_id: voteId || null,
+                submitted_teams: submittedTeams,
+                answers,
+            };
+            return;
+        }
+
         replayConsumeAction(teamState);
         const isCorrect = payload.is_correct;
         if (isCorrect === true) {
@@ -2830,6 +3081,23 @@ function applyReplayAction(state, action) {
         }
     }
 
+    if (action?.action_type === "full_open_settlement_answers") {
+        const voteId = String(payload.vote_id || fullOpenState.vote_id || "").trim();
+        const leftAnswer = String(payload.team_left_answer || "");
+        const rightAnswer = String(payload.team_right_answer || "");
+        state.full_open_settlement = {
+            ...fullOpenState,
+            state: "judging",
+            vote_id: voteId || null,
+            submitted_teams: ["team-left", "team-right"],
+            answers: {
+                "team-left": leftAnswer,
+                "team-right": rightAnswer,
+            },
+        };
+        return;
+    }
+
     if (action?.action_type === "turn_end") {
         teamState.action_points = 0;
         if (team === "team-right" && state.left_correct_waiting) {
@@ -2843,11 +3111,91 @@ function applyReplayAction(state, action) {
     }
 
     if (action?.action_type === "intentional_draw") {
+        const isFullOpenSettlement = Boolean(payload.full_open_settlement);
+        if (Boolean(payload.legacy_finish_draw)) {
+            state.winner = "draw";
+            state.draw_reason = "intentional_draw";
+            state.game_status = "finished";
+            state.left_correct_waiting = false;
+            state.is_judging_answer = false;
+            state.full_open_settlement = {
+                ...fullOpenState,
+                state: "finished",
+                final_winner: "draw",
+            };
+            return;
+        }
+
+        if (Boolean(payload.proposed_by_vote) && !isFullOpenSettlement) {
+            const voteId = String(payload.vote_id || "").trim() || null;
+            state.team_left = {
+                ...state.team_left,
+                action_points: 1,
+                bonus_action_points: 0,
+            };
+            state.team_right = {
+                ...state.team_right,
+                action_points: 1,
+                bonus_action_points: 0,
+            };
+            state.left_correct_waiting = false;
+            state.is_judging_answer = false;
+            state.game_status = "playing";
+            state.winner = null;
+            state.draw_reason = null;
+            state.full_open_settlement = {
+                state: "answering",
+                vote_id: voteId,
+                submitted_teams: [],
+                answers: {
+                    "team-left": null,
+                    "team-right": null,
+                },
+                judgements: {
+                    "team-left": null,
+                    "team-right": null,
+                },
+                final_winner: null,
+            };
+            return;
+        }
+
+        if (isFullOpenSettlement) {
+            const fullOpenWinner = String(payload.winner || "").trim();
+            const voteId = String(payload.vote_id || fullOpenState.vote_id || "").trim() || null;
+            const leftJudgement = typeof payload.left_is_correct === "boolean" ? payload.left_is_correct : null;
+            const rightJudgement = typeof payload.right_is_correct === "boolean" ? payload.right_is_correct : null;
+            state.winner = fullOpenWinner === "team-left" || fullOpenWinner === "team-right"
+                ? fullOpenWinner
+                : "draw";
+            state.draw_reason = state.winner === "draw" ? "intentional_draw" : null;
+            state.game_status = "finished";
+            state.left_correct_waiting = false;
+            state.is_judging_answer = false;
+            state.full_open_settlement = {
+                ...fullOpenState,
+                state: "finished",
+                vote_id: voteId,
+                judgements: {
+                    "team-left": leftJudgement,
+                    "team-right": rightJudgement,
+                },
+                final_winner: state.winner,
+            };
+            return;
+        }
+
         state.winner = "draw";
         state.draw_reason = "intentional_draw";
         state.game_status = "finished";
         state.left_correct_waiting = false;
         state.is_judging_answer = false;
+        state.full_open_settlement = {
+            ...fullOpenState,
+            state: "finished",
+            final_winner: "draw",
+        };
+        return;
     }
 
     state[teamKey] = teamState;
@@ -2857,17 +3205,155 @@ function buildKifuReplaySteps(detail) {
     const actions = Array.isArray(detail?.actions) ? detail.actions.filter((action) => {
         const actionType = String(action?.action_type || "");
         return actionType === "open" || actionType === "answer" || actionType === "turn_end" || actionType === "intentional_draw";
-    }) : [];
+    }).map((action, originalOrder) => ({ action, originalOrder })) : [];
+
+    actions.sort((a, b) => {
+        const indexA = Number(a.action?.index);
+        const indexB = Number(b.action?.index);
+        const hasIndexA = Number.isFinite(indexA);
+        const hasIndexB = Number.isFinite(indexB);
+        if (hasIndexA && hasIndexB && indexA !== indexB) {
+            return indexA - indexB;
+        }
+
+        const tsA = Number(a.action?.timestamp);
+        const tsB = Number(b.action?.timestamp);
+        const hasTsA = Number.isFinite(tsA);
+        const hasTsB = Number.isFinite(tsB);
+        if (hasTsA && hasTsB && tsA !== tsB) {
+            return tsA - tsB;
+        }
+
+        return a.originalOrder - b.originalOrder;
+    });
+
+    const sortedActions = actions.map((entry) => entry.action);
+
+    const fullOpenFinalVoteIds = new Set(
+        sortedActions
+            .filter((action) => {
+                if (String(action?.action_type || "") !== "intentional_draw") return false;
+                const payload = typeof action?.payload === "object" && action?.payload ? action.payload : {};
+                return Boolean(payload.full_open_settlement);
+            })
+            .map((action) => String(action?.payload?.vote_id || "").trim())
+            .filter((voteId) => voteId !== "")
+    );
+
+    const replayActions = [];
+    const pendingFullOpenAnswersByVote = new Map();
+
+    const enqueuePendingFullOpenAnswers = (voteId) => {
+        const key = String(voteId || "").trim();
+        if (key === "" || !pendingFullOpenAnswersByVote.has(key)) {
+            return;
+        }
+
+        const pending = pendingFullOpenAnswersByVote.get(key);
+        pendingFullOpenAnswersByVote.delete(key);
+        if (!pending) {
+            return;
+        }
+
+        const left = pending.left;
+        const right = pending.right;
+        if (left && right) {
+            const leftTs = Number(left?.timestamp || 0);
+            const rightTs = Number(right?.timestamp || 0);
+            const mergedTimestamp = Math.max(leftTs, rightTs) || Date.now();
+            replayActions.push({
+                action_type: "full_open_settlement_answers",
+                team: "game-global",
+                actor_id: "",
+                actor_name: "システム",
+                timestamp: mergedTimestamp,
+                payload: {
+                    full_open_settlement: true,
+                    vote_id: key,
+                    team_left_answer: String(left?.payload?.answer_text || ""),
+                    team_right_answer: String(right?.payload?.answer_text || ""),
+                },
+            });
+            return;
+        }
+
+        // 片側しか記録されていない異常データは、元のanswerをそのまま再生して欠落を避ける。
+        [left, right]
+            .filter(Boolean)
+            .sort((a, b) => Number(a?.timestamp || 0) - Number(b?.timestamp || 0))
+            .forEach((singleAction) => {
+                replayActions.push(singleAction);
+            });
+    };
+
+    sortedActions.forEach((action) => {
+        const actionType = String(action?.action_type || "");
+        const payload = typeof action?.payload === "object" && action?.payload ? action.payload : {};
+
+        if (actionType === "intentional_draw" && Boolean(payload.proposed_by_vote) && !Boolean(payload.full_open_settlement)) {
+            const voteId = String(payload.vote_id || "").trim();
+            if (voteId !== "" && fullOpenFinalVoteIds.has(voteId)) {
+                // フルオープン受理ログは手数にカウントしない。
+                return;
+            }
+
+            replayActions.push({
+                ...action,
+                payload: {
+                    ...payload,
+                    legacy_finish_draw: true,
+                },
+            });
+            return;
+        }
+
+        if (actionType === "answer" && Boolean(payload.full_open_settlement)) {
+            const voteId = String(payload.vote_id || "").trim();
+            if (voteId === "") {
+                replayActions.push(action);
+                return;
+            }
+
+            const current = pendingFullOpenAnswersByVote.get(voteId) || { left: null, right: null };
+            const team = String(action?.team || "").trim();
+            if (team === "team-left") {
+                current.left = action;
+            } else if (team === "team-right") {
+                current.right = action;
+            } else {
+                replayActions.push(action);
+                return;
+            }
+            pendingFullOpenAnswersByVote.set(voteId, current);
+            if (current.left && current.right) {
+                enqueuePendingFullOpenAnswers(voteId);
+            }
+            return;
+        }
+
+        if (actionType === "intentional_draw" && Boolean(payload.full_open_settlement)) {
+            const voteId = String(payload.vote_id || "").trim();
+            if (voteId !== "") {
+                enqueuePendingFullOpenAnswers(voteId);
+            }
+        }
+
+        replayActions.push(action);
+    });
+
+    Array.from(pendingFullOpenAnswersByVote.keys()).forEach((voteId) => {
+        enqueuePendingFullOpenAnswers(voteId);
+    });
 
     const steps = [];
     const state = initializeReplayGameState();
     steps.push({ game: cloneReplayGameState(state), action: null });
 
-    actions.forEach((action) => {
-        applyReplayAction(state, action);
+    replayActions.forEach((actionForReplay) => {
+        applyReplayAction(state, actionForReplay);
         steps.push({
             game: cloneReplayGameState(state),
-            action,
+            action: actionForReplay,
         });
     });
     return steps;
@@ -2909,6 +3395,7 @@ function renderKifuStep() {
     currentRoomSnapshot = roomSnapshot;
     currentRoomGameState = roomSnapshot.game_state;
     currentGameState = roomSnapshot.game;
+    syncReplayControlsVisibility();
     userRole = "questioner";
     updateArenaCloseButtonVisibility(roomSnapshot);
     document.body.dataset.chatRole = "questioner";
@@ -2957,15 +3444,35 @@ function renderKifuStep() {
                     const message = `${subjectLabel}が「${answerText}」とアンサーしました（${judgeText}）。`;
                     pushArenaRoomLog(replayRoomId, team || "game-global", "answer_attempt", message, action.timestamp || Date.now());
                     pushArenaRoomLog(replayRoomId, "game-global", "answer_attempt", message, action.timestamp || Date.now());
+                } else if (actionType === "full_open_settlement_answers") {
+                    const leftAnswer = String(payload.team_left_answer || "");
+                    const rightAnswer = String(payload.team_right_answer || "");
+                    const message = `フルオープン決着が受理されました。先攻の解答は「${leftAnswer}」、後攻の解答は「${rightAnswer}」でした。`;
+                    pushArenaRoomLog(replayRoomId, "game-global", "full_open_settlement_ready", message, action.timestamp || Date.now());
                 } else if (actionType === "turn_end") {
                     const message = `${subjectLabel}がターンエンドしました。`;
                     pushArenaRoomLog(replayRoomId, team || "game-global", "turn_changed", message, action.timestamp || Date.now());
                     pushArenaRoomLog(replayRoomId, "game-global", "turn_changed", message, action.timestamp || Date.now());
                 } else if (actionType === "intentional_draw") {
-                    const message = "IDが成立しました。";
-                    pushArenaRoomLog(replayRoomId, "game-global", "intentional_draw", message, action.timestamp || Date.now());
+                    if (Boolean(payload.full_open_settlement)) {
+                        const leftJudge = payload.left_is_correct === true ? "正解" : payload.left_is_correct === false ? "誤答" : "未判定";
+                        const rightJudge = payload.right_is_correct === true ? "正解" : payload.right_is_correct === false ? "誤答" : "未判定";
+                        const message = `フルオープン決着の判定が確定しました。先攻: ${leftJudge} / 後攻: ${rightJudge}`;
+                        pushArenaRoomLog(replayRoomId, "game-global", "full_open_settlement_finished", message, action.timestamp || Date.now());
+                    } else if (Boolean(payload.legacy_finish_draw)) {
+                        const message = "フルオープン決着が成立しました。";
+                        pushArenaRoomLog(replayRoomId, "game-global", "intentional_draw", message, action.timestamp || Date.now());
+                    }
                 }
             });
+
+            if (String(step?.game?.game_status || "") === "finished") {
+                const winner = String(step?.game?.winner || "");
+                const finishedMessage = getGameFinishedMessageByWinner(winner);
+                const lastAction = actions.length > 0 ? actions[actions.length - 1] : null;
+                const finishedAt = Number(lastAction?.timestamp || 0) || Date.now();
+                pushArenaRoomLog(replayRoomId, "game-global", "game_finished", finishedMessage, finishedAt);
+            }
         }
     }
 
@@ -3822,7 +4329,19 @@ function getOpenedByTeamMap() {
     return source;
 }
 
+function isFullOpenSettlementVisible() {
+    const state = String(currentGameState?.full_open_settlement?.state || "idle");
+    return state === "answering" || state === "judging" || state === "finished";
+}
+
 function getDisplayCharForIndex(originalChar, index) {
+    if (isFullOpenSettlementVisible()) {
+        return {
+            text: originalChar,
+            tokenVariant: null,
+        };
+    }
+
     const openedByTeam = getOpenedByTeamMap();
     const owner = openedByTeam[String(index)];
     const tokenNumberText = String(index + 1);
@@ -4049,10 +4568,6 @@ function renderArena(currentRoom) {
 
     const isMeQuestioner = currentRoom.questioner_id === myClientId;
     const questionerName = String(currentRoom.questioner_name || "ゲスト");
-    const isIntentionalDrawReplay = isReplayMode()
-        && !kifuReplayControlsEl?.classList.contains("hidden")
-        && String(currentRoom?.game?.winner || "").trim() === "draw"
-        && String(currentRoom?.game?.draw_reason || "").trim() === "intentional_draw";
     const genreLabel = String(currentRoom.genre || "").trim() || "未設定";
     const difficultyLabel = currentRoom.is_ai_mode
         ? `${normalizeAiAccuracyRate(currentRoom.difficulty)}%`
@@ -4070,13 +4585,6 @@ function renderArena(currentRoom) {
         questionerNameEl.className = "player-list-item-name";
         questionerNameEl.textContent = `出題者: ${questionerName}`;
         questionerItemEl.appendChild(questionerNameEl);
-
-        if (isIntentionalDrawReplay) {
-            const loseTagEl = document.createElement("span");
-            loseTagEl.className = "arena-result-badge questioner-result-badge is-lose";
-            loseTagEl.textContent = "敗北";
-            questionerItemEl.appendChild(loseTagEl);
-        }
 
         if (isMeQuestioner && !currentRoom.is_ai_mode) {
             questionerItemEl.classList.add("player-list-item-me", "questioner-list-item-me");
@@ -4582,6 +5090,10 @@ function appendEventLog(
         "open_vote_resolved",
         "answer_attempt",
         "answer_result",
+        "full_open_settlement_start",
+        "full_open_settlement_answer",
+        "full_open_settlement_ready",
+        "full_open_settlement_finished",
         "answer_vote_request",
         "answer_vote_resolved",
         "turn_end_vote_request",
@@ -5539,7 +6051,7 @@ async function handleIntentionalDrawVoteRequest(payload) {
         ? "\n（全員のOKで成立します）"
         : "";
     const confirmed = await showConfirmModal(
-        `${requesterName}によりIDが提案されました。\nID(インテンショナルドロー)に同意しますか？${unanimityNote}`,
+        `${requesterName}によりフルオープン決着が提案されました。\nフルオープン決着に同意しますか？${unanimityNote}`,
         {
             okLabel: "同意する",
             cancelLabel: "同意しない",
@@ -5719,6 +6231,18 @@ arenaTurnEndBtnEl?.addEventListener("click", () => {
 
 arenaIntentionalDrawBtnEl?.addEventListener("click", () => {
     void submitIntentionalDrawProposal();
+});
+
+fullOpenSettlementLeftJudgeBtnEl?.addEventListener("click", () => {
+    toggleFullOpenSettlementJudgement("team-left");
+});
+
+fullOpenSettlementRightJudgeBtnEl?.addEventListener("click", () => {
+    toggleFullOpenSettlementJudgement("team-right");
+});
+
+fullOpenSettlementConfirmBtnEl?.addEventListener("click", () => {
+    void submitFullOpenSettlementJudgement();
 });
 
 arenaAnswerInputEl?.addEventListener("keydown", (event) => {
