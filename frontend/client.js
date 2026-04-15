@@ -25,7 +25,9 @@ let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
 let currentRoomGameState = null; // "waiting" | "playing" | "finished" | null
 let currentGameState = null; // game中の詳細状態: {current_turn_team, team_left: {...}, team_right: {...}, ...}
+let currentRoomSnapshot = null;
 const handledOpenVoteIds = new Set();
+const handledAnswerVoteIds = new Set();
 let openVoteRequestPending = false;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
@@ -296,6 +298,26 @@ function canViewArenaAnswerForm() {
     return userRole === "team-left" || userRole === "team-right";
 }
 
+function getCurrentTeamParticipantCount() {
+    if (!currentRoomSnapshot) {
+        return 1;
+    }
+
+    if (userRole === "team-left") {
+        return Array.isArray(currentRoomSnapshot.left_participants)
+            ? currentRoomSnapshot.left_participants.length
+            : 1;
+    }
+
+    if (userRole === "team-right") {
+        return Array.isArray(currentRoomSnapshot.right_participants)
+            ? currentRoomSnapshot.right_participants.length
+            : 1;
+    }
+
+    return 1;
+}
+
 function updateArenaAnswerFormVisibility() {
     if (!arenaAnswerBoxEl || !arenaAnswerInputEl || !arenaAnswerSubmitBtnEl) return;
 
@@ -324,10 +346,17 @@ async function submitArenaAnswer() {
         return;
     }
 
+    const teamParticipantCount = getCurrentTeamParticipantCount();
+    const isProposalMode = teamParticipantCount > 1;
+    const confirmMessage = isProposalMode
+        ? `この内容で解答を提案しますか？\n\n${answerText}`
+        : `この内容で解答を送信しますか？\n\n${answerText}`;
+    const okLabel = isProposalMode ? "提案する" : "送信する";
+
     const confirmed = await showConfirmModal(
-        `この内容で解答を送信しますか？\n\n${answerText}`,
+        confirmMessage,
         {
-            okLabel: "送信する",
+            okLabel,
             cancelLabel: "キャンセル",
         }
     );
@@ -1300,7 +1329,17 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
 }
 
 function appendEventLog(eventType, eventMessage, eventChatType = null) {
-    const allowedTypes = new Set(["join", "leave", "question", "chat", "room_shuffle", "open_vote_request", "open_vote_resolved"]);
+    const allowedTypes = new Set([
+        "join",
+        "leave",
+        "question",
+        "chat",
+        "room_shuffle",
+        "open_vote_request",
+        "open_vote_resolved",
+        "answer_vote_request",
+        "answer_vote_resolved",
+    ]);
     if (!allowedTypes.has(eventType) || !eventMessage) {
         return;
     }
@@ -1313,7 +1352,13 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
     }
 
     // アリーナ内で発生するゲーム進行ログは待機所ログへは送らない。
-    const arenaOnlyTypes = new Set(["room_shuffle", "open_vote_request", "open_vote_resolved"]);
+    const arenaOnlyTypes = new Set([
+        "room_shuffle",
+        "open_vote_request",
+        "open_vote_resolved",
+        "answer_vote_request",
+        "answer_vote_resolved",
+    ]);
     if (arenaOnlyTypes.has(eventType)) {
         return;
     }
@@ -1363,6 +1408,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        currentRoomSnapshot = data.current_room ?? null;
         userRole = data.current_room?.chat_role ?? null;
         currentRoomGameState = data.current_room?.game_state ?? null;
         currentGameState = data.current_room?.game ?? null;
@@ -1385,6 +1431,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
         if (data.event_type === "open_vote_request" && data.event_payload) {
             void handleOpenVoteRequest(data.event_payload);
+        }
+        if (data.event_type === "answer_vote_request" && data.event_payload) {
+            void handleAnswerVoteRequest(data.event_payload);
         }
         if (data.event_type === "answer_judgement_request" && data.event_payload) {
             void handleAnswerJudgementRequest(data.event_payload);
@@ -1570,18 +1619,38 @@ function toggleArenaQuestionCharSelectionFromTarget(targetEl) {
         if (isOpened) {
             return;
         }
-        requestOpenVote(index);
+        void requestOpenVote(index);
     }
 }
 
-function requestOpenVote(charIndex) {
+async function requestOpenVote(charIndex) {
     if (openVoteRequestPending) {
-        void showAlertModal("投票開始処理中です。少し待ってください。");
+        await showAlertModal("投票開始処理中です。少し待ってください。");
         return;
     }
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        void showAlertModal("サーバー接続後に操作できます");
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    const teamParticipantCount = getCurrentTeamParticipantCount();
+    const isProposalMode = teamParticipantCount > 1;
+    if (isProposalMode) {
+        const confirmed = await showConfirmModal(
+            `${charIndex + 1}文字目オープンを提案しますか？`,
+            {
+                okLabel: "提案する",
+                cancelLabel: "キャンセル",
+            }
+        );
+        if (!confirmed) {
+            return;
+        }
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
         return;
     }
 
@@ -1630,6 +1699,43 @@ async function handleOpenVoteRequest(payload) {
             vote_id: voteId,
             approve: Boolean(confirmed),
             timestamp: Date.now()
+        })
+    );
+}
+
+async function handleAnswerVoteRequest(payload) {
+    const voteId = String(payload?.vote_id || "");
+    const teamLabel = String(payload?.team_label || "");
+    const answererName = String(payload?.answerer_name || "参加者");
+    const answerText = String(payload?.answer_text || "");
+    const totalVoters = Number(payload?.total_voters || 0);
+
+    if (!voteId) return;
+    if (handledAnswerVoteIds.has(voteId)) return;
+    handledAnswerVoteIds.add(voteId);
+
+    const unanimityNote = totalVoters > 1
+        ? "\n（陣営全員のOKで送信されます）"
+        : "";
+
+    const confirmed = await showConfirmModal(
+        `${teamLabel} ${answererName} の解答案:\n${answerText}\n\nこの内容で解答を送信しますか？${unanimityNote}`,
+        {
+            okLabel: "OK",
+            cancelLabel: "キャンセル",
+        }
+    );
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "answer_vote_response",
+            vote_id: voteId,
+            approve: Boolean(confirmed),
+            timestamp: Date.now(),
         })
     );
 }

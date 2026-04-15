@@ -143,6 +143,11 @@ class QuizGameManager:
             await self.send_private_info(client_id, "正誤判定中は行動できません。")
             return
 
+        pending_answer_vote = room.get("pending_answer_vote")
+        if pending_answer_vote and pending_answer_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "進行中の解答送信投票があります。")
+            return
+
         if game.get("current_turn_team") != team:
             await self.send_private_info(client_id, "あなたの陣営のターンではありません。")
             return
@@ -170,17 +175,20 @@ class QuizGameManager:
         should_emit_vote_log = total_voters > 1
         vote_id = str(uuid.uuid4())
         required_approvals = (total_voters // 2) + 1
+        approved_ids = {client_id} if total_voters > 1 else set()
         room["pending_open_vote"] = {
             "vote_id": vote_id,
             "requester_id": client_id,
             "team": team,
             "char_index": char_index,
             "voter_ids": voter_ids,
-            "approved_ids": set(),
+            "approved_ids": approved_ids,
             "rejected_ids": set(),
             "required_approvals": required_approvals,
             "status": "pending",
         }
+
+        event_recipient_ids = voter_ids - {client_id} if total_voters > 1 else voter_ids
 
         team_label = "先攻" if team == "team-left" else "後攻"
         requester_name = self.nicknames.get(client_id, "ゲスト")
@@ -190,7 +198,7 @@ class QuizGameManager:
             event_message=(f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。" if should_emit_vote_log else None),
             event_chat_type=team,
             event_room_id=owner_id,
-            event_recipient_ids=voter_ids,
+            event_recipient_ids=event_recipient_ids,
             event_payload={
                 "vote_id": vote_id,
                 "team": team,
@@ -199,6 +207,9 @@ class QuizGameManager:
                 "total_voters": total_voters,
             },
         )
+
+        if total_voters > 1:
+            await self.send_private_info(client_id, "提案しました。")
 
     async def respond_open_vote(self, client_id: str, vote_id: str, approve: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -300,6 +311,132 @@ class QuizGameManager:
                 },
                 event_recipient_ids=team_chat_recipients,
             )
+
+    async def respond_answer_vote(self, client_id: str, vote_id: str, approve: bool):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        pending_vote = room.get("pending_answer_vote")
+
+        if not pending_vote or pending_vote.get("status") != "pending":
+            await self.send_private_info(client_id, "進行中の解答送信投票がありません。")
+            return
+
+        if pending_vote.get("vote_id") != vote_id:
+            await self.send_private_info(client_id, "投票IDが一致しません。")
+            return
+
+        voter_ids = pending_vote["voter_ids"]
+        if client_id not in voter_ids:
+            await self.send_private_info(client_id, "この投票には参加できません。")
+            return
+
+        if client_id in pending_vote["approved_ids"] or client_id in pending_vote["rejected_ids"]:
+            await self.send_private_info(client_id, "この投票にはすでに回答済みです。")
+            return
+
+        if approve:
+            pending_vote["approved_ids"].add(client_id)
+        else:
+            pending_vote["rejected_ids"].add(client_id)
+
+        approvals = len(pending_vote["approved_ids"])
+        rejections = len(pending_vote["rejected_ids"])
+        required = pending_vote["required_approvals"]
+        team = pending_vote["team"]
+        team_label = "先攻" if team == "team-left" else "後攻"
+        should_emit_vote_log = len(voter_ids) > 1
+
+        team_chat_recipients = set(voter_ids)
+        team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
+        if team_chat_result.get("ok"):
+            team_chat_recipients = team_chat_result["event_recipient_ids"]
+
+        if approvals >= required:
+            pending_vote["status"] = "approved"
+            room["pending_answer_vote"] = None
+
+            game = room.get("game") or {}
+            if game.get("pending_answer_judgement") is not None:
+                await self.broadcast_state(
+                    public_info="解答送信投票は可決されましたが、判定待ちの解答があるため送信できませんでした。",
+                    event_type="answer_vote_resolved",
+                    event_chat_type=team,
+                    event_room_id=owner_id,
+                    event_recipient_ids=team_chat_recipients,
+                    event_payload={
+                        "vote_id": vote_id,
+                        "approved": False,
+                        "reason": "judgement_pending",
+                    },
+                )
+                return
+
+            answer_text = str(pending_vote.get("answer_text", "")).strip()
+            requester_id = pending_vote.get("requester_id")
+            requester_name = self.nicknames.get(requester_id, "ゲスト")
+
+            game["pending_answer_judgement"] = {
+                "team": team,
+                "answer_text": answer_text,
+                "answerer_id": requester_id,
+            }
+
+            await self.broadcast_state(
+                public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
+                event_type="answer_attempt",
+                event_room_id=owner_id,
+            )
+
+            await self.broadcast_state(
+                public_info="",
+                event_type="answer_judgement_request",
+                event_room_id=owner_id,
+                event_recipient_ids={owner_id},
+                event_payload={
+                    "team": team,
+                    "team_label": team_label,
+                    "answer_text": answer_text,
+                    "answerer_name": requester_name,
+                },
+            )
+
+            await self.broadcast_state(
+                public_info=f"{team_label}陣営の解答送信投票が可決されました。",
+                event_type="answer_vote_resolved",
+                event_message=(f"解答送信投票可決: {requester_name}" if should_emit_vote_log else None),
+                event_chat_type=team,
+                event_room_id=owner_id,
+                event_recipient_ids=team_chat_recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": True,
+                },
+            )
+            return
+
+        max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
+        if max_possible_approvals < required:
+            pending_vote["status"] = "rejected"
+            room["pending_answer_vote"] = None
+            await self.broadcast_state(
+                public_info=f"{team_label}陣営の解答送信投票は否決されました。",
+                event_type="answer_vote_resolved",
+                event_message=("解答送信投票否決" if should_emit_vote_log else None),
+                event_chat_type=team,
+                event_room_id=owner_id,
+                event_recipient_ids=team_chat_recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": False,
+                    "reason": "rejected",
+                },
+            )
+            return
 
     async def send_private_info(
         self,
@@ -553,6 +690,16 @@ class QuizGameManager:
             await self.send_private_info(client_id, "現在、別の解答を正誤判定中です。")
             return
 
+        pending_answer_vote = room.get("pending_answer_vote")
+        if pending_answer_vote and pending_answer_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "現在、別の解答送信投票が進行中です。")
+            return
+
+        pending_open_vote = room.get("pending_open_vote")
+        if pending_open_vote and pending_open_vote.get("status") == "pending":
+            await self.send_private_info(client_id, "文字オープン投票中は解答を送信できません。")
+            return
+
         if client_id in room["left_participants"]:
             team = "team-left"
             team_label = "先攻"
@@ -580,33 +727,79 @@ class QuizGameManager:
             return
 
         nickname = self.nicknames.get(client_id, "ゲスト")
+        voter_ids = self._get_team_participant_ids(room, team)
+        if not voter_ids:
+            await self.send_private_info(client_id, "投票対象の陣営参加者がいません。")
+            return
 
-        game["pending_answer_judgement"] = {
+        total_voters = len(voter_ids)
+
+        if total_voters == 1:
+            game["pending_answer_judgement"] = {
+                "team": team,
+                "answer_text": text,
+                "answerer_id": client_id,
+            }
+
+            await self.broadcast_state(
+                public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
+                event_type="answer_attempt",
+                event_room_id=owner_id,
+            )
+
+            await self.broadcast_state(
+                public_info="",
+                event_type="answer_judgement_request",
+                event_room_id=owner_id,
+                event_recipient_ids={owner_id},
+                event_payload={
+                    "team": team,
+                    "team_label": team_label,
+                    "answer_text": text,
+                    "answerer_name": nickname,
+                },
+            )
+
+            await self.send_private_info(client_id, "送信しました。")
+            return
+
+        should_emit_vote_log = total_voters > 1
+        vote_id = str(uuid.uuid4())
+        required_approvals = total_voters
+        approved_ids = {client_id}
+        room["pending_answer_vote"] = {
+            "vote_id": vote_id,
+            "requester_id": client_id,
             "team": team,
             "answer_text": text,
-            "answerer_id": client_id,
+            "voter_ids": voter_ids,
+            "approved_ids": approved_ids,
+            "rejected_ids": set(),
+            "required_approvals": required_approvals,
+            "status": "pending",
         }
 
-        await self.broadcast_state(
-            public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
-            event_type="answer_attempt",
-            event_room_id=owner_id,
-        )
+        event_recipient_ids = voter_ids - {client_id}
 
         await self.broadcast_state(
-            public_info="",
-            event_type="answer_judgement_request",
+            public_info=f"{team_label}陣営で解答送信投票を開始しました。",
+            event_type="answer_vote_request",
+            event_message=(f"{nickname} が解答送信投票を開始しました。" if should_emit_vote_log else None),
+            event_chat_type=team,
             event_room_id=owner_id,
-            event_recipient_ids={owner_id},
+            event_recipient_ids=event_recipient_ids,
             event_payload={
+                "vote_id": vote_id,
                 "team": team,
                 "team_label": team_label,
                 "answer_text": text,
                 "answerer_name": nickname,
+                "required_approvals": required_approvals,
+                "total_voters": total_voters,
             },
         )
 
-        await self.send_private_info(client_id, "解答を送信しました。出題者による正誤判定中です。")
+        await self.send_private_info(client_id, "提案しました。")
 
     async def judge_answer(self, client_id: str, is_correct: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -936,6 +1129,15 @@ class QuizGameManager:
                 await self.send_private_info(client_id, "投票IDが不正です。")
                 return
             await self.respond_open_vote(client_id, vote_id, approve)
+            return
+
+        if payload_type == "answer_vote_response":
+            vote_id = str(payload.get("vote_id", "")).strip()
+            approve = bool(payload.get("approve", False))
+            if vote_id == "":
+                await self.send_private_info(client_id, "投票IDが不正です。")
+                return
+            await self.respond_answer_vote(client_id, vote_id, approve)
             return
 
         if payload_type == "submit_answer":
