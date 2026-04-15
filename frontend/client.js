@@ -448,6 +448,10 @@ function showGameArenaScreen() {
     updateChatBoxVisibility();
 }
 
+function isGameFinished() {
+    return currentRoomGameState === "playing" && currentGameState?.game_status === "finished";
+}
+
 function canToggleQuestionViewMode() {
     if (!isInGameArena()) {
         return false;
@@ -458,11 +462,22 @@ function canToggleQuestionViewMode() {
     }
 
     const roomState = currentRoomGameState || "waiting";
+    const isFinished = isGameFinished();
+
+    // 対戦終了状態では参加者も切り替え可能
+    if (isFinished && (userRole === "team-left" || userRole === "team-right")) {
+        return true;
+    }
+
     return userRole === "spectator" && roomState === "playing";
 }
 
 function getQuestionViewModeCycleForCurrentUser() {
     if (userRole === "questioner") {
+        return QUESTIONER_VIEW_MODE_CYCLE;
+    }
+    // 対戦終了状態では参加者もQUESTIONNAIRE_CYCLE を使う
+    if (isGameFinished() && (userRole === "team-left" || userRole === "team-right")) {
         return QUESTIONER_VIEW_MODE_CYCLE;
     }
     if (userRole === "spectator") {
@@ -1032,6 +1047,14 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
 
             if (selectableForSetup && selectedArenaQuestionCharIndexes.has(globalIndex)) {
                 charEl.classList.add("is-selected");
+            } else if (isOpened && displayInfo.tokenVariant == null) {
+                // 開けた文字に背景色を付ける（出題者視点・先攻視点・後攻視点）
+                const owner = openedByTeam[String(globalIndex)];
+                if (owner === "team-left") {
+                    charEl.classList.add("is-opened-left");
+                } else if (owner === "team-right") {
+                    charEl.classList.add("is-opened-right");
+                }
             }
 
             lineEl.appendChild(charEl);
@@ -1150,7 +1173,10 @@ function renderRooms(rooms) {
 
         const metaEl = document.createElement("div");
         metaEl.className = "room-card-meta";
-        const gameStateLabel = room.game_state === "playing" ? "対戦中" : "準備中";
+        let gameStateLabel = "準備中";
+        if (room.game_state === "playing") {
+            gameStateLabel = room.game?.game_status === "finished" ? "対戦終了" : "対戦中";
+        }
         metaEl.textContent = `状態 ${gameStateLabel} / 参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
 
         if (!room.is_owner) {

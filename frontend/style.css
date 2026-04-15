@@ -1008,7 +1008,14 @@ body.modal-open #arena-question-text .arena-question-line {
 
 .arena-question-char.is-selected {
     background: #fde68a;
-    box-shadow: inset 0 0 0 1px #f59e0b;
+}
+
+.arena-question-char.is-opened-left {
+    background: #ff8b8b;
+}
+
+.arena-question-char.is-opened-right {
+    background: #8cb6fa;
 }
 
 #arena-spectator-box {
