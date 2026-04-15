@@ -7,9 +7,9 @@ from google import genai
 from dotenv import load_dotenv
 
 try:
-    from backend.pronpt import get_quiz_prompt, get_judge_prompt
+    from backend.pronpt import difficulties as QUIZ_DIFFICULTIES, get_quiz_prompt, get_judge_prompt
 except ImportError:
-    from pronpt import get_quiz_prompt, get_judge_prompt
+    from pronpt import difficulties as QUIZ_DIFFICULTIES, get_quiz_prompt, get_judge_prompt
 
 # .envファイルからAPIキーを環境変数として読み込む
 load_dotenv()
@@ -24,9 +24,11 @@ AVAILABLE_MODEL_IDS = (
     "gemini-3.1-flash-lite-preview",
     "gemini-3.1-pro-preview",
 )
-DEFAULT_MODEL_ID = "gemini-2.5-flash-lite"
-QUIZ_GENERATION_TEMPERATURE = 0.9
+DEFAULT_MODEL_ID = "gemini-3.1-flash-lite-preview"
+QUIZ_GENERATION_TEMPERATURE = 1.9
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
+DEFAULT_QUIZ_DIFFICULTY = 0
+MAX_QUIZ_DIFFICULTY = max(0, len(QUIZ_DIFFICULTIES) - 1)
 
 
 def normalize_model_id(model_id: str | None) -> str:
@@ -34,6 +36,22 @@ def normalize_model_id(model_id: str | None) -> str:
     if candidate in AVAILABLE_MODEL_IDS:
         return candidate
     return DEFAULT_MODEL_ID
+
+
+def normalize_difficulty(difficulty: int | str | None) -> int:
+    if difficulty is None:
+        return DEFAULT_QUIZ_DIFFICULTY
+
+    try:
+        value = int(difficulty)
+    except (TypeError, ValueError):
+        return DEFAULT_QUIZ_DIFFICULTY
+
+    if value < 0:
+        return 0
+    if value > MAX_QUIZ_DIFFICULTY:
+        return MAX_QUIZ_DIFFICULTY
+    return value
 
 
 _ANSWER_PREFIX_RE = re.compile(r"^(答え|こたえ)(は|:|：)?", re.IGNORECASE)
@@ -82,10 +100,11 @@ def _fallback_answer_judgement(expected_answer: str, user_answer: str) -> bool:
     return similarity >= 0.9
 
 
-async def generate_quiz_async(genre="一般常識", model_id: str | None = None):
+async def generate_quiz_async(genre="一般常識", model_id: str | None = None, difficulty: int | str | None = 0):
     """Gemini APIを叩いてクイズを1問生成する非同期関数"""
 
-    prompt = get_quiz_prompt(genre)
+    normalized_difficulty = normalize_difficulty(difficulty)
+    prompt = get_quiz_prompt(genre, normalized_difficulty)
     selected_model_id = normalize_model_id(model_id)
 
     try:
@@ -109,6 +128,9 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None)
 
 async def check_answer_async(expected_answer: str, user_answer: str, model_id: str | None = None):
     """プレイヤーの解答が正解と意味的に同じか判定する非同期関数"""
+
+    if expected_answer == user_answer:
+        return True
 
     prompt = get_judge_prompt(expected_answer, user_answer)
     _ = model_id
@@ -135,17 +157,23 @@ if __name__ == "__main__":
     import asyncio
     import time
 
-    async def test():
-        for model in AVAILABLE_MODEL_IDS:
-            print(f"モデル: {model}")
-            time.sleep(1)  # API呼び出しの前に少し待つ（レート制限対策）
-            print("クイズを生成中...")
-            t = time.time()
-            quiz = await generate_quiz_async("一般常識", model)
-            dt = time.time() - t
-            print(f"生成にかかった時間: {dt:.2f}秒")
-            print(f"問題: {quiz['question']}")
-            print(f"答え: {quiz['answer']}")
-            print()
+    async def test_quiz_generation(model_id: str | None = None, genre: str = "一般常識", difficulty: int | str | None = 0):
+        print(f"モデル: {model_id or DEFAULT_MODEL_ID}", f"ジャンル: {genre}", f"難易度: {QUIZ_DIFFICULTIES[normalize_difficulty(difficulty)]}")
+        print("クイズを生成中...")
+        t = time.time()
+        quiz = await generate_quiz_async(genre, model_id, difficulty)
+        dt = time.time() - t
+        print(f"生成にかかった時間: {dt:.2f}秒")
+        print(f"問題: {quiz['question']}")
+        print(f"答え: {quiz['answer']}")
+        print()
 
-    asyncio.run(test())
+    async def alltest():
+        for model in AVAILABLE_MODEL_IDS:
+            await test_quiz_generation(model_id=model)
+
+    model_id = "gemini-3.1-flash-lite-preview"
+    genre = "雑学"
+    difficulty = 0
+    # asyncio.run(alltest())
+    asyncio.run(test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty))

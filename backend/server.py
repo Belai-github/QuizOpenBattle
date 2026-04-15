@@ -29,7 +29,7 @@ from backend.game_logic import (
     resolve_chat_recipients,
     resolve_client_room_context,
 )
-from backend.ai_logic import check_answer_async, generate_quiz_async, normalize_model_id
+from backend.ai_logic import check_answer_async, generate_quiz_async, normalize_difficulty, normalize_model_id
 from backend.kifu_storage import (
     append_action,
     begin_kifu_record,
@@ -2581,9 +2581,13 @@ class QuizGameManager:
 
             quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
+            difficulty = normalize_difficulty(normalized_payload.get("difficulty", 0))
             try:
                 try:
-                    quiz_data = await asyncio.wait_for(generate_quiz_async(genre, model_id=model_id), timeout=18.0)
+                    quiz_data = await asyncio.wait_for(
+                        generate_quiz_async(genre, model_id=model_id, difficulty=difficulty),
+                        timeout=18.0,
+                    )
                 except Exception:
                     await self.send_private_info(player_id, "AI問題の生成に失敗しました。時間をおいて再試行してください。")
                     return
@@ -2598,6 +2602,7 @@ class QuizGameManager:
                 normalized_payload["questioner_name"] = "AI"
                 normalized_payload["questioner_id"] = "ai-questioner"
                 normalized_payload["genre"] = genre
+                normalized_payload["difficulty"] = difficulty
                 normalized_payload["model_id"] = model_id
 
                 result = apply_create_question_room(self.rooms, self.nicknames, player_id, normalized_payload)
@@ -2609,6 +2614,7 @@ class QuizGameManager:
                 if room is not None:
                     room["is_ai_mode"] = True
                     room["ai_genre"] = str(normalized_payload.get("genre", "")).strip() or "一般常識"
+                    room["ai_difficulty"] = difficulty
                     room["ai_expected_answer"] = str((quiz_data or {}).get("answer", "")).strip()
                     room["ai_model_id"] = model_id
             finally:

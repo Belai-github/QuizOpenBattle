@@ -28,6 +28,7 @@ const aiQuestionSpinnerEl = document.getElementById("ai-question-spinner");
 const aiQuestionModalEl = document.getElementById("ai-question-modal");
 const aiGenreInputEl = document.getElementById("ai-genre-input");
 const aiModelSelectEl = document.getElementById("ai-model-select");
+const aiDifficultySelectEl = document.getElementById("ai-difficulty-select");
 const aiQuestionModalCancelBtnEl = document.getElementById("ai-question-cancel-btn");
 const aiQuestionModalSubmitBtnEl = document.getElementById("ai-question-submit-btn");
 const kifuListScreenEl = document.getElementById("kifu-list-screen");
@@ -62,13 +63,22 @@ const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
-const DEFAULT_AI_MODEL_ID = "gemini-2.5-flash-lite";
+const DEFAULT_AI_MODEL_ID = "gemini-3.1-flash-lite-preview";
 const AI_MODEL_OPTIONS = [
     ["gemini-2.5-flash-lite", "gemini-2.5-flash-lite (生成時間目安:約2秒)"],
     ["gemini-2.5-flash", "gemini-2.5-flash (生成時間目安:約5秒)"],
     ["gemini-2.5-pro", "gemini-2.5-pro (生成時間目安:約20秒)"],
     ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview (生成時間:約2秒)"],
     ["gemini-3.1-pro-preview", "gemini-3.1-pro-preview (生成時間:約60秒)"],
+];
+const DEFAULT_AI_DIFFICULTY = 3;
+const AI_DIFFICULTY_OPTIONS = [
+    [0, "小1レベル"],
+    [1, "小3レベル"],
+    [2, "小6レベル"],
+    [3, "中学卒業レベル"],
+    [4, "高校卒業レベル"],
+    [5, "学生競技クイズレベル"],
 ];
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
@@ -180,6 +190,19 @@ function populateAiModelSelect() {
         option.value = value;
         option.textContent = label;
         aiModelSelectEl.appendChild(option);
+    });
+}
+
+function populateAiDifficultySelect() {
+    if (!aiDifficultySelectEl || aiDifficultySelectEl.options.length > 0) {
+        return;
+    }
+
+    AI_DIFFICULTY_OPTIONS.forEach(([value, label]) => {
+        const option = document.createElement("option");
+        option.value = String(value);
+        option.textContent = label;
+        aiDifficultySelectEl.appendChild(option);
     });
 }
 
@@ -2435,6 +2458,10 @@ function setAiQuestionLoading(loading) {
         aiModelSelectEl.disabled = aiQuestionRequestPending;
     }
 
+    if (aiDifficultySelectEl) {
+        aiDifficultySelectEl.disabled = aiQuestionRequestPending;
+    }
+
     if (questionInputEl) {
         questionInputEl.disabled = aiQuestionRequestPending;
     }
@@ -2442,14 +2469,16 @@ function setAiQuestionLoading(loading) {
 
 function showAiGenreInputModal() {
     return new Promise((resolve) => {
-        if (!aiQuestionModalEl || !aiGenreInputEl || !aiModelSelectEl) {
+        if (!aiQuestionModalEl || !aiGenreInputEl || !aiModelSelectEl || !aiDifficultySelectEl) {
             resolve(null);
             return;
         }
 
         populateAiModelSelect();
+        populateAiDifficultySelect();
         aiGenreInputEl.value = "";
         aiModelSelectEl.value = DEFAULT_AI_MODEL_ID;
+        aiDifficultySelectEl.value = String(DEFAULT_AI_DIFFICULTY);
         setAiQuestionLoading(false);
 
         if (!aiQuestionModalEl.open) {
@@ -2474,7 +2503,11 @@ function showAiGenreInputModal() {
         const onSubmit = () => {
             const genre = String(aiGenreInputEl.value || "").trim();
             const modelId = String(aiModelSelectEl.value || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
-            close({ genre, modelId });
+            const difficultyValue = Number.parseInt(String(aiDifficultySelectEl.value || DEFAULT_AI_DIFFICULTY), 10);
+            const difficulty = Number.isFinite(difficultyValue)
+                ? Math.max(0, Math.min(5, difficultyValue))
+                : DEFAULT_AI_DIFFICULTY;
+            close({ genre, modelId, difficulty });
         };
         const onCancelClick = () => close(null);
         const onBackdropClick = (event) => {
@@ -2933,6 +2966,9 @@ function renderArena(currentRoom) {
         ? `${currentRoom.questioner_name} (You)`
         : currentRoom.questioner_name;
     const genreLabel = String(currentRoom.genre || "").trim() || "未設定";
+    const difficultyLabel = currentRoom.is_ai_mode
+        ? (AI_DIFFICULTY_OPTIONS.find(([value]) => value === Math.max(0, Math.min(5, Number(currentRoom.difficulty))))?.[1] || "未設定")
+        : "未設定";
     titleEl.textContent = "";
     const questionerSpanEl = document.createElement("span");
     questionerSpanEl.className = "arena-title-questioner";
@@ -2943,8 +2979,14 @@ function renderArena(currentRoom) {
     genreSpanEl.style.marginLeft = "20px";
     genreSpanEl.textContent = `ジャンル:${genreLabel}`;
 
+    const difficultySpanEl = document.createElement("span");
+    difficultySpanEl.className = "arena-title-difficulty";
+    difficultySpanEl.style.marginLeft = "20px";
+    difficultySpanEl.textContent = `難易度:${difficultyLabel}`;
+
     titleEl.appendChild(questionerSpanEl);
     titleEl.appendChild(genreSpanEl);
+    titleEl.appendChild(difficultySpanEl);
 
     const serverQuestionText = String(currentRoom.question_text || "");
     const serverQuestionVisibleText = String(currentRoom.question_visible_text || "");
@@ -3825,6 +3867,9 @@ async function submitAiQuestion() {
 
     const normalizedGenre = String(selection.genre || "").trim().slice(0, 40);
     const normalizedModelId = String(selection.modelId || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
+    const normalizedDifficulty = Number.isFinite(Number(selection.difficulty))
+        ? Math.max(0, Math.min(5, Number(selection.difficulty)))
+        : DEFAULT_AI_DIFFICULTY;
     setAiQuestionLoading(true);
     pendingArenaMode = "owner";
 
@@ -3834,6 +3879,7 @@ async function submitAiQuestion() {
             is_ai_mode: true,
             genre: normalizedGenre,
             model_id: normalizedModelId,
+            difficulty: normalizedDifficulty,
             timestamp: Date.now(),
         })
     );

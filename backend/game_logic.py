@@ -392,6 +392,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "questioner_id": str(room.get("questioner_id") or owner_id),
         "questioner_name": room["questioner_name"],
         "genre": str(room.get("genre") or "").strip(),
+        "difficulty": int(room.get("difficulty", 0) or 0),
         "question_text": question_text_for_client,
         "question_visible_text": question_visible_text,
         "question_length": len(normalized_chars),
@@ -594,7 +595,13 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
     actor_name = nicknames.get(player_id, "相手")
     is_ai_mode = bool(payload.get("is_ai_mode"))
     genre = str(payload.get("genre", "")).strip()
+    try:
+        difficulty = int(payload.get("difficulty", 0))
+    except (TypeError, ValueError):
+        difficulty = 0
+    difficulty = max(0, min(5, difficulty))
     ai_genre = str(payload.get("genre", "")).strip() if is_ai_mode else ""
+    ai_difficulty = difficulty if is_ai_mode else 0
     questioner_name = str(payload.get("questioner_name", "")).strip() if is_ai_mode else ""
     questioner_id = str(payload.get("questioner_id", "")).strip() if is_ai_mode else ""
     ai_model_id = str(payload.get("model_id", "")).strip() if is_ai_mode else ""
@@ -625,8 +632,10 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         "yakumono_indexes": set(),
         "questioner_name": questioner_name,
         "genre": genre,
+        "difficulty": difficulty,
         "is_ai_mode": is_ai_mode,
         "ai_genre": ai_genre,
+        "ai_difficulty": ai_difficulty,
         "ai_model_id": ai_model_id,
         "game_state": "waiting",
         "left_participants": set(),
