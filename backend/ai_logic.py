@@ -57,7 +57,7 @@ AVAILABLE_MODEL_IDS = (*get_available_model_ids(),)
 DEFAULT_MODEL_ID = get_default_model_id()
 QUIZ_GENERATION_TEMPERATURE = 1.2
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
-DEFAULT_QUIZ_DIFFICULTY = 50
+DEFAULT_QUIZ_DIFFICULTY = 70
 MAX_QUIZ_DIFFICULTY = 100
 ANSWER_JUDGEMENT_CACHE_VERSION = DEFAULT_PROMPT_VERSION
 
@@ -246,7 +246,7 @@ async def _create_openai_response_with_temperature_fallback(request_options: dic
     return response, temperature_fallback_used
 
 
-async def generate_quiz_async(genre="一般常識", model_id: str | None = None, difficulty: int | str | None = 0):
+async def generate_quiz_async(genre="一般常識", model_id: str | None = None, difficulty: int | str | None = None):
     """生成AIのAPIを叩いてクイズを1問生成する非同期関数"""
 
     normalized_difficulty = normalize_difficulty(difficulty)
@@ -795,7 +795,7 @@ if __name__ == "__main__":
     import asyncio
     import time
 
-    async def test_quiz_generation(model_id: str | None = None, genre: str = "一般常識", difficulty: int | str | None = 0):
+    async def test_quiz_generation(model_id: str | None = None, genre: str = "一般常識", difficulty: int | str | None = None):
         print(f"モデル: {normalize_model_id(model_id)}", f"ジャンル: {genre}", f"正答率目安: {normalize_difficulty(difficulty)}%")
         print("クイズを生成中...")
         t = time.time()
@@ -809,14 +809,14 @@ if __name__ == "__main__":
         print(f"答え: {answer}")
         print()
 
-    async def alltest(genre: str = "一般常識", difficulty: int | str | None = 0):
+    async def alltest(genre: str = "一般常識", difficulty: int | str | None = None):
         for model in get_available_model_ids():
             await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
     async def main():
         genre = "一般常識"
-        difficulty = 50
-        model_id = "gpt-5.4"
+        difficulty = 70
+        model_id = "gemini-3-flash-preview"
         await test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty)
 
     asyncio.run(main())

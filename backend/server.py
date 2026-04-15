@@ -3111,7 +3111,7 @@ class QuizGameManager:
 
             quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
-            difficulty = normalize_difficulty(normalized_payload.get("accuracy_rate", normalized_payload.get("difficulty", 0)))
+            difficulty = normalize_difficulty(normalized_payload.get("accuracy_rate", normalized_payload.get("difficulty", None)))
             generation_timeout = 100.0
             try:
                 try:
