@@ -1,6 +1,7 @@
 import random
 import time
 import unicodedata
+import re
 
 
 QUESTION_MASK_CHAR = "■"
@@ -33,6 +34,40 @@ def _normalize_event_id(raw_value):
         return None
 
     return event_id
+
+
+def _mask_answer_text_for_viewer(message: str):
+    text = str(message or "")
+    if text == "":
+        return ""
+    return re.sub(r"が「[^」]*」と", "が", text)
+
+
+def _resolve_event_message_for_viewer(
+    event_message: str,
+    event_type: str,
+    event_chat_type: str,
+    event_payload: dict | None,
+    chat_role: str,
+    room_state: str,
+    viewer_role: str,
+):
+    message = str(event_message or "").strip()
+    if message == "":
+        return ""
+
+    if room_state != "playing" or viewer_role != "participant" or chat_role not in {"team-left", "team-right"}:
+        return message
+
+    if event_type not in {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}:
+        return message
+
+    payload = event_payload if isinstance(event_payload, dict) else {}
+    source_team = str(payload.get("team") or event_chat_type or "").strip()
+    if source_team in {"team-left", "team-right"} and source_team != chat_role:
+        return _mask_answer_text_for_viewer(message)
+
+    return message
 
 
 def _normalized_question_chars(text: str):
@@ -243,12 +278,25 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         for entry in sorted_history:
             event_chat_type = str(entry.get("event_chat_type", "")).strip()
             event_type = str(entry.get("event_type", "")).strip()
-            event_message = str(entry.get("event_message", "")).strip()
+            event_message = _resolve_event_message_for_viewer(
+                str(entry.get("event_message", "")).strip(),
+                event_type,
+                event_chat_type,
+                entry.get("event_payload") if isinstance(entry.get("event_payload"), dict) else None,
+                chat_role,
+                room_state,
+                ctx["role"],
+            )
             if event_message == "":
                 continue
 
             readable_roles = readable_roles_by_type.get(event_chat_type)
-            if not readable_roles or chat_role not in readable_roles:
+            can_read = bool(readable_roles and chat_role in readable_roles)
+            is_open_vote_log = event_type in {"open_vote_request", "open_vote_resolved"}
+            if not can_read and is_open_vote_log and event_chat_type in {"team-left", "team-right"} and chat_role in {"team-left", "team-right"}:
+                can_read = True
+
+            if not can_read:
                 continue
 
             if room_state == "playing" and ctx["role"] == "participant" and event_chat_type == "game-global" and event_type == "chat":

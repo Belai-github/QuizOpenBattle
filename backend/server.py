@@ -177,6 +177,15 @@ class QuizGameManager:
         event_kind = str(event_type or "").strip()
         event_scope = str(event_chat_type or "").strip() or "game-global"
 
+        room_event_version = 1
+        room_event_seq = None
+        if event_room_id:
+            room = self.rooms.get(event_room_id)
+            if room is not None:
+                room_event_seq = int(room.get("arena_event_id_seq", 0)) + 1
+                room["arena_event_id_seq"] = room_event_seq
+                room_event_version = room_event_seq
+
         payload_event_id = str(payload.get("event_id") or "").strip()
         vote_id = str(payload.get("vote_id") or "").strip()
         log_marker_id = str(payload.get("log_marker_id") or "").strip()
@@ -187,6 +196,8 @@ class QuizGameManager:
             event_id = f"vote:{vote_id}"
         elif log_marker_id != "":
             event_id = f"marker:{log_marker_id}"
+        elif event_room_id and room_event_seq is not None:
+            event_id = f"{event_room_id}:evt:{room_event_seq}"
         elif event_room_id:
             event_id = self._next_room_event_id(event_room_id)
         else:
@@ -205,7 +216,7 @@ class QuizGameManager:
             "event_kind": event_kind,
             "event_scope": event_scope,
             "event_revision": event_revision,
-            "event_version": 1,
+            "event_version": room_event_version,
         }
 
     def build_participants(self):
@@ -278,7 +289,8 @@ class QuizGameManager:
             if payload_marker_text != "":
                 log_marker_id = payload_marker_text
 
-        if event_room_id and history_message:
+        skip_history = isinstance(event_payload, dict) and bool(event_payload.get("skip_history"))
+        if event_room_id and history_message and not skip_history:
             if event_chat_type in {"team-left", "team-right", "game-global"}:
                 self._append_arena_chat_history(
                     event_room_id,
@@ -320,7 +332,17 @@ class QuizGameManager:
 
             is_event_recipient = event_recipient_ids is None or client_id in event_recipient_ids
             response_event_type = event_type if is_event_recipient else None
-            response_event_message = history_message if is_event_recipient else None
+            response_event_message = (
+                self._resolve_event_message_for_client(
+                    current_room,
+                    event_type,
+                    event_chat_type,
+                    history_message,
+                    event_payload,
+                )
+                if is_event_recipient
+                else None
+            )
             response_event_chat_type = event_chat_type if is_event_recipient else None
 
             response = {
@@ -335,6 +357,14 @@ class QuizGameManager:
                 "event_room_id": event_room_id,
                 "target_screen": target_screen,
                 "event_payload": event_payload if is_event_recipient else None,
+                "event_view": (
+                    {
+                        "display_message": response_event_message,
+                        "masked": bool(response_event_message is not None and response_event_message != history_message),
+                    }
+                    if is_event_recipient
+                    else None
+                ),
                 "event_id": event_identity["event_id"] if is_event_recipient else None,
                 "event_kind": event_identity["event_kind"] if is_event_recipient else None,
                 "event_scope": event_identity["event_scope"] if is_event_recipient else None,
@@ -342,6 +372,10 @@ class QuizGameManager:
                 "event_version": event_identity["event_version"] if is_event_recipient else None,
             }
             await ws.send_text(json.dumps(response))
+
+        should_reveal_finished_answers = event_type == "game_finished" and bool(event_room_id) and not (isinstance(event_payload, dict) and bool(event_payload.get("skip_finished_answer_reveal")))
+        if should_reveal_finished_answers:
+            await self._rebroadcast_finished_answer_logs(str(event_room_id))
 
     def _resolve_team_for_client(self, room: dict, client_id: str):
         if client_id in room["left_participants"]:
@@ -408,6 +442,96 @@ class QuizGameManager:
     def _format_answer_result_message(self, team_label: str, is_correct: bool):
         result_label = "正解" if is_correct else "誤答"
         return f"{team_label}の解答は{result_label}でした。"
+
+    def _mask_answer_text_for_viewer(self, message: str):
+        text = str(message or "")
+        if text == "":
+            return ""
+        return re.sub(r"が「[^」]*」と", "が", text)
+
+    def _resolve_event_message_for_client(
+        self,
+        current_room: dict | None,
+        event_type: str | None,
+        event_chat_type: str | None,
+        event_message: str,
+        event_payload: dict | None,
+    ):
+        message = str(event_message or "").strip()
+        if message == "":
+            return ""
+
+        if not isinstance(current_room, dict):
+            return message
+
+        room_state = str(current_room.get("game_state", "waiting") or "waiting")
+        viewer_role = str(current_room.get("chat_role", "") or "")
+        viewer_type = str(current_room.get("role", "") or "")
+
+        if room_state != "playing" or viewer_type != "participant" or viewer_role not in {"team-left", "team-right"}:
+            return message
+
+        event_kind = str(event_type or "").strip()
+        if event_kind not in {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}:
+            return message
+
+        payload = event_payload if isinstance(event_payload, dict) else {}
+        source_team = str(payload.get("team") or event_chat_type or "").strip()
+        if source_team in {"team-left", "team-right"} and source_team != viewer_role:
+            return self._mask_answer_text_for_viewer(message)
+
+        return message
+
+    async def _rebroadcast_finished_answer_logs(self, room_owner_id: str):
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            return
+
+        if room.get("finished_answer_logs_revealed"):
+            return
+
+        room["finished_answer_logs_revealed"] = True
+
+        history = room.get("arena_chat_history") or []
+        if not isinstance(history, list):
+            return
+
+        answer_event_types = {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}
+        recipients = {room_owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
+
+        sorted_history = sorted(
+            [entry for entry in history if isinstance(entry, dict)],
+            key=lambda entry: (int(entry.get("timestamp", 0)), int(entry.get("seq", 0))),
+        )
+
+        for entry in sorted_history:
+            event_type = str(entry.get("event_type", "")).strip()
+            event_chat_type = str(entry.get("event_chat_type", "")).strip()
+            event_message = str(entry.get("event_message", "")).strip()
+            if event_message == "" or event_type not in answer_event_types:
+                continue
+            if event_chat_type not in {"team-left", "team-right", "game-global"}:
+                continue
+
+            base_revision = max(1, int(entry.get("event_revision", 1) or 1))
+            payload = entry.get("event_payload") if isinstance(entry.get("event_payload"), dict) else {}
+            payload_map = payload if isinstance(payload, dict) else {}
+
+            await self.broadcast_state(
+                public_info="",
+                event_type=event_type,
+                event_message=event_message,
+                event_chat_type=event_chat_type,
+                event_room_id=room_owner_id,
+                event_recipient_ids=recipients,
+                event_payload={
+                    **payload_map,
+                    "event_id": str(entry.get("event_id") or "").strip() or None,
+                    "event_revision": base_revision + 100,
+                    "reveal_phase": "finished",
+                    "skip_history": True,
+                },
+            )
 
     # 以下、内部処理関数
 
@@ -694,7 +818,7 @@ class QuizGameManager:
         )
         self.pending_disconnect_tasks[client_id] = task
 
-    async def _broadcast_team_log_message(self, owner_id: str, room: dict, event_type: str, message: str):
+    async def _broadcast_team_log_message(self, owner_id: str, room: dict, event_type: str, message: str, event_payload: dict | None = None):
         for chat_type, default_ids in (
             ("team-left", set(room.get("left_participants", set()))),
             ("team-right", set(room.get("right_participants", set()))),
@@ -714,6 +838,7 @@ class QuizGameManager:
                 event_chat_type=chat_type,
                 event_room_id=owner_id,
                 event_recipient_ids=recipient_ids,
+                event_payload=event_payload,
             )
 
     async def _broadcast_turn_changed_logs(self, owner_id: str, room: dict, message: str):
@@ -776,7 +901,6 @@ class QuizGameManager:
             return
 
         total_voters = len(voter_ids)
-        should_emit_vote_log = total_voters > 1
         vote_id = str(uuid.uuid4())
         required_approvals = (total_voters // 2) + 1
         approved_ids = {client_id} if total_voters > 1 else set()
@@ -792,17 +916,17 @@ class QuizGameManager:
             "status": "pending",
         }
 
-        event_recipient_ids = voter_ids - {client_id} if total_voters > 1 else voter_ids
+        open_log_recipient_ids = {owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
 
-        team_label = self._team_label(team)
-        requester_name = self.nicknames.get(client_id, "ゲスト")
+        request_public_info = ""
+        request_event_message = ""
         await self.broadcast_state(
-            public_info=f"{team_label}陣営で文字オープン投票を開始しました。",
+            public_info=request_public_info,
             event_type="open_vote_request",
-            event_message=self._format_open_vote_request_message(requester_name, char_index, should_emit_vote_log),
+            event_message=request_event_message,
             event_chat_type=team,
             event_room_id=owner_id,
-            event_recipient_ids=event_recipient_ids,
+            event_recipient_ids=open_log_recipient_ids,
             event_payload={
                 "vote_id": vote_id,
                 "team": team,
@@ -854,12 +978,7 @@ class QuizGameManager:
         team = pending_vote["team"]
         char_index = pending_vote["char_index"]
         team_label = self._team_label(team)
-        should_emit_vote_log = len(voter_ids) > 1
-
-        team_chat_recipients = set(voter_ids)
-        team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
-        if team_chat_result.get("ok"):
-            team_chat_recipients = team_chat_result["event_recipient_ids"]
+        open_log_recipient_ids = {owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
 
         if approvals >= required:
             pending_vote["status"] = "approved"
@@ -869,8 +988,9 @@ class QuizGameManager:
 
             if not result.get("ok"):
                 await self.broadcast_state(
-                    public_info="文字オープン投票は可決されましたが、オープン処理に失敗しました。",
+                    public_info="",
                     event_type="open_vote_resolved",
+                    event_message="",
                     event_chat_type=team,
                     event_room_id=owner_id,
                     event_payload={
@@ -880,7 +1000,7 @@ class QuizGameManager:
                         "reason": result.get("error", "open_failed"),
                         "log_marker_id": vote_id,
                     },
-                    event_recipient_ids=team_chat_recipients,
+                    event_recipient_ids=open_log_recipient_ids,
                 )
                 return
 
@@ -898,7 +1018,7 @@ class QuizGameManager:
                     "is_yakumono": is_yakumono,
                     "log_marker_id": vote_id,
                 },
-                event_recipient_ids=team_chat_recipients,
+                event_recipient_ids=open_log_recipient_ids,
             )
 
             next_turn_team = (room.get("game") or {}).get("current_turn_team")
@@ -910,7 +1030,6 @@ class QuizGameManager:
                     event_type="turn_changed",
                     event_room_id=owner_id,
                 )
-                await self._broadcast_turn_changed_logs(owner_id, room, turn_changed_message)
             return
 
         max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
@@ -918,9 +1037,9 @@ class QuizGameManager:
             pending_vote["status"] = "rejected"
             room["pending_open_vote"] = None
             await self.broadcast_state(
-                public_info=f"{char_index + 1}文字目のオープン投票は否決されました。",
+                public_info="",
                 event_type="open_vote_resolved",
-                event_message=self._format_open_vote_resolution_message(team_label, char_index, False),
+                event_message="",
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
@@ -930,7 +1049,7 @@ class QuizGameManager:
                     "reason": "rejected",
                     "log_marker_id": vote_id,
                 },
-                event_recipient_ids=team_chat_recipients,
+                event_recipient_ids=open_log_recipient_ids,
             )
 
     async def respond_answer_vote(self, client_id: str, vote_id: str, approve: bool):
@@ -995,6 +1114,7 @@ class QuizGameManager:
                     event_payload={
                         "vote_id": vote_id,
                         "approved": False,
+                        "team": team,
                         "reason": "judgement_pending",
                         "log_marker_id": vote_id,
                     },
@@ -1017,6 +1137,7 @@ class QuizGameManager:
                 room,
                 "answer_attempt",
                 self._format_answer_attempt_message(team_label, answer_text),
+                event_payload={"team": team},
             )
 
             await self.broadcast_state(
@@ -1042,6 +1163,7 @@ class QuizGameManager:
                 event_payload={
                     "vote_id": vote_id,
                     "approved": True,
+                    "team": team,
                     "log_marker_id": vote_id,
                 },
             )
@@ -1061,6 +1183,7 @@ class QuizGameManager:
                 event_payload={
                     "vote_id": vote_id,
                     "approved": False,
+                    "team": team,
                     "reason": "rejected",
                     "log_marker_id": vote_id,
                 },
@@ -1125,11 +1248,6 @@ class QuizGameManager:
                 public_info=self._format_turn_changed_message(next_team),
                 event_type="turn_changed",
                 event_room_id=owner_id,
-            )
-            await self._broadcast_turn_changed_logs(
-                owner_id,
-                room,
-                self._format_turn_changed_message(next_team),
             )
             await self.send_private_info(client_id, "ターンエンドしました。")
             return
@@ -1251,11 +1369,6 @@ class QuizGameManager:
                 public_info=self._format_turn_changed_message(next_team),
                 event_type="turn_changed",
                 event_room_id=owner_id,
-            )
-            await self._broadcast_turn_changed_logs(
-                owner_id,
-                room,
-                self._format_turn_changed_message(next_team),
             )
             return
 
@@ -1380,6 +1493,7 @@ class QuizGameManager:
             room["arena_chat_history"] = []
             room["arena_chat_seq"] = 0
             room["arena_event_id_seq"] = 0
+            room["finished_answer_logs_revealed"] = False
             room["pre_game_global_chat_history"] = []
             room["pre_game_global_chat_seq"] = 0
 
@@ -1591,6 +1705,7 @@ class QuizGameManager:
                 room,
                 "answer_attempt",
                 self._format_answer_attempt_message(team_label, text),
+                event_payload={"team": team},
             )
 
             await self.broadcast_state(
@@ -1746,7 +1861,6 @@ class QuizGameManager:
                 event_type="turn_changed",
                 event_room_id=owner_id,
             )
-            await self._broadcast_turn_changed_logs(owner_id, room, turn_changed_message)
 
         # Only send game_finished event if not already handled by private_notice
         if result.get("game_status") == "finished":
