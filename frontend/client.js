@@ -1752,6 +1752,64 @@ function updateArenaProgressAnnouncement() {
     announcementEl.textContent = getArenaProgressAnnouncementText();
 }
 
+function updateArenaReplayResultBadges({ show, winner }) {
+    const leftBadgeEl = document.getElementById("arena-result-badge-left");
+    const rightBadgeEl = document.getElementById("arena-result-badge-right");
+    const badgeElements = [leftBadgeEl, rightBadgeEl].filter(Boolean);
+
+    badgeElements.forEach((badgeEl) => {
+        badgeEl.classList.add("hidden");
+        badgeEl.classList.remove("is-win", "is-lose", "is-draw");
+        badgeEl.textContent = "";
+    });
+
+    if (!show || badgeElements.length === 0) {
+        return;
+    }
+
+    const winnerKey = String(winner || "").trim();
+    if (winnerKey === "team-left") {
+        if (leftBadgeEl) {
+            leftBadgeEl.textContent = "勝利";
+            leftBadgeEl.classList.add("is-win");
+            leftBadgeEl.classList.remove("hidden");
+        }
+        if (rightBadgeEl) {
+            rightBadgeEl.textContent = "敗北";
+            rightBadgeEl.classList.add("is-lose");
+            rightBadgeEl.classList.remove("hidden");
+        }
+        return;
+    }
+
+    if (winnerKey === "team-right") {
+        if (leftBadgeEl) {
+            leftBadgeEl.textContent = "敗北";
+            leftBadgeEl.classList.add("is-lose");
+            leftBadgeEl.classList.remove("hidden");
+        }
+        if (rightBadgeEl) {
+            rightBadgeEl.textContent = "勝利";
+            rightBadgeEl.classList.add("is-win");
+            rightBadgeEl.classList.remove("hidden");
+        }
+        return;
+    }
+
+    if (winnerKey === "draw") {
+        if (leftBadgeEl) {
+            leftBadgeEl.textContent = "引き分け";
+            leftBadgeEl.classList.add("is-draw");
+            leftBadgeEl.classList.remove("hidden");
+        }
+        if (rightBadgeEl) {
+            rightBadgeEl.textContent = "引き分け";
+            rightBadgeEl.classList.add("is-draw");
+            rightBadgeEl.classList.remove("hidden");
+        }
+    }
+}
+
 function updateGameStateUI() {
     // waiting -> playing へ遷移したタイミングで、出題前の選択状態を確実に破棄する
     if (previousRoomGameState !== "playing" && currentRoomGameState === "playing") {
@@ -1789,6 +1847,13 @@ function updateGameStateUI() {
         const rightBox = document.getElementById("arena-player-right");
         if (leftBox) leftBox.classList.remove("is-current-turn");
         if (rightBox) rightBox.classList.remove("is-current-turn");
+
+        const shouldShowReplayResultBadges = isReplayMode() && !kifuReplayControlsEl?.classList.contains("hidden");
+        updateArenaReplayResultBadges({
+            show: shouldShowReplayResultBadges,
+            winner: currentGameState?.winner,
+        });
+
         updateArenaProgressAnnouncement();
         return;
     }
@@ -1823,6 +1888,8 @@ function updateGameStateUI() {
     if (rightBox) {
         rightBox.classList.toggle("is-current-turn", currentTurn === "team-right");
     }
+
+    updateArenaReplayResultBadges({ show: false, winner: null });
 
     updateArenaProgressAnnouncement();
 }
