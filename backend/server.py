@@ -3235,7 +3235,7 @@ class QuizGameManager:
                 await self.broadcast_state(
                     public_info="",
                     event_type="chat",
-                    event_message=f"{requester_name}のAI出題が成功しました",
+                    event_message=f"{requester_name}がAI問題を作成しました。",
                     event_chat_type="lobby",
                 )
             finally:
