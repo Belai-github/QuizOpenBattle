@@ -209,8 +209,11 @@ if __name__ == "__main__":
         for model in AVAILABLE_MODEL_IDS:
             await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
-    model_id = "gemini-2.5-flash"
-    genre = "アニメ・マンガ"
-    for i in range(11):
-        difficulty = i * 10
-        asyncio.run(test_quiz_generation(genre=genre, difficulty=difficulty))
+    async def main():
+        genre = "アニメ・マンガ"
+        for i in range(1, 11):
+            difficulty = i * 10
+            await test_quiz_generation(model_id="gemini-2.5-flash", genre=genre, difficulty=difficulty)
+            await asyncio.sleep(5)
+
+    asyncio.run(main())
