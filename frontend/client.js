@@ -476,7 +476,7 @@ function getQuestionViewModeCycleForCurrentUser() {
     if (userRole === "questioner") {
         return QUESTIONER_VIEW_MODE_CYCLE;
     }
-    // 対戦終了状態では参加者もQUESTIONNAIRE_CYCLE を使う
+    // 対戦終了状態では参加者もQUESTIONER_VIEW_MODE_CYCLE を使う
     if (isGameFinished() && (userRole === "team-left" || userRole === "team-right")) {
         return QUESTIONER_VIEW_MODE_CYCLE;
     }
@@ -874,24 +874,16 @@ function buildArenaQuestionRows(charsPerLine) {
 }
 
 function getEffectiveQuestionViewerRole() {
-    if (userRole === "questioner") {
-        if (questionerViewMode === "team-left") {
-            return "team-left";
-        }
-        if (questionerViewMode === "team-right") {
-            return "team-right";
-        }
-        return "questioner";
+    if (questionerViewMode === "team-left") {
+        return "team-left";
+    }
+    if (questionerViewMode === "team-right") {
+        return "team-right";
     }
 
-    if (userRole === "spectator") {
-        if (questionerViewMode === "team-left") {
-            return "team-left";
-        }
-        if (questionerViewMode === "team-right") {
-            return "team-right";
-        }
-        return "spectator";
+    // 全開示モードは出題者に加え、対戦終了後は全員が同じ表示を見られる。
+    if (questionerViewMode === "all" && (userRole === "questioner" || isGameFinished())) {
+        return "questioner";
     }
 
     return userRole;
@@ -999,7 +991,8 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
         lineEl.className = "arena-question-line";
 
         rowChars.forEach((char) => {
-            const isOpened = Boolean(openedByTeam[String(globalIndex)]);
+            const openedOwner = openedByTeam[String(globalIndex)];
+            const isOpened = Boolean(openedOwner);
             const displayInfo = getDisplayCharForIndex(char, globalIndex);
             const charEl = document.createElement("span");
             charEl.className = "arena-question-char";
@@ -1020,6 +1013,24 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
                     charEl.classList.add("is-owned-left");
                 } else if (displayInfo.tokenVariant === "right") {
                     charEl.classList.add("is-owned-right");
+                }
+            }
+
+            const isAllOpenMode = questionerViewMode === "all";
+            const shouldHighlightOpenedInAllMode = (
+                isAllOpenMode
+                && viewerRole === "questioner"
+                && displayInfo.tokenVariant == null
+                && typeof openedOwner === "string"
+            );
+            if (shouldHighlightOpenedInAllMode) {
+                if (openedOwner === "team-left") {
+                    charEl.classList.add("is-revealed-left");
+                } else if (openedOwner === "team-right") {
+                    charEl.classList.add("is-revealed-right");
+                } else if (openedOwner === "yakumono") {
+                    // 約物は既存の選択色（黄色）を使って明示する。
+                    charEl.classList.add("is-selected");
                 }
             }
 
