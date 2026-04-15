@@ -2603,11 +2603,13 @@ class QuizGameManager:
             await self.send_private_info(client_id, result.get("error", "参加者シャッフルに失敗しました。"))
             return
 
-        questioner_name = result["questioner_name"]
+        room = self.rooms.get(client_id)
+        is_ai_mode = bool(room and room.get("is_ai_mode"))
+        actor_name = self.nicknames.get(client_id, "ゲスト") if is_ai_mode else result["questioner_name"]
         await self.broadcast_state(
-            public_info=f"{questioner_name} が参加者をシャッフルしました",
+            public_info=f"{actor_name} が参加者をシャッフルしました",
             event_type="room_shuffle",
-            event_message=f"{questioner_name} が参加者をシャッフルしました",
+            event_message=f"{actor_name} が参加者をシャッフルしました",
             event_room_id=client_id,
         )
 
@@ -2617,7 +2619,9 @@ class QuizGameManager:
             await self.send_private_info(client_id, result.get("error", "参加者入れ替えに失敗しました。"))
             return
 
-        questioner_name = result["questioner_name"]
+        room = self.rooms.get(client_id)
+        is_ai_mode = bool(room and room.get("is_ai_mode"))
+        actor_name = self.nicknames.get(client_id, "ゲスト") if is_ai_mode else result["questioner_name"]
         target_id = str(result.get("target_client_id") or "").strip()
         from_team = str(result.get("from_team") or "")
         to_team = str(result.get("to_team") or "")
@@ -2626,9 +2630,9 @@ class QuizGameManager:
         to_label = self._team_label(to_team)
 
         await self.broadcast_state(
-            public_info=f"{questioner_name} が参加者を入れ替えました",
+            public_info=f"{actor_name} が参加者を入れ替えました",
             event_type="room_shuffle",
-            event_message=f"{questioner_name} が {target_name} を {from_label}から{to_label} に入れ替えました",
+            event_message=f"{actor_name} が {target_name} を {from_label}から{to_label} に入れ替えました",
             event_room_id=client_id,
         )
 

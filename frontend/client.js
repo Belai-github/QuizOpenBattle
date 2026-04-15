@@ -1456,6 +1456,19 @@ function updateChatBoxVisibility() {
         const chatRoom = chatBox.getAttribute("data-chat-room");
         const chatType = chatBox.getAttribute("data-chat-type") || "lobby";
 
+        // 棋譜閲覧画面ではゲーム内チャットボックス（入力フォーム）を非表示
+        // ただしログ表示（.event-log）は表示する
+        if (isKifuMode && chatRoom === "game") {
+            const logEl = chatBox.querySelector(".event-log");
+            if (logEl) {
+                logEl.classList.remove("hidden");
+            }
+            const inputAreaEls = chatBox.querySelectorAll(".chat-input-area, .chat-input");
+            inputAreaEls.forEach((el) => el.classList.add("hidden"));
+            chatBox.classList.remove("hidden");
+            return;
+        }
+
         // チャットルームが異なれば非表示
         if (chatRoom === "game" && !isInGameArena()) {
             chatBox.classList.add("hidden");
@@ -3921,7 +3934,7 @@ function renderArena(currentRoom) {
             questionerItemEl.appendChild(loseTagEl);
         }
 
-        if (isMeQuestioner) {
+        if (isMeQuestioner && !currentRoom.is_ai_mode) {
             questionerItemEl.classList.add("player-list-item-me", "questioner-list-item-me");
             const meTagEl = document.createElement("span");
             meTagEl.className = "player-list-item-tag";
