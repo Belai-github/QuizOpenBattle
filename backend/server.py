@@ -370,7 +370,13 @@ class QuizGameManager:
                 for target_id in spectator_ids | questioner_ids:
                     private_map[target_id] = "正誤判定が完了しました。"
 
-        # 正誤判定完了時はモーダル通知を出さず、進行ログと状態更新のみで伝達する。
+        if private_map:
+            await self.broadcast_state(
+                public_info="正誤判定が完了しました。",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
 
         team_label = self._team_label(team)
         await self._broadcast_team_log_message(

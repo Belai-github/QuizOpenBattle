@@ -2206,9 +2206,10 @@ function updateArenaCloseButtonVisibility(currentRoom) {
 
     const room = currentRoom || currentRoomSnapshot;
     const canManageRoom = Boolean(room?.can_manage_room);
+    const isRoomOwner = String(room?.room_owner_id || "") === String(myClientId || "");
     const isAiMode = Boolean(room?.is_ai_mode);
     const roomState = String(room?.game_state || currentRoomGameState || "waiting");
-    const canShow = isInGameArena() && canManageRoom && isAiMode && roomState === "finished";
+    const canShow = isInGameArena() && canManageRoom && isRoomOwner && isAiMode && roomState === "finished";
     closeRoomBtnEl.classList.toggle("hidden", !canShow);
 }
 
