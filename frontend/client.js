@@ -2314,6 +2314,22 @@ function showAlertModal(message) {
     });
 }
 
+function buildGameFinishedAlertMessage(data) {
+    const eventMessage = String(data?.event_message || "").trim();
+    if (eventMessage !== "") {
+        return eventMessage;
+    }
+
+    const winner = String(data?.current_room?.game?.winner || data?.event_payload?.winner || "").trim();
+    if (winner === "team-left") {
+        return "ゲーム終了！先攻の勝利";
+    }
+    if (winner === "team-right") {
+        return "ゲーム終了！後攻の勝利";
+    }
+    return "ゲーム終了！引き分け";
+}
+
 function showQuestionConfirmModal(questionText) {
     return new Promise((resolve) => {
         confirmMessageEl.textContent = `以下の問題文で出題しますか？\n\nQ. ${questionText}`;
@@ -3688,15 +3704,15 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             showWaitingRoomScreen();
         }
 
-        if (data.event_type === "forced_exit_notice" && data.private_info) {
+        if (data.event_type === "game_finished") {
+            closeAllModals();
+            void showAlertModal(buildGameFinishedAlertMessage(data));
+        } else if (data.event_type === "forced_exit_notice" && data.private_info) {
             closeAllModals();
             void showConfirmModal(data.private_info, { hideCancel: true, okLabel: "OK" });
         } else if (data.event_type === "private_notice" && data.private_info) {
             closeAllModals();
             void showAlertModal(data.private_info);
-        } else if (data.event_type === "game_finished" && data.event_message) {
-            closeAllModals();
-            void showAlertModal(data.event_message);
         }
 
         // 投票が解決されたらハンドル状態を解放し、再提案/再投票を阻害しないようにする。
