@@ -68,6 +68,7 @@ const AI_MODEL_OPTIONS = [
     ["gemini-2.5-flash", "gemini-2.5-flash"],
     ["gemini-2.5-pro", "gemini-2.5-pro"],
     ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview"],
+    ["gemini-3.1-pro-preview", "gemini-3.1-pro-preview"],
 ];
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;

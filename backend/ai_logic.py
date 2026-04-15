@@ -22,8 +22,11 @@ AVAILABLE_MODEL_IDS = (
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-3.1-flash-lite-preview",
+    "gemini-3.1-pro-preview",
 )
 DEFAULT_MODEL_ID = "gemini-2.5-flash-lite"
+QUIZ_GENERATION_TEMPERATURE = 0.9
+ANSWER_JUDGEMENT_TEMPERATURE = 0.0
 
 
 def normalize_model_id(model_id: str | None) -> str:
@@ -87,7 +90,11 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None)
 
     try:
         # 新しいSDKの非同期メソッド (client.aio) を使用して呼び出し
-        response = await client.aio.models.generate_content(model=selected_model_id, contents=prompt)
+        response = await client.aio.models.generate_content(
+            model=selected_model_id,
+            contents=prompt,
+            config={"temperature": QUIZ_GENERATION_TEMPERATURE},
+        )
 
         response_text = response.text or ""
         raw_text = response_text.strip().replace("```json", "").replace("```", "")
@@ -108,7 +115,11 @@ async def check_answer_async(expected_answer: str, user_answer: str, model_id: s
     selected_model_id = DEFAULT_MODEL_ID
 
     try:
-        response = await client.aio.models.generate_content(model=selected_model_id, contents=prompt)
+        response = await client.aio.models.generate_content(
+            model=selected_model_id,
+            contents=prompt,
+            config={"temperature": ANSWER_JUDGEMENT_TEMPERATURE},
+        )
         response_text = response.text or ""
         result_text = response_text.strip().lower()
 
@@ -120,14 +131,21 @@ async def check_answer_async(expected_answer: str, user_answer: str, model_id: s
 
 
 # --- 単独で実行した時のテスト用コード ---
-# --- ai_logic.py の下部 ---
 if __name__ == "__main__":
     import asyncio
+    import time
 
     async def test():
-        print("クイズを生成中...")
-        quiz = await generate_quiz_async("歴史", "gemini-2.5-pro")
-        print(f"問題: {quiz['question']}")
-        print(f"答え: {quiz['answer']}")
+        for model in AVAILABLE_MODEL_IDS:
+            print(f"モデル: {model}")
+            time.sleep(1)  # API呼び出しの前に少し待つ（レート制限対策）
+            print("クイズを生成中...")
+            t = time.time()
+            quiz = await generate_quiz_async("一般常識", model)
+            dt = time.time() - t
+            print(f"生成にかかった時間: {dt:.2f}秒")
+            print(f"問題: {quiz['question']}")
+            print(f"答え: {quiz['answer']}")
+            print()
 
     asyncio.run(test())
