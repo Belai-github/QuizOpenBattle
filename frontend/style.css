@@ -299,6 +299,10 @@ button:hover {
     font-weight: 800;
 }
 
+.event-log-item.kifu-log-current {
+    font-weight: 800;
+}
+
 body[data-app-mode="kifu"] .chat-compose {
     display: none;
 }

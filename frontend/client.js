@@ -107,6 +107,7 @@ const logScrollListenerBound = new WeakSet();
 const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
+const REPLAY_PROGRESS_EVENT_TYPES = new Set(["character_opened", "answer_attempt", "turn_changed"]);
 const ARENA_VOTE_EVENT_TYPES = new Set([
     "open_vote_request",
     "open_vote_resolved",
@@ -1755,6 +1756,7 @@ function syncReplayControlsVisibility() {
 
 function clearReplayState() {
     arenaReplayLoadToken += 1;
+    clearReplayCurrentLogHighlights();
     isKifuMode = false;
     isArenaReplayMode = false;
     currentArenaReplayRoomId = null;
@@ -1802,6 +1804,99 @@ async function startFinishedArenaReplay(roomSnapshot) {
             currentArenaReplayRoomId = null;
             syncReplayControlsVisibility();
         }
+    }
+}
+
+function clearReplayCurrentLogHighlights() {
+    ["game-chat-log-game-global", "game-chat-log-team-left", "game-chat-log-team-right"].forEach((logId) => {
+        const logEl = document.getElementById(logId);
+        if (!logEl) return;
+        logEl.querySelectorAll(".event-log-item.kifu-log-current").forEach((itemEl) => {
+            itemEl.classList.remove("kifu-log-current");
+        });
+    });
+}
+
+function highlightReplayCurrentLogFromDisplayedProgress() {
+    clearReplayCurrentLogHighlights();
+
+    const targetActionIndex = currentKifuStepIndex - 1;
+    if (targetActionIndex < 0) {
+        return;
+    }
+
+    const step = Array.isArray(currentKifuSteps) ? currentKifuSteps[currentKifuStepIndex] : null;
+    const action = step?.action || null;
+    const actionType = String(action?.action_type || "").trim();
+    const actionTimestamp = Number(action?.timestamp || 0);
+    const replayEventTypeByAction = {
+        open: "character_opened",
+        answer: "answer_attempt",
+        turn_end: "turn_changed",
+    };
+    const targetEventType = replayEventTypeByAction[actionType] || null;
+
+    const globalLogEl = document.getElementById("game-chat-log-game-global");
+    if (!globalLogEl) {
+        return;
+    }
+
+    const progressItems = Array.from(globalLogEl.querySelectorAll(".event-log-item:not(.filtered-out)")).filter((itemEl) => {
+        const eventType = String(itemEl?.dataset?.eventType || "").trim();
+        return REPLAY_PROGRESS_EVENT_TYPES.has(eventType);
+    });
+
+    if (progressItems.length === 0) {
+        return;
+    }
+
+    let targetItem = null;
+    if (targetEventType) {
+        const typedItems = progressItems.filter((itemEl) => String(itemEl?.dataset?.eventType || "").trim() === targetEventType);
+        if (typedItems.length > 0) {
+            if (Number.isFinite(actionTimestamp) && actionTimestamp > 0) {
+                const matchedByTime = typedItems.filter((itemEl) => {
+                    const ts = Number(itemEl?.dataset?.eventTimestamp || 0);
+                    return Number.isFinite(ts) && ts > 0 && ts <= actionTimestamp + 1000;
+                });
+                if (matchedByTime.length > 0) {
+                    targetItem = matchedByTime[matchedByTime.length - 1];
+                }
+            }
+
+            if (!targetItem) {
+                const typedIndex = Math.max(0, Math.min(targetActionIndex, typedItems.length - 1));
+                targetItem = typedItems[typedIndex];
+            }
+        }
+    }
+
+    if (!targetItem) {
+        // ログが欠落していても、同手以前で最も近い進行ログを強調する。
+        const safeIndex = Math.max(0, Math.min(targetActionIndex, progressItems.length - 1));
+        targetItem = progressItems[safeIndex];
+    }
+
+    if (!targetItem) {
+        return;
+    }
+
+    targetItem.classList.add("kifu-log-current");
+
+    const scrollContainer = resolveLogScrollContainer(globalLogEl);
+    if (!scrollContainer) {
+        return;
+    }
+
+    const itemTop = targetItem.offsetTop;
+    const itemBottom = itemTop + targetItem.offsetHeight;
+    const viewTop = scrollContainer.scrollTop;
+    const viewBottom = viewTop + scrollContainer.clientHeight;
+    const margin = 24;
+    const isOutsideView = itemTop < (viewTop + margin) || itemBottom > (viewBottom - margin);
+    if (isOutsideView) {
+        const nextTop = Math.max(0, itemTop - Math.max(0, (scrollContainer.clientHeight / 2) - (targetItem.offsetHeight / 2)));
+        scrollContainer.scrollTop = nextTop;
     }
 }
 
@@ -2130,18 +2225,8 @@ function renderKifuStep() {
     updateQuestionVisibilityButton();
     if (shouldReplayLog) {
         renderArenaLogsForRoom(replayRoomId, { forceScrollToBottom: true });
-        ["game-chat-log-game-global", "game-chat-log-team-left", "game-chat-log-team-right"].forEach((logId) => {
-            const logEl = document.getElementById(logId);
-            if (!logEl) return;
-            logEl.querySelectorAll(".event-log-item").forEach((itemEl) => {
-                itemEl.classList.remove("kifu-log-current");
-            });
-            const items = logEl.querySelectorAll(".event-log-item");
-            if (items.length > 0) {
-                items[items.length - 1].classList.add("kifu-log-current");
-            }
-        });
     }
+    highlightReplayCurrentLogFromDisplayedProgress();
 }
 
 function enterKifuViewer(detail) {
@@ -3223,6 +3308,10 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
     }
     item.dataset.eventRevision = String(Math.max(1, Number(eventRevision || 1)));
     item.dataset.eventVersion = String(Math.max(0, Number(eventVersion || 0)));
+    const numericEventTimestamp = Number(eventTimestamp);
+    if (Number.isFinite(numericEventTimestamp) && numericEventTimestamp > 0) {
+        item.dataset.eventTimestamp = String(Math.floor(numericEventTimestamp));
+    }
 
     const messageEl = document.createElement("span");
     messageEl.className = "event-log-message";

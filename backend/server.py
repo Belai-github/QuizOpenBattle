@@ -1852,14 +1852,21 @@ class QuizGameManager:
                 },
             )
 
-            next_team = result.get("current_turn_team")
-            turn_changed_message = self._format_turn_changed_message(next_team)
-            await self.broadcast_state(
-                public_info=turn_changed_message,
-                event_type="turn_changed",
-                event_room_id=owner_id,
-            )
-            await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
+            game_after = room.get("game") or {}
+            if game_after.get("game_status") == "finished":
+                winner = game_after.get("winner")
+                game_finished_message = self._format_game_finished_message(winner)
+                await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
+                self._finalize_kifu_if_tracking(owner_id, room, "finished")
+            else:
+                next_team = result.get("current_turn_team")
+                turn_changed_message = self._format_turn_changed_message(next_team)
+                await self.broadcast_state(
+                    public_info=turn_changed_message,
+                    event_type="turn_changed",
+                    event_room_id=owner_id,
+                )
+                await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
             await self.send_private_info(client_id, "ターンエンドしました。")
             return
 
@@ -1988,14 +1995,21 @@ class QuizGameManager:
                 },
             )
 
-            next_team = result.get("current_turn_team")
-            turn_changed_message = self._format_turn_changed_message(next_team)
-            await self.broadcast_state(
-                public_info=turn_changed_message,
-                event_type="turn_changed",
-                event_room_id=owner_id,
-            )
-            await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
+            game_after = room.get("game") or {}
+            if game_after.get("game_status") == "finished":
+                winner = game_after.get("winner")
+                game_finished_message = self._format_game_finished_message(winner)
+                await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
+                self._finalize_kifu_if_tracking(owner_id, room, "finished")
+            else:
+                next_team = result.get("current_turn_team")
+                turn_changed_message = self._format_turn_changed_message(next_team)
+                await self.broadcast_state(
+                    public_info=turn_changed_message,
+                    event_type="turn_changed",
+                    event_room_id=owner_id,
+                )
+                await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
             return
 
         max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
