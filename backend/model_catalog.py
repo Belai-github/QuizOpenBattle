@@ -7,6 +7,7 @@ MODELS_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "data", "models.jso
 
 _FALLBACK_DEFAULT_MODEL_ID = "gemini-2.5-flash"
 _FALLBACK_ANSWER_JUDGEMENT_MODEL_ID = "gemini-2.5-flash-lite"
+_ALLOWED_REASONING_LEVELS = {"low", "medium", "high"}
 
 
 def _safe_read_config() -> dict[str, Any]:
@@ -31,11 +32,14 @@ def _normalize_models(raw_models: Any) -> list[dict[str, Any]]:
         model_id = str(raw.get("id") or "").strip()
         if model_id == "":
             continue
+        reasoning = str(raw.get("reasoning") or "").strip().lower()
+        normalized_reasoning = reasoning if reasoning in _ALLOWED_REASONING_LEVELS else None
         normalized.append(
             {
                 "id": model_id,
                 "label": str(raw.get("label") or model_id),
                 "provider": str(raw.get("provider") or "google").strip().lower(),
+                "reasoning": normalized_reasoning,
                 "enabled": bool(raw.get("enabled", True)),
             }
         )
@@ -100,6 +104,17 @@ def is_openai_model(model_id: str) -> bool:
     return False
 
 
+def get_model_reasoning_effort(model_id: str | None) -> str | None:
+    target = str(model_id or "").strip()
+    if target == "":
+        return None
+    for model in _active_models():
+        if model.get("id") == target:
+            reasoning = str(model.get("reasoning") or "").strip().lower()
+            return reasoning if reasoning in _ALLOWED_REASONING_LEVELS else None
+    return None
+
+
 def get_frontend_model_payload() -> dict[str, Any]:
     models = _active_models()
     return {
@@ -110,6 +125,7 @@ def get_frontend_model_payload() -> dict[str, Any]:
                 "id": str(model.get("id") or "").strip(),
                 "label": str(model.get("label") or model.get("id") or "").strip(),
                 "provider": str(model.get("provider") or "google").strip(),
+                "reasoning": model.get("reasoning"),
             }
             for model in models
         ],

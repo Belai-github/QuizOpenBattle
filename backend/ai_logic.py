@@ -4,9 +4,8 @@ import re
 import unicodedata
 import time
 from difflib import SequenceMatcher
-from typing import Any, cast
+from typing import Any
 from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletionMessageParam
 from google import genai
 from dotenv import load_dotenv
 
@@ -23,6 +22,7 @@ try:
         get_answer_judgement_model_id,
         get_available_model_ids,
         get_default_model_id,
+        get_model_reasoning_effort,
         is_openai_model,
         normalize_model_id as normalize_model_id_from_catalog,
     )
@@ -39,6 +39,7 @@ except ImportError:
         get_answer_judgement_model_id,
         get_available_model_ids,
         get_default_model_id,
+        get_model_reasoning_effort,
         is_openai_model,
         normalize_model_id as normalize_model_id_from_catalog,
     )
@@ -177,6 +178,13 @@ def _extract_openai_token_usage(response: Any) -> dict[str, int | None]:
     prompt_tokens = getattr(usage, "prompt_tokens", None)
     completion_tokens = getattr(usage, "completion_tokens", None)
     total_tokens = getattr(usage, "total_tokens", None)
+
+    if prompt_tokens is None:
+        prompt_tokens = getattr(usage, "input_tokens", None)
+    if completion_tokens is None:
+        completion_tokens = getattr(usage, "output_tokens", None)
+    if total_tokens is None and isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+        total_tokens = prompt_tokens + completion_tokens
     return {
         "prompt_tokens": int(prompt_tokens) if isinstance(prompt_tokens, int) else None,
         "completion_tokens": int(completion_tokens) if isinstance(completion_tokens, int) else None,
@@ -185,19 +193,20 @@ def _extract_openai_token_usage(response: Any) -> dict[str, int | None]:
 
 
 async def generate_quiz_async(genre="一般常識", model_id: str | None = None, difficulty: int | str | None = 0):
-    """Gemini APIを叩いてクイズを1問生成する非同期関数"""
+    """生成AIのAPIを叩いてクイズを1問生成する非同期関数"""
 
     normalized_difficulty = normalize_difficulty(difficulty)
     system_prompt = get_quiz_system_prompt
     user_prompt = get_quiz_user_prompt(genre, normalized_difficulty)
     selected_model_id = normalize_model_id(model_id)
+    selected_reasoning_effort = get_model_reasoning_effort(selected_model_id)
     request_started_at = time.time()
 
     if is_openai_model(selected_model_id):
         try:
-            messages = cast(
-                list[ChatCompletionMessageParam],
-                [
+            request_options: dict[str, Any] = {
+                "model": selected_model_id,
+                "input": [
                     {
                         "role": "system",
                         "content": system_prompt,
@@ -207,14 +216,16 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                         "content": user_prompt,
                     },
                 ],
+                "temperature": QUIZ_GENERATION_TEMPERATURE,
+                "text": {"format": {"type": "json_object"}},
+            }
+            if selected_reasoning_effort is not None:
+                request_options["reasoning"] = {"effort": selected_reasoning_effort}
+
+            response = await openai_client.responses.create(
+                **request_options,
             )
-            response = await openai_client.chat.completions.create(
-                model=selected_model_id,
-                messages=messages,
-                temperature=QUIZ_GENERATION_TEMPERATURE,
-                response_format={"type": "json_object"},
-            )
-            response_text = (response.choices[0].message.content or "").strip()
+            response_text = str(getattr(response, "output_text", "") or "").strip()
             parsed_quiz = json.loads(response_text)
             append_api_history(
                 {
@@ -231,6 +242,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                         "genre": genre,
                         "difficulty": normalized_difficulty,
                         "temperature": QUIZ_GENERATION_TEMPERATURE,
+                        "reasoning": {"effort": selected_reasoning_effort} if selected_reasoning_effort else None,
                     },
                     "response_text": response_text,
                     "response_json": parsed_quiz,
@@ -255,6 +267,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                         "genre": genre,
                         "difficulty": normalized_difficulty,
                         "temperature": QUIZ_GENERATION_TEMPERATURE,
+                        "reasoning": {"effort": selected_reasoning_effort} if selected_reasoning_effort else None,
                     },
                     "error": {
                         "type": type(e).__name__,
@@ -405,32 +418,6 @@ async def check_answer_async(expected_answer: str, user_answer: str):
     request_started_at = time.time()
     system_prompt = get_judge_system_prompt
     if expected_answer == user_answer:
-        append_api_history(
-            {
-                "api_name": "check_answer_async",
-                "provider": "local",
-                "model_id": "local-equal-check",
-                "status": "success",
-                "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": {
-                    "system": system_prompt,
-                    "user": get_judge_user_prompt(expected_answer, user_answer),
-                },
-                "request": {
-                    "expected_answer": expected_answer,
-                    "user_answer": user_answer,
-                    "cache_hit": False,
-                    "source": "local-equal-check",
-                },
-                "response_json": True,
-                "token_usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                },
-                "source": "local-equal-check",
-            }
-        )
         return True
 
     selected_model_id = get_answer_judgement_model_id()
@@ -442,32 +429,6 @@ async def check_answer_async(expected_answer: str, user_answer: str):
         ANSWER_JUDGEMENT_CACHE_VERSION,
     )
     if cached_result is not None:
-        append_api_history(
-            {
-                "api_name": "check_answer_async",
-                "provider": "cache",
-                "model_id": selected_model_id,
-                "status": "cached",
-                "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": {
-                    "system": system_prompt,
-                    "user": user_prompt,
-                },
-                "request": {
-                    "expected_answer": expected_answer,
-                    "user_answer": user_answer,
-                    "cache_hit": True,
-                    "cache_version": ANSWER_JUDGEMENT_CACHE_VERSION,
-                },
-                "response_json": bool(cached_result),
-                "token_usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                },
-                "source": "cache",
-            }
-        )
         return cached_result
 
     try:
