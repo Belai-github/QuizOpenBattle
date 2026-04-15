@@ -2344,6 +2344,7 @@ function showWaitingRoomScreen() {
     updateQuestionVisibilityButton();
     updateArenaAnswerFormVisibility();
     updateArenaCloseButtonVisibility(null);
+    updateArenaLogsButtonVisibility();
     updateChatBoxVisibility();
     updateAiQuestionButtonState(currentRoomsSnapshot);
 }
@@ -2365,6 +2366,7 @@ function showGameArenaScreen() {
     updateQuestionVisibilityButton();
     updateArenaAnswerFormVisibility();
     updateArenaCloseButtonVisibility(currentRoomSnapshot);
+    updateArenaLogsButtonVisibility();
     updateChatBoxVisibility();
     updateAiQuestionButtonState(currentRoomsSnapshot);
 
@@ -3136,6 +3138,14 @@ function updateArenaCloseButtonVisibility(currentRoom) {
     const canShow = isInGameArena() && canUseRoomCloseLabel(room);
     closeRoomBtnEl.classList.toggle("hidden", !canShow);
     closeRoomBtnEl.style.display = canShow ? "" : "none";
+}
+
+function updateArenaLogsButtonVisibility() {
+    const toggleBtn = document.getElementById("arena-logs-toggle-btn");
+    if (!toggleBtn) return;
+
+    const shouldShow = isInGameArena() && isMobileArenaLogsMode();
+    toggleBtn.classList.toggle("hidden", !shouldShow);
 }
 
 async function requestCloseRoom(roomOwnerId) {
@@ -4999,6 +5009,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         updateGameStateUI();
         updateStartGameButtonVisibility(data.current_room);
         updateArenaCloseButtonVisibility(data.current_room);
+        updateArenaLogsButtonVisibility();
         if (isInGameArena()) {
             updateArenaLeaveLabel(data.current_room);
         }
@@ -5738,6 +5749,7 @@ window.addEventListener("resize", () => {
     if (isInGameArena()) {
         renderArenaQuestionText();
         syncArenaLogsPresentation();
+        updateArenaLogsButtonVisibility();
     }
     updateViewportDebugOverlay();
 });
