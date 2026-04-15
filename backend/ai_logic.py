@@ -4,8 +4,9 @@ import re
 import unicodedata
 import time
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, cast
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 from google import genai
 from dotenv import load_dotenv
 
@@ -194,9 +195,9 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
 
     if is_openai_model(selected_model_id):
         try:
-            response = await openai_client.chat.completions.create(
-                model=selected_model_id,
-                messages=[
+            messages = cast(
+                list[ChatCompletionMessageParam],
+                [
                     {
                         "role": "system",
                         "content": system_prompt,
@@ -206,6 +207,10 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                         "content": user_prompt,
                     },
                 ],
+            )
+            response = await openai_client.chat.completions.create(
+                model=selected_model_id,
+                messages=messages,
                 temperature=QUIZ_GENERATION_TEMPERATURE,
                 response_format={"type": "json_object"},
             )
