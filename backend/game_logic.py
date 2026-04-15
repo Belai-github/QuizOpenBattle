@@ -425,6 +425,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
 
     return {
         "room_owner_id": owner_id,
+        "kifu_id": str(room.get("kifu_id") or ""),
         "questioner_id": str(room.get("questioner_id") or owner_id),
         "questioner_name": room["questioner_name"],
         "genre": str(room.get("genre") or "").strip(),

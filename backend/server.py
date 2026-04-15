@@ -183,6 +183,7 @@ class QuizGameManager:
 
         kifu_id = begin_kifu_record(room_owner_id, room, self.nicknames)
         self.active_kifu_by_room_owner[room_owner_id] = kifu_id
+        room["kifu_id"] = kifu_id
 
     def _append_kifu_action(self, room_owner_id: str, action_type: str, team: str, actor_id: str, payload: dict | None = None):
         kifu_id = self.active_kifu_by_room_owner.get(room_owner_id)

@@ -54,6 +54,9 @@ let currentKifuDetail = null;
 let currentKifuSteps = [];
 let currentKifuStepIndex = 0;
 let isKifuMode = false;
+let isArenaReplayMode = false;
+let currentArenaReplayRoomId = null;
+let arenaReplayLoadToken = 0;
 const handledOpenVoteIds = new Set();
 const handledAnswerVoteIds = new Set();
 const handledTurnEndVoteIds = new Set();
@@ -1701,7 +1704,7 @@ function showWaitingRoomScreen() {
     if (kifuListScreenEl) kifuListScreenEl.style.display = "none";
     document.getElementById("waiting-room-screen").style.display = "block";
     document.getElementById("game-arena-screen").style.display = "none";
-    if (kifuReplayControlsEl) kifuReplayControlsEl.classList.add("hidden");
+    clearReplayState();
     document.body.dataset.appMode = isKifuMode ? "kifu" : "live";
     updateStartGameButtonVisibility(null);
     updateQuestionVisibilityButton();
@@ -1722,9 +1725,7 @@ function showGameArenaScreen() {
         questionerViewMode = "all";
     }
 
-    if (kifuReplayControlsEl) {
-        kifuReplayControlsEl.classList.toggle("hidden", !isKifuMode);
-    }
+    syncReplayControlsVisibility();
     document.body.dataset.appMode = isKifuMode ? "kifu" : "live";
 
     updateQuestionVisibilityButton();
@@ -1738,8 +1739,70 @@ function showKifuListScreen() {
     document.getElementById("waiting-room-screen").style.display = "none";
     document.getElementById("game-arena-screen").style.display = "none";
     if (kifuListScreenEl) kifuListScreenEl.style.display = "block";
-    if (kifuReplayControlsEl) kifuReplayControlsEl.classList.add("hidden");
+    clearReplayState();
     document.body.dataset.appMode = "live";
+}
+
+function isReplayMode() {
+    return isKifuMode || isArenaReplayMode;
+}
+
+function syncReplayControlsVisibility() {
+    if (kifuReplayControlsEl) {
+        kifuReplayControlsEl.classList.toggle("hidden", !isReplayMode());
+    }
+}
+
+function clearReplayState() {
+    arenaReplayLoadToken += 1;
+    isKifuMode = false;
+    isArenaReplayMode = false;
+    currentArenaReplayRoomId = null;
+    currentKifuDetail = null;
+    currentKifuSteps = [];
+    currentKifuStepIndex = 0;
+    syncReplayControlsVisibility();
+}
+
+async function startFinishedArenaReplay(roomSnapshot) {
+    if (isKifuMode) {
+        return;
+    }
+
+    const roomId = String(roomSnapshot?.room_owner_id || "").trim();
+    const kifuId = String(roomSnapshot?.kifu_id || "").trim();
+    if (roomId === "" || kifuId === "") {
+        return;
+    }
+
+    if (isArenaReplayMode && currentArenaReplayRoomId === roomId && currentKifuDetail?.kifu_id === kifuId) {
+        return;
+    }
+
+    const loadToken = ++arenaReplayLoadToken;
+    currentArenaReplayRoomId = roomId;
+
+    try {
+        const detail = await fetchKifuDetail(kifuId);
+        if (loadToken !== arenaReplayLoadToken || isKifuMode) {
+            return;
+        }
+
+        isArenaReplayMode = true;
+        currentKifuDetail = detail;
+        currentKifuSteps = buildKifuReplaySteps(detail);
+        currentKifuStepIndex = Math.max(0, currentKifuSteps.length - 1);
+        questionerViewMode = "all";
+        syncReplayControlsVisibility();
+        showGameArenaScreen();
+        renderKifuStep();
+    } catch {
+        if (loadToken === arenaReplayLoadToken && !isKifuMode) {
+            isArenaReplayMode = false;
+            currentArenaReplayRoomId = null;
+            syncReplayControlsVisibility();
+        }
+    }
 }
 
 function getKifuApiClientId() {
@@ -1982,6 +2045,7 @@ function buildReplayRoomSnapshot(detail, step) {
     const participants = detail?.participants_at_start || {};
     return {
         room_owner_id: detail?.room_owner_id,
+        kifu_id: detail?.kifu_id,
         questioner_id: detail?.questioner?.client_id,
         questioner_name: detail?.questioner?.nickname || "ゲスト",
         question_text: String(detail?.question_text || ""),
@@ -1990,11 +2054,12 @@ function buildReplayRoomSnapshot(detail, step) {
         yakumono_indexes: Array.isArray(detail?.yakumono_indexes) ? detail.yakumono_indexes : [],
         game_state: step?.game?.game_status === "finished" ? "finished" : "playing",
         game: step?.game || null,
-        role: "owner",
+        role: String(detail?.your_role || "questioner"),
         chat_role: "questioner",
         left_participants: Array.isArray(participants?.team_left) ? participants.team_left : [],
         right_participants: Array.isArray(participants?.team_right) ? participants.team_right : [],
         spectators: Array.isArray(detail?.spectators_ever) ? detail.spectators_ever : [],
+        can_manage_room: String(detail?.room_owner_id || "") === String(myClientId || ""),
     };
 }
 
@@ -2023,64 +2088,72 @@ function renderKifuStep() {
         kifuStepNextBtnEl.disabled = currentKifuStepIndex >= currentKifuSteps.length - 1;
     }
 
-    const replayRoomId = `kifu:${currentKifuDetail.kifu_id}`;
-    const state = getOrCreateArenaRoomLogState(replayRoomId);
-    if (state) {
-        state["team-left"] = [];
-        state["team-right"] = [];
-        state["game-global"] = [];
-        const actions = currentKifuSteps.slice(1, currentKifuStepIndex + 1).map((it) => it.action).filter(Boolean);
-        actions.forEach((action) => {
-            const actionType = String(action.action_type || "");
-            const team = String(action.team || "");
-            const actorName = String(action.actor_name || "ゲスト");
-            const subjectLabel = team === "team-left" ? "先攻" : team === "team-right" ? "後攻" : actorName;
-            const payload = typeof action.payload === "object" && action.payload ? action.payload : {};
-            if (actionType === "open") {
-                const index = Number(payload.char_index);
-                const label = Number.isFinite(index) ? `${index + 1}文字目` : "文字";
-                const message = `${subjectLabel}が${label}をオープンしました。`;
-                pushArenaRoomLog(replayRoomId, team || "game-global", "character_opened", message, action.timestamp || Date.now());
-                pushArenaRoomLog(replayRoomId, "game-global", "character_opened", message, action.timestamp || Date.now());
-            } else if (actionType === "answer") {
-                const answerText = String(payload.answer_text || "");
-                const judgeText = payload.is_correct === true ? "正解" : payload.is_correct === false ? "誤答" : "判定待ち";
-                const message = `${subjectLabel}が「${answerText}」とアンサーしました（${judgeText}）。`;
-                pushArenaRoomLog(replayRoomId, team || "game-global", "answer_attempt", message, action.timestamp || Date.now());
-                pushArenaRoomLog(replayRoomId, "game-global", "answer_attempt", message, action.timestamp || Date.now());
-            } else if (actionType === "turn_end") {
-                const message = `${subjectLabel}がターンエンドしました。`;
-                pushArenaRoomLog(replayRoomId, team || "game-global", "turn_changed", message, action.timestamp || Date.now());
-                pushArenaRoomLog(replayRoomId, "game-global", "turn_changed", message, action.timestamp || Date.now());
-            }
-        });
+    const shouldReplayLog = !isArenaReplayMode;
+    const replayRoomId = shouldReplayLog ? `kifu:${currentKifuDetail.kifu_id}` : null;
+    if (shouldReplayLog) {
+        const state = getOrCreateArenaRoomLogState(replayRoomId);
+        if (state) {
+            state["team-left"] = [];
+            state["team-right"] = [];
+            state["game-global"] = [];
+            const actions = currentKifuSteps.slice(1, currentKifuStepIndex + 1).map((it) => it.action).filter(Boolean);
+            actions.forEach((action) => {
+                const actionType = String(action.action_type || "");
+                const team = String(action.team || "");
+                const actorName = String(action.actor_name || "ゲスト");
+                const subjectLabel = team === "team-left" ? "先攻" : team === "team-right" ? "後攻" : actorName;
+                const payload = typeof action.payload === "object" && action.payload ? action.payload : {};
+                if (actionType === "open") {
+                    const index = Number(payload.char_index);
+                    const label = Number.isFinite(index) ? `${index + 1}文字目` : "文字";
+                    const message = `${subjectLabel}が${label}をオープンしました。`;
+                    pushArenaRoomLog(replayRoomId, team || "game-global", "character_opened", message, action.timestamp || Date.now());
+                    pushArenaRoomLog(replayRoomId, "game-global", "character_opened", message, action.timestamp || Date.now());
+                } else if (actionType === "answer") {
+                    const answerText = String(payload.answer_text || "");
+                    const judgeText = payload.is_correct === true ? "正解" : payload.is_correct === false ? "誤答" : "判定待ち";
+                    const message = `${subjectLabel}が「${answerText}」とアンサーしました（${judgeText}）。`;
+                    pushArenaRoomLog(replayRoomId, team || "game-global", "answer_attempt", message, action.timestamp || Date.now());
+                    pushArenaRoomLog(replayRoomId, "game-global", "answer_attempt", message, action.timestamp || Date.now());
+                } else if (actionType === "turn_end") {
+                    const message = `${subjectLabel}がターンエンドしました。`;
+                    pushArenaRoomLog(replayRoomId, team || "game-global", "turn_changed", message, action.timestamp || Date.now());
+                    pushArenaRoomLog(replayRoomId, "game-global", "turn_changed", message, action.timestamp || Date.now());
+                }
+            });
+        }
     }
 
     renderArena(roomSnapshot);
     updateGameStateUI();
     updateArenaAnswerFormVisibility();
     updateQuestionVisibilityButton();
-    renderArenaLogsForRoom(replayRoomId, { forceScrollToBottom: true });
-    ["game-chat-log-game-global", "game-chat-log-team-left", "game-chat-log-team-right"].forEach((logId) => {
-        const logEl = document.getElementById(logId);
-        if (!logEl) return;
-        logEl.querySelectorAll(".event-log-item").forEach((itemEl) => {
-            itemEl.classList.remove("kifu-log-current");
+    if (shouldReplayLog) {
+        renderArenaLogsForRoom(replayRoomId, { forceScrollToBottom: true });
+        ["game-chat-log-game-global", "game-chat-log-team-left", "game-chat-log-team-right"].forEach((logId) => {
+            const logEl = document.getElementById(logId);
+            if (!logEl) return;
+            logEl.querySelectorAll(".event-log-item").forEach((itemEl) => {
+                itemEl.classList.remove("kifu-log-current");
+            });
+            const items = logEl.querySelectorAll(".event-log-item");
+            if (items.length > 0) {
+                items[items.length - 1].classList.add("kifu-log-current");
+            }
         });
-        const items = logEl.querySelectorAll(".event-log-item");
-        if (items.length > 0) {
-            items[items.length - 1].classList.add("kifu-log-current");
-        }
-    });
+    }
 }
 
 function enterKifuViewer(detail) {
+    arenaReplayLoadToken += 1;
+    isArenaReplayMode = false;
+    currentArenaReplayRoomId = null;
     currentKifuDetail = detail;
     currentKifuSteps = buildKifuReplaySteps(detail);
     currentKifuStepIndex = 0;
     isKifuMode = true;
     questionerViewMode = "all";
-    if (kifuReplayControlsEl) kifuReplayControlsEl.classList.remove("hidden");
+    syncReplayControlsVisibility();
     showGameArenaScreen();
     if (closeRoomBtnEl) closeRoomBtnEl.classList.add("hidden");
     if (leaveGameArenaEl) {
@@ -2091,8 +2164,7 @@ function enterKifuViewer(detail) {
 }
 
 function exitKifuViewerToList() {
-    isKifuMode = false;
-    if (kifuReplayControlsEl) kifuReplayControlsEl.classList.add("hidden");
+    clearReplayState();
     updateArenaLeaveLabel("guest");
     showKifuListScreen();
 }
@@ -3694,6 +3766,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         currentRoomGameState = data.current_room?.game_state ?? null;
         currentGameState = data.current_room?.game ?? null;
         const activeRoomId = String(data.current_room?.room_owner_id || "").trim() || null;
+        if (isArenaReplayMode && (!activeRoomId || activeRoomId !== currentArenaReplayRoomId || currentRoomGameState !== "finished")) {
+            clearReplayState();
+        }
         const shouldRevealFinishedArenaLogs = data.event_type === "game_finished"
             || (currentRoomGameState === "finished" && previousRoomGameState !== "finished");
 
@@ -3826,6 +3901,14 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
         updateArenaAnswerFormVisibility();
         updateChatBoxVisibility();
+
+        if (!isKifuMode && currentRoomGameState === "finished") {
+            if (isArenaReplayMode && activeRoomId === currentArenaReplayRoomId && Array.isArray(currentKifuSteps) && currentKifuSteps.length > 0) {
+                renderKifuStep();
+            } else {
+                void startFinishedArenaReplay(data.current_room);
+            }
+        }
     };
 });
 
@@ -4317,7 +4400,7 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-    if (isKifuMode && isInGameArena()) {
+    if (isReplayMode() && isInGameArena()) {
         if (event.key === "ArrowLeft") {
             event.preventDefault();
             currentKifuStepIndex = Math.max(0, currentKifuStepIndex - 1);
