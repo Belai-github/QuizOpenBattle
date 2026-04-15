@@ -1642,7 +1642,15 @@ function canViewChatBox(visibility) {
 
     // 複数の権限が指定される場合に対応 (例: "team-left,questioner")
     const visibilities = visibility.split(",").map((v) => v.trim());
-    return visibilities.includes(userRole);
+    if (visibilities.includes(userRole)) {
+        return true;
+    }
+
+    // 先攻が正解し後攻のアンサー待ち中は、先攻が後攻チャットログを閲覧できるようにする。
+    const canSeeOpposingTeamDuringReveal = isTeamLeftRevealWindow()
+        && userRole === "team-left"
+        && visibilities.includes("team-right");
+    return canSeeOpposingTeamDuringReveal;
 }
 
 function isInGameArena() {
@@ -1729,6 +1737,35 @@ function getCurrentTeamActionPoints() {
     return 0;
 }
 
+function getCurrentTeamTotalActionPoints() {
+    if (userRole === "team-left") {
+        const state = currentGameState?.team_left || {};
+        return Number(state.action_points || 0) + Number(state.bonus_action_points || 0);
+    }
+
+    if (userRole === "team-right") {
+        const state = currentGameState?.team_right || {};
+        return Number(state.action_points || 0) + Number(state.bonus_action_points || 0);
+    }
+
+    return 0;
+}
+
+function isRightLastChanceState() {
+    return (currentRoomGameState || "waiting") === "playing"
+        && userRole === "team-right"
+        && currentGameState?.current_turn_team === "team-right"
+        && Boolean(currentGameState?.left_correct_waiting);
+}
+
+function isRightFinalActionBeforeOpen() {
+    return isRightLastChanceState() && getCurrentTeamTotalActionPoints() <= 1;
+}
+
+function isRightFinalActionBeforeTurnEnd() {
+    return isRightLastChanceState() && getCurrentTeamTotalActionPoints() <= 1;
+}
+
 function canViewArenaAnswerForm() {
     if (isKifuMode) return false;
     if (!isInGameArena()) return false;
@@ -1804,14 +1841,17 @@ async function submitTurnEndAttempt() {
 
     const teamParticipantCount = getCurrentTeamParticipantCount();
     const isProposalMode = teamParticipantCount > 1;
-    const hasRemainingActions = getCurrentTeamActionPoints() > 0;
+    const hasRemainingActions = getCurrentTeamTotalActionPoints() > 0;
+    const finalChanceWarning = isRightFinalActionBeforeTurnEnd()
+        ? "\n\nこのターンを終えると先攻の勝利となります。本当にターンエンドしますか？"
+        : "";
     const warning = hasRemainingActions
         ? "\n\nアクション権が残っています。本当にターンエンドしますか？"
         : "";
     const confirmed = await showConfirmModal(
         isProposalMode
-            ? `ターンエンドを提案しますか？${warning}`
-            : `ターンエンドしますか？${warning}`,
+            ? `ターンエンドを提案しますか？${warning}${finalChanceWarning}`
+            : `ターンエンドしますか？${warning}${finalChanceWarning}`,
         {
             okLabel: isProposalMode ? "提案する" : "ターンエンドする",
             cancelLabel: "キャンセル",
@@ -5182,11 +5222,25 @@ async function requestOpenVote(charIndex) {
 
     const teamParticipantCount = getCurrentTeamParticipantCount();
     const isProposalMode = teamParticipantCount > 1;
+    const finalChanceWarning = isRightFinalActionBeforeOpen()
+        ? "\n\nこのオープンで後攻のアクション権が尽きるため、この時点で先攻の勝利になります。実行しますか？"
+        : "";
     if (isProposalMode) {
         const confirmed = await showConfirmModal(
-            `${charIndex + 1}文字目オープンを提案しますか？`,
+            `${charIndex + 1}文字目オープンを提案しますか？${finalChanceWarning}`,
             {
                 okLabel: "提案する",
+                cancelLabel: "キャンセル",
+            }
+        );
+        if (!confirmed) {
+            return;
+        }
+    } else if (finalChanceWarning !== "") {
+        const confirmed = await showConfirmModal(
+            `${charIndex + 1}文字目をオープンします。${finalChanceWarning}`,
+            {
+                okLabel: "オープンする",
                 cancelLabel: "キャンセル",
             }
         );
