@@ -661,6 +661,16 @@ body.modal-open #arena-question-text .arena-question-line {
     white-space: pre-wrap;
 }
 
+#alert-message.alert-winner-left {
+    color: #b91c1c;
+    font-weight: 700;
+}
+
+#alert-message.alert-winner-right {
+    color: #1d4ed8;
+    font-weight: 700;
+}
+
 .modal-actions {
     margin-top: 14px;
     display: grid;

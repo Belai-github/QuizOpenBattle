@@ -840,6 +840,7 @@ function updateStartGameButtonVisibility(currentRoom) {
 
 function closeAllModals() {
     setArenaCharClickGuard();
+    alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
     alertModal.classList.add("hidden");
     confirmModal.classList.add("hidden");
     const judgementModal = document.getElementById("answer-judgement-modal");
@@ -849,9 +850,25 @@ function closeAllModals() {
     updateArenaInteractionLock();
 }
 
+function getWinnerAlertClass(message) {
+    const text = String(message || "");
+    if (text.includes("先攻の勝利")) {
+        return "alert-winner-left";
+    }
+    if (text.includes("後攻の勝利")) {
+        return "alert-winner-right";
+    }
+    return "";
+}
+
 function showAlertModal(message) {
     return new Promise((resolve) => {
         alertMessageEl.textContent = message;
+        alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
+        const winnerAlertClass = getWinnerAlertClass(message);
+        if (winnerAlertClass) {
+            alertMessageEl.classList.add(winnerAlertClass);
+        }
         alertModal.classList.remove("hidden");
         alertOkBtn.focus();
         setArenaCharClickGuard();
@@ -860,6 +877,7 @@ function showAlertModal(message) {
         const close = () => {
             setArenaCharClickGuard();
             alertModal.classList.add("hidden");
+            alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
             alertOkBtn.removeEventListener("click", onOk);
             alertModal.removeEventListener("click", onBackdropClick);
             document.removeEventListener("keydown", onEscape);
