@@ -1011,11 +1011,11 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-question-char.is-revealed-left {
-    background: #fee2e2;
+    background: #fd9292;
 }
 
 .arena-question-char.is-revealed-right {
-    background: #dbeafe;
+    background: #8ebfff;
 }
 
 #arena-spectator-box {
