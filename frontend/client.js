@@ -24,12 +24,11 @@ const arenaTurnEndBtnEl = document.getElementById("arena-turn-end-btn");
 const openKifuListBtnEl = document.getElementById("open-kifu-list-btn");
 const kifuListScreenEl = document.getElementById("kifu-list-screen");
 const kifuListEl = document.getElementById("kifu-list");
-const kifuListBackBtnEl = document.getElementById("kifu-list-back-btn");
+const kifuListBackLinkEl = document.getElementById("kifu-list-back-link");
 const kifuReplayControlsEl = document.getElementById("kifu-replay-controls");
 const kifuStepPrevBtnEl = document.getElementById("kifu-step-prev-btn");
 const kifuStepNextBtnEl = document.getElementById("kifu-step-next-btn");
 const kifuStepLabelEl = document.getElementById("kifu-step-label");
-const kifuExitViewerBtnEl = document.getElementById("kifu-exit-viewer-btn");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
@@ -1941,14 +1940,17 @@ function renderKifuStep() {
                 const label = Number.isFinite(index) ? `${index + 1}文字目` : "文字";
                 const message = `${actorName} が ${label} をオープンしました。`;
                 pushArenaRoomLog(replayRoomId, team || "game-global", "character_opened", message, action.timestamp || Date.now());
+                pushArenaRoomLog(replayRoomId, "game-global", "character_opened", message, action.timestamp || Date.now());
             } else if (actionType === "answer") {
                 const answerText = String(payload.answer_text || "");
                 const judgeText = payload.is_correct === true ? "正解" : payload.is_correct === false ? "誤答" : "判定待ち";
                 const message = `${actorName} が「${answerText}」とアンサーしました（${judgeText}）。`;
                 pushArenaRoomLog(replayRoomId, team || "game-global", "answer_attempt", message, action.timestamp || Date.now());
+                pushArenaRoomLog(replayRoomId, "game-global", "answer_attempt", message, action.timestamp || Date.now());
             } else if (actionType === "turn_end") {
                 const message = `${actorName} がターンエンドしました。`;
                 pushArenaRoomLog(replayRoomId, team || "game-global", "turn_changed", message, action.timestamp || Date.now());
+                pushArenaRoomLog(replayRoomId, "game-global", "turn_changed", message, action.timestamp || Date.now());
             }
         });
     }
@@ -1958,6 +1960,17 @@ function renderKifuStep() {
     updateArenaAnswerFormVisibility();
     updateQuestionVisibilityButton();
     renderArenaLogsForRoom(replayRoomId, { forceScrollToBottom: true });
+    ["game-chat-log-game-global", "game-chat-log-team-left", "game-chat-log-team-right"].forEach((logId) => {
+        const logEl = document.getElementById(logId);
+        if (!logEl) return;
+        logEl.querySelectorAll(".event-log-item").forEach((itemEl) => {
+            itemEl.classList.remove("kifu-log-current");
+        });
+        const items = logEl.querySelectorAll(".event-log-item");
+        if (items.length > 0) {
+            items[items.length - 1].classList.add("kifu-log-current");
+        }
+    });
 }
 
 function enterKifuViewer(detail) {
@@ -4052,8 +4065,15 @@ openKifuListBtnEl?.addEventListener("click", async () => {
     }
 });
 
-kifuListBackBtnEl?.addEventListener("click", () => {
+kifuListBackLinkEl?.addEventListener("click", () => {
     showWaitingRoomScreen();
+});
+
+kifuListBackLinkEl?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        showWaitingRoomScreen();
+    }
 });
 
 kifuStepPrevBtnEl?.addEventListener("click", () => {
@@ -4064,10 +4084,6 @@ kifuStepPrevBtnEl?.addEventListener("click", () => {
 kifuStepNextBtnEl?.addEventListener("click", () => {
     currentKifuStepIndex = Math.min(Math.max(0, currentKifuSteps.length - 1), currentKifuStepIndex + 1);
     renderKifuStep();
-});
-
-kifuExitViewerBtnEl?.addEventListener("click", () => {
-    exitKifuViewerToList();
 });
 
 function showRulebookModal(triggerEl = null) {

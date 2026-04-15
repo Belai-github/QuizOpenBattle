@@ -137,6 +137,7 @@ button:hover {
     width: auto;
     min-height: 32px;
     margin-top: 0;
+    margin-right: 10px;
     padding: 6px 12px;
     border-radius: 999px;
     font-size: 0.76rem;
@@ -160,15 +161,34 @@ button:hover {
 }
 
 .kifu-list-header {
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 12px;
     margin-bottom: 12px;
+    min-height: 30px;
 }
 
 .kifu-list-header h3 {
     margin: 0;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+}
+
+#kifu-list-back-link {
+    color: #374151;
+    font-size: 0.95rem;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+}
+
+#kifu-list-back-link:hover {
+    text-decoration: underline;
 }
 
 .kifu-list {
@@ -241,6 +261,14 @@ button:hover {
     text-align: center;
     font-size: 0.8rem;
     font-weight: 700;
+}
+
+.event-log-item.kifu-log-current .event-log-message,
+.event-log-item.kifu-log-current .event-log-chat-body,
+.event-log-item.kifu-log-current .event-log-system-body,
+.event-log-item.kifu-log-current .event-log-chat-name,
+.event-log-item.kifu-log-current .event-log-system-name {
+    font-weight: 800;
 }
 
 body[data-app-mode="kifu"] .chat-compose {
