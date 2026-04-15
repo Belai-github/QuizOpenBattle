@@ -665,25 +665,37 @@ body.modal-open #arena-question-text .arena-question-line {
 #arena-room-title {
     margin: 0 0 12px;
     font-size: 1.1rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 #arena-board-layout {
     display: grid;
     grid-template-columns: 1fr;
     gap: 10px;
+    min-width: 0;
 }
 
 /* モバイルでは問題文を最上段に固定する */
 #arena-question-board {
     order: 1;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 #arena-player-left {
     order: 2;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 #arena-player-right {
     order: 3;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .arena-player-box .chat-box:not(.hidden) {
@@ -814,10 +826,21 @@ body.modal-open #arena-question-text .arena-question-line {
 #arena-spectator-list {
     margin: 0;
     padding-left: 18px;
+    min-width: 0;
+    width: 100%;
     max-height: 120px;
     overflow-y: auto;
     overflow-x: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     padding-right: 4px;
+}
+
+#arena-player-left-list li,
+#arena-player-right-list li,
+#arena-spectator-list li {
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 #arena-question-board {
@@ -836,12 +859,15 @@ body.modal-open #arena-question-text .arena-question-line {
 #arena-progress-announcement {
     margin: 0;
     width: 100%;
+    min-width: 0;
     text-align: center;
     color: #dc2626;
     font-weight: 700;
     font-size: 0.95rem;
     line-height: 1.35;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 #arena-question-text {
