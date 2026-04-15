@@ -812,13 +812,51 @@ button:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1em;
-    padding: 0.06em 0.04em;
+    width: 1.22em;
+    height: 1.22em;
+    flex: 0 0 1.22em;
+    min-width: 1.22em;
+    padding: 0;
     border-radius: 6px;
+    font-size: 0.84em;
+    line-height: 1;
     cursor: default;
     user-select: none;
     transition: transform 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
     transform-origin: center;
+}
+
+.arena-question-char.is-mask-token {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.22em;
+    border: none;
+    background: #64748b;
+    color: transparent;
+    box-shadow: 0 4px 10px rgba(30, 41, 59, 0.28);
+}
+
+.arena-question-char.is-mask-token::before {
+    content: attr(data-token-label);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: #ffffff;
+    font-size: 0.56em;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.arena-question-char.is-mask-token.is-owned-left {
+    background: #ef4444;
+    box-shadow: 0 4px 10px rgba(185, 28, 28, 0.28);
+}
+
+.arena-question-char.is-mask-token.is-owned-right {
+    background: #3b82f6;
+    box-shadow: 0 4px 10px rgba(29, 78, 216, 0.28);
 }
 
 .arena-question-char[data-char-index] {
@@ -832,6 +870,14 @@ button:hover {
 .arena-question-char.is-selectable:hover {
     background: #e2e8f0;
     transform: scale(1.1);
+}
+
+.arena-question-char.is-mask-token.is-selectable:hover {
+    filter: brightness(1.06);
+}
+
+.arena-question-char.is-mask-token:hover::before {
+    color: #111827;
 }
 
 .arena-question-char:focus-visible {

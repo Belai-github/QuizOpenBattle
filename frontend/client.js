@@ -28,9 +28,10 @@ const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
+const QUESTIONER_VIEW_MODE_CYCLE = ["all", "team-left", "team-right"];
 const DEBUG_VIEWPORT_OVERLAY_ENABLED = true;
 let currentArenaQuestionRawText = "";
-let questionerShowRawQuestionText = false;
+let questionerViewMode = "all";
 const selectedArenaQuestionCharIndexes = new Set();
 let lastAutoSelectedQuestionKey = null;
 const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
@@ -342,9 +343,9 @@ function showGameArenaScreen() {
     document.getElementById("waiting-room-screen").style.display = "none";
     document.getElementById("game-arena-screen").style.display = "block";
 
-    // 出題者は部屋に入った直後のみ、問題文表示を初期状態にする。
+    // 出題者は部屋に入った直後のみ、全開示表示を初期状態にする。
     if (!wasInGameArena && userRole === "questioner") {
-        questionerShowRawQuestionText = true;
+        questionerViewMode = "all";
     }
 
     updateQuestionVisibilityButton();
@@ -359,14 +360,23 @@ function updateQuestionVisibilityButton() {
     toggleQuestionVisibilityBtnEl.disabled = !canToggle;
 
     if (!canToggle) {
-        toggleQuestionVisibilityBtnEl.textContent = "問題文表示";
-        toggleQuestionVisibilityBtnEl.title = "伏せ字と問題文表示を切り替え";
+        toggleQuestionVisibilityBtnEl.textContent = "表示切替";
+        toggleQuestionVisibilityBtnEl.title = "表示視点を切り替え";
         return;
     }
 
-    const isRawVisible = questionerShowRawQuestionText;
-    toggleQuestionVisibilityBtnEl.textContent = isRawVisible ? "伏せ字表示" : "問題文表示";
-    toggleQuestionVisibilityBtnEl.title = isRawVisible ? "伏せ字表示に切り替え" : "問題文表示に切り替え";
+    const modeLabels = {
+        all: "全開示",
+        "team-left": "左視点",
+        "team-right": "右視点",
+    };
+
+    const currentIndex = QUESTIONER_VIEW_MODE_CYCLE.indexOf(questionerViewMode);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextMode = QUESTIONER_VIEW_MODE_CYCLE[(safeIndex + 1) % QUESTIONER_VIEW_MODE_CYCLE.length];
+
+    toggleQuestionVisibilityBtnEl.textContent = modeLabels[questionerViewMode] || modeLabels.all;
+    toggleQuestionVisibilityBtnEl.title = `表示視点切替（次: ${modeLabels[nextMode]}）`;
 }
 
 function updateStartGameButtonVisibility(currentRoom) {
@@ -618,9 +628,12 @@ function getArenaCharsPerLine() {
     const availableWidth = Math.max(boardEl.clientWidth - horizontalPadding, 40);
 
     // 実際の描画スタイル（padding含む）で1文字幅を測る。
+    const totalChars = Math.max(getNormalizedArenaQuestionChars().length, 1);
+    const maxDigits = Math.max(String(totalChars).length, 1);
     const probeCharEl = document.createElement("span");
-    probeCharEl.className = "arena-question-char";
-    probeCharEl.textContent = ARENA_MASK_CHAR;
+    probeCharEl.className = "arena-question-char is-mask-token";
+    probeCharEl.dataset.tokenLabel = "8".repeat(maxDigits);
+    probeCharEl.textContent = "";
     probeCharEl.style.visibility = "hidden";
     probeCharEl.style.position = "absolute";
     probeCharEl.style.left = "-9999px";
@@ -690,14 +703,26 @@ function buildArenaQuestionRows(charsPerLine) {
     }
 
     const lineLimit = Number.isFinite(charsPerLine) ? Math.max(Math.floor(charsPerLine), ARENA_MIN_CHARS_PER_LINE) : 10;
-    const shouldMaskForQuestioner = userRole === "questioner" && !questionerShowRawQuestionText;
-    const renderChars = shouldMaskForQuestioner ? normalized.map(() => ARENA_MASK_CHAR) : normalized;
 
     const rows = [];
-    for (let i = 0; i < renderChars.length; i += lineLimit) {
-        rows.push(renderChars.slice(i, i + lineLimit));
+    for (let i = 0; i < normalized.length; i += lineLimit) {
+        rows.push(normalized.slice(i, i + lineLimit));
     }
     return rows;
+}
+
+function getEffectiveQuestionViewerRole() {
+    if (userRole !== "questioner") {
+        return userRole;
+    }
+
+    if (questionerViewMode === "team-left") {
+        return "team-left";
+    }
+    if (questionerViewMode === "team-right") {
+        return "team-right";
+    }
+    return "questioner";
 }
 
 function getOpenedByTeamMap() {
@@ -711,26 +736,56 @@ function getOpenedByTeamMap() {
 function getDisplayCharForIndex(originalChar, index) {
     const openedByTeam = getOpenedByTeamMap();
     const owner = openedByTeam[String(index)];
+    const tokenNumberText = String(index + 1);
+    const viewerRole = getEffectiveQuestionViewerRole();
 
-    if (!owner || owner === "yakumono") {
-        return originalChar;
+    if (viewerRole === "questioner") {
+        return {
+            text: originalChar,
+            tokenVariant: null,
+        };
     }
 
-    const isQuestioner = userRole === "questioner";
-    const canSeeOriginal = isQuestioner || owner === userRole;
+    if (!owner) {
+        return {
+            text: tokenNumberText,
+            tokenVariant: "neutral",
+        };
+    }
+
+    if (owner === "yakumono") {
+        return {
+            text: originalChar,
+            tokenVariant: null,
+        };
+    }
+
+    const canSeeOriginal = owner === viewerRole;
     if (canSeeOriginal) {
-        return originalChar;
+        return {
+            text: originalChar,
+            tokenVariant: null,
+        };
     }
 
-    // 相手陣営がオープンした文字は相手色で表示する
+    // 相手陣営が取得した文字は色付き番号タイルで表示する
     if (owner === "team-left") {
-        return "🟥";
+        return {
+            text: tokenNumberText,
+            tokenVariant: "left",
+        };
     }
     if (owner === "team-right") {
-        return "🟦";
+        return {
+            text: tokenNumberText,
+            tokenVariant: "right",
+        };
     }
 
-    return originalChar;
+    return {
+        text: tokenNumberText,
+        tokenVariant: "neutral",
+    };
 }
 
 function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
@@ -772,12 +827,23 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
 
         rowChars.forEach((char) => {
             const isOpened = Boolean(openedByTeam[String(globalIndex)]);
-            const displayChar = getDisplayCharForIndex(char, globalIndex);
+            const displayInfo = getDisplayCharForIndex(char, globalIndex);
             const charEl = document.createElement("span");
             charEl.className = "arena-question-char";
             charEl.setAttribute("aria-label", `文字 ${globalIndex + 1}`);
             charEl.dataset.charIndex = String(globalIndex);
-            charEl.textContent = displayChar;
+            charEl.textContent = displayInfo.text;
+
+            if (displayInfo.tokenVariant) {
+                charEl.classList.add("is-mask-token");
+                charEl.dataset.tokenLabel = displayInfo.text;
+                charEl.textContent = "";
+                if (displayInfo.tokenVariant === "left") {
+                    charEl.classList.add("is-owned-left");
+                } else if (displayInfo.tokenVariant === "right") {
+                    charEl.classList.add("is-owned-right");
+                }
+            }
 
             const canClickInSetup = selectableForSetup;
             const canClickInOpen = selectableForOpen && !isOpened;
@@ -829,7 +895,7 @@ function renderArena(currentRoom) {
     if (!currentRoom) {
         titleEl.textContent = "出題者: -";
         currentArenaQuestionRawText = "";
-        questionerShowRawQuestionText = false;
+        questionerViewMode = "all";
         selectedArenaQuestionCharIndexes.clear();
         lastAutoSelectedQuestionKey = null;
         questionEl.textContent = "問題文を準備中...";
@@ -1400,7 +1466,9 @@ toggleQuestionVisibilityBtnEl?.addEventListener("click", () => {
         return;
     }
 
-    questionerShowRawQuestionText = !questionerShowRawQuestionText;
+    const currentIndex = QUESTIONER_VIEW_MODE_CYCLE.indexOf(questionerViewMode);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    questionerViewMode = QUESTIONER_VIEW_MODE_CYCLE[(safeIndex + 1) % QUESTIONER_VIEW_MODE_CYCLE.length];
     updateQuestionVisibilityButton();
     renderArenaQuestionText();
 });
