@@ -194,7 +194,7 @@ document.getElementById("submit-question-btn").addEventListener("click", () => {
 });
 
 document.getElementById("question-box").addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" || event.isComposing) return;
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     submitQuestion();
 });

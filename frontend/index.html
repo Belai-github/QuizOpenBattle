@@ -19,7 +19,10 @@
     <div id="game-screen" style="display: none;">
         <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
 
-        <input type="text" id="question-box" placeholder="問題を入力...">
+        <div class="question-input-row">
+            <span class="question-prefix">Q.</span>
+            <textarea id="question-box" rows="3" placeholder="問題を入力..."></textarea>
+        </div>
         <button id="submit-question-btn">出題</button>
 
         <hr>
