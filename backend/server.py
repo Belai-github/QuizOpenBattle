@@ -443,6 +443,14 @@ class QuizGameManager:
         result_label = "正解" if is_correct else "誤答"
         return f"{team_label}の解答は{result_label}でした。"
 
+    def _format_game_finished_message(self, winner: str | None):
+        if winner == "team-left":
+            return "ゲーム終了！先攻の勝利"
+        elif winner == "team-right":
+            return "ゲーム終了！後攻の勝利"
+        else:
+            return "ゲーム終了！引き分け"
+
     def _mask_answer_text_for_viewer(self, message: str):
         text = str(message or "")
         if text == "":
@@ -744,11 +752,8 @@ class QuizGameManager:
             event_type="private_notice",
             event_room_id=room_owner_id,
         )
-        await self.broadcast_state(
-            public_info=f"ゲーム終了！{winner_label}",
-            event_type="game_finished",
-            event_room_id=room_owner_id,
-        )
+        game_finished_message = self._format_game_finished_message(winner)
+        await self._broadcast_game_finished_message(room_owner_id, room, game_finished_message)
 
     async def _finalize_participant_disconnect_after_grace(
         self,
@@ -843,6 +848,25 @@ class QuizGameManager:
 
     async def _broadcast_turn_changed_logs(self, owner_id: str, room: dict, message: str):
         await self._broadcast_team_log_message(owner_id, room, "turn_changed", message)
+
+    async def _broadcast_game_finished_message(self, owner_id: str, room: dict, message: str):
+        """ゲーム終了ログをすべての参加者に1回だけ送信"""
+        left_ids = set(room.get("left_participants", set()))
+        right_ids = set(room.get("right_participants", set()))
+        spectator_ids = set(room.get("spectators", set()))
+        questioner_ids = {owner_id}
+
+        # すべてのクライアントをセットでまとめて、重複を避ける
+        all_recipient_ids = left_ids | right_ids | spectator_ids | questioner_ids
+
+        await self.broadcast_state(
+            public_info="",
+            event_type="game_finished",
+            event_message=message,
+            event_chat_type="game-result",
+            event_room_id=owner_id,
+            event_recipient_ids=all_recipient_ids,
+        )
 
     async def request_open_vote(self, client_id: str, char_index):
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -1030,6 +1054,7 @@ class QuizGameManager:
                     event_type="turn_changed",
                     event_room_id=owner_id,
                 )
+                await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
             return
 
         max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
@@ -1244,11 +1269,13 @@ class QuizGameManager:
                 return
 
             next_team = result.get("current_turn_team")
+            turn_changed_message = self._format_turn_changed_message(next_team)
             await self.broadcast_state(
-                public_info=self._format_turn_changed_message(next_team),
+                public_info=turn_changed_message,
                 event_type="turn_changed",
                 event_room_id=owner_id,
             )
+            await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
             await self.send_private_info(client_id, "ターンエンドしました。")
             return
 
@@ -1365,11 +1392,13 @@ class QuizGameManager:
             )
 
             next_team = result.get("current_turn_team")
+            turn_changed_message = self._format_turn_changed_message(next_team)
             await self.broadcast_state(
-                public_info=self._format_turn_changed_message(next_team),
+                public_info=turn_changed_message,
                 event_type="turn_changed",
                 event_room_id=owner_id,
             )
+            await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
             return
 
         max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
@@ -1570,44 +1599,8 @@ class QuizGameManager:
         )
 
     async def submit_answer(self, client_id: str, is_correct: bool):
-        """解答を提出するアクション"""
-        ctx = resolve_client_room_context(self.rooms, client_id)
-        if ctx is None:
-            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
-            return
-
-        room = ctx["room"]
-        owner_id = ctx["room_owner_id"]
-
-        # 出題者のみが正誤を判定できる
-        if ctx["role"] != "owner":
-            await self.send_private_info(client_id, "解答の正誤判定は出題者のみ実行できます。")
-            return
-
-        result = apply_submit_answer(room, room["game"]["current_turn_team"], is_correct)
-        if not result.get("ok"):
-            await self.send_private_info(client_id, result.get("error", "解答の提出に失敗しました。"))
-            return
-
-        current_team_name = room["game"]["current_turn_team"]
-        team_label = "先攻" if current_team_name == "team-left" else "後攻"
-        status_text = "正解！" if is_correct else "誤答。"
-
-        await self.broadcast_state(
-            public_info=f"{team_label}が解答を提出しました。{status_text}",
-            event_type="answer_submitted",
-            event_room_id=owner_id,
-        )
-
-        # ゲーム終了判定
-        if result.get("game_status") == "finished":
-            winner = result.get("winner")
-            winner_label = "先攻" if winner == "team-left" else "後攻"
-            await self.broadcast_state(
-                public_info=f"ゲーム終了！{winner_label}が勝利しました！",
-                event_type="game_finished",
-                event_room_id=owner_id,
-            )
+        """レガシーメソッド: 実際の判定処理はjudge_answer()に委譲"""
+        await self.judge_answer(client_id, is_correct)
 
     async def end_turn(self, client_id: str):
         """互換のため残す: 実体はターンエンド提案処理"""
@@ -1861,26 +1854,13 @@ class QuizGameManager:
                 event_type="turn_changed",
                 event_room_id=owner_id,
             )
+            await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
 
         # Only send game_finished event if not already handled by private_notice
         if result.get("game_status") == "finished":
-            # If right team failed after left answered correctly, already handled in private_notice
-            if result.get("winner") == "team-left" and team == "team-right" and not is_correct:
-                pass  # Already shown in private_notice, no need for separate game_finished event
-            else:
-                winner = result.get("winner")
-                if winner == "team-left":
-                    winner_label = "先攻"
-                elif winner == "team-right":
-                    winner_label = "後攻"
-                else:
-                    winner_label = "引き分け"
-
-                await self.broadcast_state(
-                    public_info=f"ゲーム終了！{winner_label}",
-                    event_type="game_finished",
-                    event_room_id=owner_id,
-                )
+            winner = result.get("winner")
+            game_finished_message = self._format_game_finished_message(winner)
+            await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
 
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         # 同一 client_id の二重接続は許可しない（別タブ重複やなりすまし抑止）。
