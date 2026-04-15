@@ -10,7 +10,12 @@ from google import genai
 from dotenv import load_dotenv
 
 try:
-    from backend.pronpt import get_quiz_prompt, get_judge_prompt
+    from backend.pronpt import (
+        get_judge_system_prompt,
+        get_judge_user_prompt,
+        get_quiz_system_prompt,
+        get_quiz_user_prompt,
+    )
     from backend.judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
     from backend.api_history import append_api_history
     from backend.model_catalog import (
@@ -21,7 +26,12 @@ try:
         normalize_model_id as normalize_model_id_from_catalog,
     )
 except ImportError:
-    from pronpt import get_quiz_prompt, get_judge_prompt
+    from pronpt import (
+        get_judge_system_prompt,
+        get_judge_user_prompt,
+        get_quiz_system_prompt,
+        get_quiz_user_prompt,
+    )
     from judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
     from api_history import append_api_history
     from model_catalog import (
@@ -177,7 +187,8 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
     """Gemini APIを叩いてクイズを1問生成する非同期関数"""
 
     normalized_difficulty = normalize_difficulty(difficulty)
-    prompt = get_quiz_prompt(genre, normalized_difficulty)
+    system_prompt = get_quiz_system_prompt
+    user_prompt = get_quiz_user_prompt(genre, normalized_difficulty)
     selected_model_id = normalize_model_id(model_id)
     request_started_at = time.time()
 
@@ -188,11 +199,11 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                 messages=[
                     {
                         "role": "system",
-                        "content": "あなたはクイズ作成アシスタントです。必ずJSONオブジェクトのみを返してください。",
+                        "content": system_prompt,
                     },
                     {
                         "role": "user",
-                        "content": prompt,
+                        "content": user_prompt,
                     },
                 ],
                 temperature=QUIZ_GENERATION_TEMPERATURE,
@@ -207,7 +218,10 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                     "model_id": selected_model_id,
                     "status": "success",
                     "duration_ms": int((time.time() - request_started_at) * 1000),
-                    "prompt": prompt,
+                    "prompt": {
+                        "system": system_prompt,
+                        "user": user_prompt,
+                    },
                     "request": {
                         "genre": genre,
                         "difficulty": normalized_difficulty,
@@ -228,7 +242,10 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                     "model_id": selected_model_id,
                     "status": "error",
                     "duration_ms": int((time.time() - request_started_at) * 1000),
-                    "prompt": prompt,
+                    "prompt": {
+                        "system": system_prompt,
+                        "user": user_prompt,
+                    },
                     "request": {
                         "genre": genre,
                         "difficulty": normalized_difficulty,
@@ -273,10 +290,11 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
         # 新しいSDKの非同期メソッド (client.aio) を使用して呼び出し
         response = await gemini_client.aio.models.generate_content(
             model=selected_model_id,
-            contents=prompt,
+            contents=user_prompt,
             config={
                 "temperature": QUIZ_GENERATION_TEMPERATURE,
                 "response_mime_type": "application/json",
+                "system_instruction": system_prompt,
                 "response_schema": {
                     "type": "object",
                     "properties": {
@@ -303,7 +321,10 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                 "model_id": selected_model_id,
                 "status": "success",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": prompt,
+                "prompt": {
+                    "system": system_prompt,
+                    "user": user_prompt,
+                },
                 "request": {
                     "genre": genre,
                     "difficulty": normalized_difficulty,
@@ -327,7 +348,10 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
                 "model_id": selected_model_id,
                 "status": "error",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": prompt,
+                "prompt": {
+                    "system": system_prompt,
+                    "user": user_prompt,
+                },
                 "request": {
                     "genre": genre,
                     "difficulty": normalized_difficulty,
@@ -374,6 +398,7 @@ async def check_answer_async(expected_answer: str, user_answer: str):
     """プレイヤーの解答が正解と意味的に同じか判定する非同期関数"""
 
     request_started_at = time.time()
+    system_prompt = get_judge_system_prompt
     if expected_answer == user_answer:
         append_api_history(
             {
@@ -382,7 +407,10 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                 "model_id": "local-equal-check",
                 "status": "success",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": get_judge_prompt(expected_answer, user_answer),
+                "prompt": {
+                    "system": system_prompt,
+                    "user": get_judge_user_prompt(expected_answer, user_answer),
+                },
                 "request": {
                     "expected_answer": expected_answer,
                     "user_answer": user_answer,
@@ -401,7 +429,7 @@ async def check_answer_async(expected_answer: str, user_answer: str):
         return True
 
     selected_model_id = get_answer_judgement_model_id()
-    prompt = get_judge_prompt(expected_answer, user_answer)
+    user_prompt = get_judge_user_prompt(expected_answer, user_answer)
     cached_result = get_cached_answer_judgement(
         expected_answer,
         user_answer,
@@ -416,7 +444,10 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                 "model_id": selected_model_id,
                 "status": "cached",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": prompt,
+                "prompt": {
+                    "system": system_prompt,
+                    "user": user_prompt,
+                },
                 "request": {
                     "expected_answer": expected_answer,
                     "user_answer": user_answer,
@@ -437,8 +468,11 @@ async def check_answer_async(expected_answer: str, user_answer: str):
     try:
         response = await gemini_client.aio.models.generate_content(
             model=selected_model_id,
-            contents=prompt,
-            config={"temperature": ANSWER_JUDGEMENT_TEMPERATURE},
+            contents=user_prompt,
+            config={
+                "temperature": ANSWER_JUDGEMENT_TEMPERATURE,
+                "system_instruction": system_prompt,
+            },
         )
         response_text = response.text or ""
         result_text = response_text.strip().lower()
@@ -459,7 +493,10 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                 "model_id": selected_model_id,
                 "status": "success",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": prompt,
+                "prompt": {
+                    "system": system_prompt,
+                    "user": user_prompt,
+                },
                 "request": {
                     "expected_answer": expected_answer,
                     "user_answer": user_answer,
@@ -483,7 +520,10 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                 "model_id": selected_model_id,
                 "status": "error",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": prompt,
+                "prompt": {
+                    "system": system_prompt,
+                    "user": user_prompt,
+                },
                 "request": {
                     "expected_answer": expected_answer,
                     "user_answer": user_answer,
@@ -508,7 +548,10 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                     "model_id": "local-fallback",
                     "status": "fallback",
                     "duration_ms": int((time.time() - request_started_at) * 1000),
-                    "prompt": prompt,
+                    "prompt": {
+                        "system": system_prompt,
+                        "user": user_prompt,
+                    },
                     "request": {
                         "expected_answer": expected_answer,
                         "user_answer": user_answer,
@@ -535,7 +578,10 @@ async def check_answer_async(expected_answer: str, user_answer: str):
                 "model_id": "local-fallback",
                 "status": "fallback",
                 "duration_ms": int((time.time() - request_started_at) * 1000),
-                "prompt": prompt,
+                "prompt": {
+                    "system": system_prompt,
+                    "user": user_prompt,
+                },
                 "request": {
                     "expected_answer": expected_answer,
                     "user_answer": user_answer,
