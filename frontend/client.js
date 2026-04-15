@@ -952,13 +952,12 @@ function updateArenaAnswerFormVisibility() {
     const canSubmit = canSubmitArenaAnswer();
     const canEndTurn = canRequestTurnEnd();
     const teamParticipantCount = getCurrentTeamParticipantCount();
-    const isProposalMode = teamParticipantCount > 1;
     arenaAnswerBoxEl.classList.toggle("hidden", !canView);
     arenaAnswerInputEl.disabled = !canSubmit;
     arenaAnswerSubmitBtnEl.disabled = !canSubmit;
     arenaTurnEndBtnEl.disabled = !canEndTurn;
-    arenaAnswerSubmitBtnEl.textContent = isProposalMode ? "解答提案" : "解答";
-    arenaAnswerSubmitBtnEl.setAttribute("aria-label", isProposalMode ? "解答提案" : "解答送信");
+    arenaAnswerSubmitBtnEl.textContent = "アンサー";
+    arenaAnswerSubmitBtnEl.setAttribute("aria-label", "アンサー");
 
     if (!canView) {
         arenaAnswerInputEl.value = "";

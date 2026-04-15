@@ -7,6 +7,7 @@
     --primary: #0f766e;
     --primary-hover: #115e59;
     --danger-muted: #dc2626;
+    --arena-team-log-height: 300px;
 }
 
 * {
@@ -870,13 +871,26 @@ body.modal-open #arena-question-text .arena-question-line {
     min-height: 0;
 }
 
+.arena-player-box .log-scroll-shell {
+    flex: 0 0 var(--arena-team-log-height);
+    min-height: var(--arena-team-log-height);
+    max-height: var(--arena-team-log-height);
+    display: flex;
+    flex-direction: column;
+}
+
 .arena-player-box .chat-log {
-    height: 240px;
-    min-height: 180px;
-    max-height: 240px;
+    height: 100%;
+    min-height: 100%;
+    max-height: 100%;
     flex: 1 1 auto;
     overflow-y: auto;
     overflow-x: hidden;
+    margin-bottom: 0;
+}
+
+.arena-player-box .chat-compose {
+    margin-top: 8px;
 }
 
 #game-chat-log-team-left {
@@ -934,9 +948,9 @@ body.modal-open #arena-question-text .arena-question-line {
 
 #game-chat-log-team-left,
 #game-chat-log-team-right {
-    height: 240px;
-    min-height: 240px;
-    max-height: 240px;
+    height: 100%;
+    min-height: 100%;
+    max-height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -1469,9 +1483,9 @@ body[data-room-role="spectator"] #arena-answer-box {
 
     #arena-player-left .chat-box.read-only .chat-log,
     #arena-player-right .chat-box.read-only .chat-log {
-        height: 230px;
-        min-height: 230px;
-        max-height: 230px;
+        height: 100%;
+        min-height: 100%;
+        max-height: 100%;
     }
 
     #arena-player-left,
