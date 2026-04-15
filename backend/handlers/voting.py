@@ -7,9 +7,19 @@ from backend.game_logic import (
     resolve_chat_recipients,
     resolve_client_room_context,
 )
+from backend.schemas import (
+    IntentionalDrawVoteRequestMessage,
+    IntentionalDrawVoteResponseMessage,
+    OpenVoteRequestMessage,
+    OpenVoteResponseMessage,
+    TurnEndAttemptMessage,
+    TurnEndVoteResponseMessage,
+    AnswerVoteResponseMessage,
+)
 
 
-async def request_open_vote(manager, client_id: str, char_index):
+async def request_open_vote(manager, client_id: str, payload: OpenVoteRequestMessage):
+    char_index = payload.char_index
     ctx = resolve_client_room_context(manager.rooms, client_id)
     if ctx is None:
         await manager.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -187,7 +197,9 @@ async def request_open_vote(manager, client_id: str, char_index):
         await manager.send_private_info(client_id, "提案しました。")
 
 
-async def respond_open_vote(manager, client_id: str, vote_id: str, approve: bool):
+async def respond_open_vote(manager, client_id: str, payload: OpenVoteResponseMessage):
+    vote_id = payload.vote_id
+    approve = payload.approve
     ctx = resolve_client_room_context(manager.rooms, client_id)
     if ctx is None:
         await manager.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -339,7 +351,9 @@ async def respond_open_vote(manager, client_id: str, vote_id: str, approve: bool
         )
 
 
-async def respond_answer_vote(manager, client_id: str, vote_id: str, approve: bool):
+async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteResponseMessage):
+    vote_id = payload.vote_id
+    approve = payload.approve
     ctx = resolve_client_room_context(manager.rooms, client_id)
     if ctx is None:
         await manager.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -515,7 +529,7 @@ async def respond_answer_vote(manager, client_id: str, vote_id: str, approve: bo
         return
 
 
-async def request_turn_end_attempt(manager, client_id: str):
+async def request_turn_end_attempt(manager, client_id: str, payload: TurnEndAttemptMessage):
     ctx = resolve_client_room_context(manager.rooms, client_id)
     if ctx is None:
         await manager.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -641,7 +655,7 @@ async def request_turn_end_attempt(manager, client_id: str):
     await manager.send_private_info(client_id, "提案しました。")
 
 
-async def request_intentional_draw_vote(manager, client_id: str):
+async def request_intentional_draw_vote(manager, client_id: str, payload: IntentionalDrawVoteRequestMessage):
     ctx = resolve_client_room_context(manager.rooms, client_id)
     if ctx is None:
         await manager.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -720,7 +734,9 @@ async def request_intentional_draw_vote(manager, client_id: str):
     await manager.send_private_info(client_id, "フルオープン決着を提案しました。")
 
 
-async def respond_intentional_draw_vote(manager, client_id: str, vote_id: str, approve: bool):
+async def respond_intentional_draw_vote(manager, client_id: str, payload: IntentionalDrawVoteResponseMessage):
+    vote_id = payload.vote_id
+    approve = payload.approve
     ctx = resolve_client_room_context(manager.rooms, client_id)
     if ctx is None:
         await manager.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -853,7 +869,9 @@ async def respond_intentional_draw_vote(manager, client_id: str, vote_id: str, a
         return
 
 
-async def respond_turn_end_vote(manager, client_id: str, vote_id: str, approve: bool):
+async def respond_turn_end_vote(manager, client_id: str, payload: TurnEndVoteResponseMessage):
+    vote_id = payload.vote_id
+    approve = payload.approve
     ctx = resolve_client_room_context(manager.rooms, client_id)
     if ctx is None:
         await manager.send_private_info(client_id, "ゲーム部屋に参加していません。")

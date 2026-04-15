@@ -5,7 +5,9 @@ import json
 import os
 import time
 import uuid
+from typing import Any, NamedTuple
 
+from pydantic import ValidationError
 from backend.auth import WebSocketAuthManager, is_valid_client_id, sanitize_nickname
 from backend.events.formatting import (
     format_answer_attempt_message,
@@ -74,6 +76,32 @@ from backend.handlers.answering import (
 )
 from backend.handlers.chat import process_chat_message as process_chat_message_handler
 from backend.handlers.question import process_question as process_question_handler
+from backend.schemas import (
+    AnswerAttemptMessage,
+    AnswerVoteResponseMessage,
+    BaseMessage,
+    CancelQuestionMessage,
+    ChatMessage,
+    FullOpenSettlementJudgeMessage,
+    IntentionalDrawVoteRequestMessage,
+    IntentionalDrawVoteResponseMessage,
+    JudgeAnswerMessage,
+    LegacyQuestionSubmissionMessage,
+    OpenCharacterMessage,
+    OpenVoteRequestMessage,
+    OpenVoteResponseMessage,
+    QuestionSubmissionMessage,
+    RoomEntryMessage,
+    RoomExitMessage,
+    ShuffleParticipantsMessage,
+    StartGameMessage,
+    SubmitAnswerMessage,
+    SwapParticipantTeamMessage,
+    TurnEndAttemptMessage,
+    TurnEndVoteResponseMessage,
+    dump_message,
+    validate_message,
+)
 
 from backend.game_logic import (
     _normalized_question_chars,
@@ -115,6 +143,36 @@ def diag_api_log(event: str, **fields):
 
     safe_fields = {str(k): v for k, v in fields.items()}
     print(f"[quiz-diag-api] {event} {json.dumps(safe_fields, ensure_ascii=False)}")
+
+
+class MessageRoute(NamedTuple):
+    model: type[BaseMessage]
+    handler_name: str
+
+
+MESSAGE_ROUTER: dict[str, MessageRoute] = {
+    "room_exit": MessageRoute(RoomExitMessage, "exit_room"),
+    "question_submission": MessageRoute(QuestionSubmissionMessage, "process_question"),
+    "chat_message": MessageRoute(ChatMessage, "process_chat_message"),
+    "start_game": MessageRoute(StartGameMessage, "start_game"),
+    "shuffle_participants": MessageRoute(ShuffleParticipantsMessage, "shuffle_participants"),
+    "swap_participant_team": MessageRoute(SwapParticipantTeamMessage, "swap_participant_team"),
+    "open_character": MessageRoute(OpenCharacterMessage, "open_character"),
+    "open_vote_request": MessageRoute(OpenVoteRequestMessage, "request_open_vote"),
+    "open_vote_response": MessageRoute(OpenVoteResponseMessage, "respond_open_vote"),
+    "answer_vote_response": MessageRoute(AnswerVoteResponseMessage, "respond_answer_vote"),
+    "turn_end_vote_response": MessageRoute(TurnEndVoteResponseMessage, "respond_turn_end_vote"),
+    "intentional_draw_vote_request": MessageRoute(IntentionalDrawVoteRequestMessage, "request_intentional_draw_vote"),
+    "intentional_draw_vote_response": MessageRoute(IntentionalDrawVoteResponseMessage, "respond_intentional_draw_vote"),
+    "submit_answer": MessageRoute(SubmitAnswerMessage, "submit_answer"),
+    "answer_attempt": MessageRoute(AnswerAttemptMessage, "submit_answer_attempt"),
+    "judge_answer": MessageRoute(JudgeAnswerMessage, "judge_answer"),
+    "full_open_settlement_judge": MessageRoute(FullOpenSettlementJudgeMessage, "judge_full_open_settlement"),
+    "end_turn": MessageRoute(TurnEndAttemptMessage, "request_turn_end_attempt"),
+    "turn_end_attempt": MessageRoute(TurnEndAttemptMessage, "request_turn_end_attempt"),
+    "room_entry": MessageRoute(RoomEntryMessage, "join_room"),
+    "cancel_question": MessageRoute(CancelQuestionMessage, "cancel_question"),
+}
 
 
 class QuizGameManager:
@@ -905,26 +963,41 @@ class QuizGameManager:
             },
         )
 
-    async def request_open_vote(self, client_id: str, char_index):
-        return await request_open_vote_handler(self, client_id, char_index)
+    async def request_open_vote(self, client_id: str, payload: OpenVoteRequestMessage | int | None):
+        message = payload if isinstance(payload, OpenVoteRequestMessage) else OpenVoteRequestMessage(type="open_vote_request", char_index=payload)
+        return await request_open_vote_handler(self, client_id, message)
 
-    async def respond_open_vote(self, client_id: str, vote_id: str, approve: bool):
-        return await respond_open_vote_handler(self, client_id, vote_id, approve)
+    async def respond_open_vote(self, client_id: str, payload: OpenVoteResponseMessage | dict[str, Any]):
+        message = payload if isinstance(payload, OpenVoteResponseMessage) else validate_message(OpenVoteResponseMessage, payload)
+        return await respond_open_vote_handler(self, client_id, message)
 
-    async def respond_answer_vote(self, client_id: str, vote_id: str, approve: bool):
-        return await respond_answer_vote_handler(self, client_id, vote_id, approve)
+    async def respond_answer_vote(self, client_id: str, payload: AnswerVoteResponseMessage | dict[str, Any]):
+        message = payload if isinstance(payload, AnswerVoteResponseMessage) else validate_message(AnswerVoteResponseMessage, payload)
+        return await respond_answer_vote_handler(self, client_id, message)
 
-    async def request_turn_end_attempt(self, client_id: str):
-        return await request_turn_end_attempt_handler(self, client_id)
+    async def request_turn_end_attempt(self, client_id: str, payload: TurnEndAttemptMessage | None = None):
+        message = payload if isinstance(payload, TurnEndAttemptMessage) else TurnEndAttemptMessage(type="turn_end_attempt")
+        return await request_turn_end_attempt_handler(self, client_id, message)
 
-    async def request_intentional_draw_vote(self, client_id: str):
-        return await request_intentional_draw_vote_handler(self, client_id)
+    async def request_intentional_draw_vote(self, client_id: str, payload: IntentionalDrawVoteRequestMessage | None = None):
+        message = (
+            payload
+            if isinstance(payload, IntentionalDrawVoteRequestMessage)
+            else IntentionalDrawVoteRequestMessage(type="intentional_draw_vote_request")
+        )
+        return await request_intentional_draw_vote_handler(self, client_id, message)
 
-    async def respond_intentional_draw_vote(self, client_id: str, vote_id: str, approve: bool):
-        return await respond_intentional_draw_vote_handler(self, client_id, vote_id, approve)
+    async def respond_intentional_draw_vote(self, client_id: str, payload: IntentionalDrawVoteResponseMessage | dict[str, Any]):
+        message = (
+            payload
+            if isinstance(payload, IntentionalDrawVoteResponseMessage)
+            else validate_message(IntentionalDrawVoteResponseMessage, payload)
+        )
+        return await respond_intentional_draw_vote_handler(self, client_id, message)
 
-    async def respond_turn_end_vote(self, client_id: str, vote_id: str, approve: bool):
-        return await respond_turn_end_vote_handler(self, client_id, vote_id, approve)
+    async def respond_turn_end_vote(self, client_id: str, payload: TurnEndVoteResponseMessage | dict[str, Any]):
+        message = payload if isinstance(payload, TurnEndVoteResponseMessage) else validate_message(TurnEndVoteResponseMessage, payload)
+        return await respond_turn_end_vote_handler(self, client_id, message)
 
     async def send_private_info(
         self,
@@ -941,17 +1014,26 @@ class QuizGameManager:
             event_type=event_type,
         )
 
-    async def cancel_question(self, requester_id: str, room_owner_id: str):
-        return await cancel_question_handler(self, requester_id, room_owner_id)
+    async def cancel_question(self, requester_id: str, payload: CancelQuestionMessage | str):
+        message = payload if isinstance(payload, CancelQuestionMessage) else CancelQuestionMessage(type="cancel_question", room_owner_id=str(payload or "").strip())
+        return await cancel_question_handler(self, requester_id, message)
 
     def remove_client_from_all_rooms(self, client_id: str):
         return remove_client_from_all_rooms_handler(self, client_id)
 
-    async def join_room(self, client_id: str, room_owner_id: str, role: str):
-        return await join_room_handler(self, client_id, room_owner_id, role)
+    async def join_room(self, client_id: str, payload: RoomEntryMessage | dict[str, Any]):
+        message = payload if isinstance(payload, RoomEntryMessage) else validate_message(RoomEntryMessage, payload)
+        return await join_room_handler(self, client_id, message)
 
-    async def start_game(self, client_id: str, payload: dict | None = None):
-        result = apply_start_game(self.rooms, client_id, payload)
+    async def start_game(self, client_id: str, payload: StartGameMessage | dict[str, Any] | None = None):
+        if isinstance(payload, StartGameMessage):
+            payload_dict = dump_message(payload)
+        elif isinstance(payload, dict):
+            payload_dict = payload
+        else:
+            payload_dict = None
+
+        result = apply_start_game(self.rooms, client_id, payload_dict)
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "ゲーム開始に失敗しました。"))
             return
@@ -982,14 +1064,20 @@ class QuizGameManager:
             event_room_id=client_id,
         )
 
-    async def shuffle_participants(self, client_id: str):
+    async def shuffle_participants(self, client_id: str, payload: ShuffleParticipantsMessage | None = None):
         return await shuffle_participants_handler(self, client_id)
 
-    async def swap_participant_team(self, client_id: str, target_client_id: str):
-        return await swap_participant_team_handler(self, client_id, target_client_id)
+    async def swap_participant_team(self, client_id: str, payload: SwapParticipantTeamMessage | str):
+        message = (
+            payload
+            if isinstance(payload, SwapParticipantTeamMessage)
+            else SwapParticipantTeamMessage(type="swap_participant_team", target_client_id=str(payload or "").strip())
+        )
+        return await swap_participant_team_handler(self, client_id, message)
 
-    async def open_character(self, client_id: str, char_index):
+    async def open_character(self, client_id: str, payload: OpenCharacterMessage | int | None):
         """文字をオープンするアクション"""
+        char_index = payload.char_index if isinstance(payload, OpenCharacterMessage) else payload
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -1035,16 +1123,18 @@ class QuizGameManager:
             event_room_id=owner_id,
         )
 
-    async def submit_answer(self, client_id: str, is_correct: bool):
+    async def submit_answer(self, client_id: str, payload: SubmitAnswerMessage | bool):
         """レガシーメソッド: 実際の判定処理はjudge_answer()に委譲"""
-        await self.judge_answer(client_id, is_correct)
+        message = payload if isinstance(payload, SubmitAnswerMessage) else SubmitAnswerMessage(type="submit_answer", is_correct=payload)
+        await self.judge_answer(client_id, JudgeAnswerMessage(type="judge_answer", is_correct=message.is_correct))
 
     async def end_turn(self, client_id: str):
         """互換のため残す: 実体はターンエンド提案処理"""
         await self.request_turn_end_attempt(client_id)
 
-    async def submit_answer_attempt(self, client_id: str, answer_text: str):
-        return await submit_answer_attempt_handler(self, client_id, answer_text)
+    async def submit_answer_attempt(self, client_id: str, payload: AnswerAttemptMessage | str):
+        message = payload if isinstance(payload, AnswerAttemptMessage) else AnswerAttemptMessage(type="answer_attempt", answer_text=str(payload or ""))
+        return await submit_answer_attempt_handler(self, client_id, message)
 
     async def _submit_answer_attempt_impl(self, client_id: str, answer_text: str):
         """参加者が解答内容を提出するアクション"""
@@ -1323,8 +1413,9 @@ class QuizGameManager:
 
         await self.send_private_info(client_id, "提案しました。")
 
-    async def judge_answer(self, client_id: str, is_correct: bool):
-        return await judge_answer_handler(self, client_id, is_correct)
+    async def judge_answer(self, client_id: str, payload: JudgeAnswerMessage | bool):
+        message = payload if isinstance(payload, JudgeAnswerMessage) else JudgeAnswerMessage(type="judge_answer", is_correct=payload)
+        return await judge_answer_handler(self, client_id, message)
 
     async def _judge_answer_impl(self, client_id: str, is_correct: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -1350,8 +1441,25 @@ class QuizGameManager:
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "正誤判定に失敗しました。"))
 
-    async def judge_full_open_settlement(self, client_id: str, vote_id: str, left_is_correct: bool, right_is_correct: bool):
-        return await judge_full_open_settlement_handler(self, client_id, vote_id, left_is_correct, right_is_correct)
+    async def judge_full_open_settlement(
+        self,
+        client_id: str,
+        payload: FullOpenSettlementJudgeMessage | str,
+        left_is_correct: bool | None = None,
+        right_is_correct: bool | None = None,
+    ):
+        if isinstance(payload, FullOpenSettlementJudgeMessage):
+            message = payload
+        else:
+            normalized_left_is_correct = left_is_correct if left_is_correct is not None else False
+            normalized_right_is_correct = right_is_correct if right_is_correct is not None else False
+            message = FullOpenSettlementJudgeMessage(
+                type="full_open_settlement_judge",
+                vote_id=str(payload or "").strip(),
+                left_is_correct=normalized_left_is_correct,
+                right_is_correct=normalized_right_is_correct,
+            )
+        return await judge_full_open_settlement_handler(self, client_id, message)
 
     async def _judge_full_open_settlement_impl(self, client_id: str, vote_id: str, left_is_correct: bool, right_is_correct: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
@@ -1608,7 +1716,7 @@ class QuizGameManager:
                     event_room_id=client_id,
                 )
 
-    async def exit_room(self, client_id: str):
+    async def exit_room(self, client_id: str, payload: RoomExitMessage | None = None):
         ctx_before_exit = resolve_client_room_context(self.rooms, client_id)
         room_owner_id_before_exit = ctx_before_exit.get("room_owner_id") if ctx_before_exit else None
 
@@ -1649,11 +1757,12 @@ class QuizGameManager:
             if room is not None:
                 await self._evaluate_team_forfeit_if_needed(room_owner_id_before_exit, room)
 
-    async def process_question(self, player_id: str, payload: dict):
-        return await process_question_handler(self, player_id, payload)
+    async def process_question(self, player_id: str, payload: QuestionSubmissionMessage | dict[str, Any]):
+        message = payload if isinstance(payload, QuestionSubmissionMessage) else validate_message(QuestionSubmissionMessage, payload)
+        return await process_question_handler(self, player_id, message)
 
-    async def _process_question_impl(self, player_id: str, payload: dict):
-        normalized_payload = dict(payload or {})
+    async def _process_question_impl(self, player_id: str, payload: QuestionSubmissionMessage):
+        normalized_payload = dump_message(payload)
         is_ai_mode = bool(normalized_payload.get("is_ai_mode"))
         model_id = normalize_model_id(normalized_payload.get("model_id"))
         requester_name = self.nicknames.get(player_id, "ゲスト")
@@ -1850,15 +1959,16 @@ class QuizGameManager:
         if not is_ai_mode:
             await self.send_private_info(player_id, "", target_screen="game_arena")
 
-    async def process_chat_message(self, client_id: str, payload: dict):
-        return await process_chat_message_handler(self, client_id, payload)
+    async def process_chat_message(self, client_id: str, payload: ChatMessage | dict[str, Any]):
+        message = payload if isinstance(payload, ChatMessage) else validate_message(ChatMessage, payload)
+        return await process_chat_message_handler(self, client_id, message)
 
-    async def _process_chat_message_impl(self, client_id: str, payload: dict):
-        message = str(payload.get("message", "")).replace("\r\n", "\n").replace("\r", "\n").strip()
+    async def _process_chat_message_impl(self, client_id: str, payload: ChatMessage):
+        message = str(payload.message).replace("\r\n", "\n").replace("\r", "\n").strip()
         if message == "":
             return
 
-        chat_type = str(payload.get("chat_type", "lobby")).strip() or "lobby"
+        chat_type = str(payload.chat_type).strip() or "lobby"
 
         if len(message) > self.CHAT_MAX_LENGTH:
             await self.send_private_info(
@@ -1959,133 +2069,63 @@ class QuizGameManager:
         )
 
     async def process_client_payload(self, client_id: str, payload: dict):
-        payload_type = payload.get("type")
-
-        if payload_type == "room_exit":
-            await self.exit_room(client_id)
+        if not isinstance(payload, dict):
+            print(f"警告: {client_id} から辞書以外のペイロードを受信しました: {type(payload).__name__}")
+            await self.send_private_info(client_id, "メッセージ形式が不正です。")
             return
 
-        if payload_type == "question_submission":
-            await self.process_question(client_id, payload)
-            return
+        normalized_payload = dict(payload)
+        payload_type = str(normalized_payload.get("type") or normalized_payload.get("action") or "").strip()
+        if payload_type != "":
+            normalized_payload["type"] = payload_type
 
-        if payload_type == "chat_message":
-            await self.process_chat_message(client_id, payload)
-            return
-
-        if payload_type == "start_game":
-            await self.start_game(client_id, payload)
-            return
-
-        if payload_type == "shuffle_participants":
-            await self.shuffle_participants(client_id)
-            return
-
-        if payload_type == "swap_participant_team":
-            target_client_id = str(payload.get("target_client_id", "")).strip()
-            await self.swap_participant_team(client_id, target_client_id)
-            return
-
-        if payload_type == "open_character":
-            char_index = payload.get("char_index")
-            await self.open_character(client_id, char_index)
-            return
-
-        if payload_type == "open_vote_request":
-            char_index = payload.get("char_index")
-            await self.request_open_vote(client_id, char_index)
-            return
-
-        if payload_type == "open_vote_response":
-            vote_id = str(payload.get("vote_id", "")).strip()
-            approve = bool(payload.get("approve", False))
-            if vote_id == "":
-                await self.send_private_info(client_id, "投票IDが不正です。")
-                return
-            await self.respond_open_vote(client_id, vote_id, approve)
-            return
-
-        if payload_type == "answer_vote_response":
-            vote_id = str(payload.get("vote_id", "")).strip()
-            approve = bool(payload.get("approve", False))
-            if vote_id == "":
-                await self.send_private_info(client_id, "投票IDが不正です。")
-                return
-            await self.respond_answer_vote(client_id, vote_id, approve)
-            return
-
-        if payload_type == "turn_end_vote_response":
-            vote_id = str(payload.get("vote_id", "")).strip()
-            approve = bool(payload.get("approve", False))
-            if vote_id == "":
-                await self.send_private_info(client_id, "投票IDが不正です。")
-                return
-            await self.respond_turn_end_vote(client_id, vote_id, approve)
-            return
-
-        if payload_type == "intentional_draw_vote_request":
-            await self.request_intentional_draw_vote(client_id)
-            return
-
-        if payload_type == "intentional_draw_vote_response":
-            vote_id = str(payload.get("vote_id", "")).strip()
-            approve = bool(payload.get("approve", False))
-            if vote_id == "":
-                await self.send_private_info(client_id, "投票IDが不正です。")
-                return
-            await self.respond_intentional_draw_vote(client_id, vote_id, approve)
-            return
-
-        if payload_type == "submit_answer":
-            is_correct = payload.get("is_correct", False)
-            await self.submit_answer(client_id, is_correct)
-            return
-
-        if payload_type == "answer_attempt":
-            answer_text = str(payload.get("answer_text", ""))
-            await self.submit_answer_attempt(client_id, answer_text)
-            return
-
-        if payload_type == "judge_answer":
-            is_correct = bool(payload.get("is_correct", False))
-            await self.judge_answer(client_id, is_correct)
-            return
-
-        if payload_type == "full_open_settlement_judge":
-            vote_id = str(payload.get("vote_id", "")).strip()
-            left_is_correct = bool(payload.get("left_is_correct", False))
-            right_is_correct = bool(payload.get("right_is_correct", False))
-            await self.judge_full_open_settlement(client_id, vote_id, left_is_correct, right_is_correct)
-            return
-
-        if payload_type == "end_turn" or payload_type == "turn_end_attempt":
-            await self.request_turn_end_attempt(client_id)
-            return
-
-        if payload_type == "room_entry":
-            room_owner_id = str(payload.get("room_owner_id", "")).strip()
-            role = str(payload.get("role", "")).strip()
-            if room_owner_id == "" or role not in {"participant", "spectator"}:
-                await self.send_private_info(client_id, "入室リクエストの形式が不正です。")
+        route = MESSAGE_ROUTER.get(payload_type)
+        if route is not None:
+            try:
+                message = validate_message(route.model, normalized_payload)
+            except ValidationError as exc:
+                print(
+                    "WebSocketメッセージ検証エラー:",
+                    {
+                        "client_id": client_id,
+                        "type": payload_type,
+                        "errors": exc.errors(),
+                    },
+                )
+                await self.send_private_info(client_id, "メッセージ形式が不正です。")
                 return
 
-            await self.join_room(client_id, room_owner_id, role)
-            return
-
-        if payload_type == "cancel_question":
-            room_owner_id = str(payload.get("room_owner_id", "")).strip()
-            if room_owner_id == "":
-                await self.send_private_info(client_id, "出題取消リクエストの形式が不正です。")
-                return
-
-            await self.cancel_question(client_id, room_owner_id)
+            handler = getattr(self, route.handler_name)
+            await handler(client_id, message)
             return
 
         # 旧フォーマット互換: typeなしでも問題送信として扱う。
-        if "question_text" in payload or "content" in payload:
-            await self.process_question(client_id, payload)
+        if payload_type == "" and ("question_text" in normalized_payload or "content" in normalized_payload):
+            try:
+                message = validate_message(LegacyQuestionSubmissionMessage, normalized_payload)
+            except ValidationError as exc:
+                print(
+                    "WebSocketメッセージ検証エラー:",
+                    {
+                        "client_id": client_id,
+                        "type": "question_submission",
+                        "errors": exc.errors(),
+                    },
+                )
+                await self.send_private_info(client_id, "メッセージ形式が不正です。")
+                return
+
+            await self.process_question(client_id, message)
             return
 
+        print(
+            "未対応のWebSocketメッセージを受信しました:",
+            {
+                "client_id": client_id,
+                "type": payload_type,
+                "keys": sorted(normalized_payload.keys()),
+            },
+        )
         await self.send_private_info(client_id, "未対応のメッセージ形式です。")
 
 

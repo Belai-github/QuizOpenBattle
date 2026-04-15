@@ -5,9 +5,11 @@ from backend.game_logic import (
     remove_client_from_all_rooms as remove_client_from_all_rooms_logic,
     resolve_client_room_context,
 )
+from backend.schemas import CancelQuestionMessage, RoomEntryMessage, SwapParticipantTeamMessage
 
 
-async def cancel_question(manager, requester_id: str, room_owner_id: str):
+async def cancel_question(manager, requester_id: str, payload: CancelQuestionMessage):
+    room_owner_id = payload.room_owner_id
     room = manager.rooms.get(room_owner_id)
     if room is None:
         await manager.send_private_info(requester_id, "取り消し対象の部屋が見つかりません。")
@@ -51,7 +53,9 @@ def remove_client_from_all_rooms(manager, client_id: str):
     remove_client_from_all_rooms_logic(manager.rooms, client_id)
 
 
-async def join_room(manager, client_id: str, room_owner_id: str, role: str):
+async def join_room(manager, client_id: str, payload: RoomEntryMessage):
+    room_owner_id = payload.room_owner_id
+    role = payload.role
     manager._cancel_disconnect_grace_timer(client_id)
     manager._clear_pending_disconnect_everywhere(client_id)
     manager.reconnect_reservations.pop(client_id, None)
@@ -108,7 +112,8 @@ async def shuffle_participants(manager, client_id: str):
     )
 
 
-async def swap_participant_team(manager, client_id: str, target_client_id: str):
+async def swap_participant_team(manager, client_id: str, payload: SwapParticipantTeamMessage):
+    target_client_id = payload.target_client_id
     result = apply_swap_participant_team(manager.rooms, client_id, target_client_id)
     if not result.get("ok"):
         await manager.send_private_info(client_id, result.get("error", "参加者入れ替えに失敗しました。"))

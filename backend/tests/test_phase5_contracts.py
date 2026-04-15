@@ -19,6 +19,14 @@ from backend.storage.reconnect import (
     set_room_pending_disconnect,
     try_restore_participant_reconnect,
 )
+from backend.schemas import (
+    JudgeAnswerMessage,
+    LegacyQuestionSubmissionMessage,
+    OpenVoteResponseMessage,
+    RoomEntryMessage,
+    TurnEndVoteResponseMessage,
+    validate_message,
+)
 
 
 class TestAuthContracts(unittest.TestCase):
@@ -100,6 +108,44 @@ class TestBroadcastContracts(unittest.TestCase):
         self.assertEqual(resolve_arena_history_chat_type("question", None), "game-global")
         self.assertEqual(resolve_arena_history_chat_type("chat", "team-right"), "team-right")
         self.assertIsNone(resolve_arena_history_chat_type("chat", None))
+
+
+class TestWebSocketSchemaContracts(unittest.TestCase):
+    def test_vote_and_judge_boolean_strings_are_coerced(self):
+        open_vote = validate_message(
+            OpenVoteResponseMessage,
+            {"type": "open_vote_response", "vote_id": "vote-1", "approve": "false"},
+        )
+        turn_end_vote = validate_message(
+            TurnEndVoteResponseMessage,
+            {"type": "turn_end_vote_response", "vote_id": "vote-2", "approve": "true"},
+        )
+        judge_answer = validate_message(
+            JudgeAnswerMessage,
+            {"type": "judge_answer", "is_correct": "false"},
+        )
+
+        self.assertFalse(open_vote.approve)
+        self.assertTrue(turn_end_vote.approve)
+        self.assertFalse(judge_answer.is_correct)
+
+    def test_legacy_question_submission_still_validates_without_type(self):
+        message = validate_message(
+            LegacyQuestionSubmissionMessage,
+            {"question_text": "テスト問題", "is_ai_mode": "true"},
+        )
+
+        self.assertEqual(message.type, "question_submission")
+        self.assertEqual(message.question_text, "テスト問題")
+        self.assertTrue(message.is_ai_mode)
+
+    def test_room_entry_role_literal_is_validated(self):
+        message = validate_message(
+            RoomEntryMessage,
+            {"type": "room_entry", "room_owner_id": "owner-1", "role": "spectator"},
+        )
+
+        self.assertEqual(message.role, "spectator")
 
 
 class DummyReconnectManager:

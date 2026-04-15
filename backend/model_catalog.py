@@ -3,10 +3,14 @@ import os
 from typing import Any
 
 
-MODELS_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "data", "models.json")
-if not os.path.exists(MODELS_CONFIG_PATH):
+_MODULE_DIR = os.path.dirname(__file__)
+_MODELS_CONFIG_CANDIDATES = (
+    os.path.join(_MODULE_DIR, "data", "models.json"),
+    os.path.join(_MODULE_DIR, "storage", "data", "models.json"),
     # fallback: backend/data/models.json（古い構造）
-    MODELS_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "models.json")
+    os.path.join(os.path.dirname(_MODULE_DIR), "data", "models.json"),
+)
+MODELS_CONFIG_PATH = next((path for path in _MODELS_CONFIG_CANDIDATES if os.path.exists(path)), _MODELS_CONFIG_CANDIDATES[0])
 
 _FALLBACK_DEFAULT_MODEL_ID = "gemini-2.5-flash"
 _FALLBACK_ANSWER_JUDGEMENT_MODEL_ID = "gemini-2.5-flash-lite"
