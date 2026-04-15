@@ -10,9 +10,23 @@ from dotenv import load_dotenv
 try:
     from backend.pronpt import get_quiz_prompt, get_judge_prompt
     from backend.judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
+    from backend.model_catalog import (
+        get_answer_judgement_model_id,
+        get_available_model_ids,
+        get_default_model_id,
+        is_openai_model,
+        normalize_model_id as normalize_model_id_from_catalog,
+    )
 except ImportError:
     from pronpt import get_quiz_prompt, get_judge_prompt
     from judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
+    from model_catalog import (
+        get_answer_judgement_model_id,
+        get_available_model_ids,
+        get_default_model_id,
+        is_openai_model,
+        normalize_model_id as normalize_model_id_from_catalog,
+    )
 
 # .envファイルからAPIキーを環境変数として読み込む
 load_dotenv()
@@ -21,22 +35,13 @@ load_dotenv()
 gemini_client = genai.Client()
 openai_client = AsyncOpenAI()
 
-AVAILABLE_MODEL_IDS = (
-    "gpt-4o-mini",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-3-flash-preview",
-    "gemini-3.1-flash-lite-preview",
-)
-DEFAULT_MODEL_ID = "gemini-2.5-flash"
-ANSWER_JUDGEMENT_MODEL_ID = "gemini-2.5-flash-lite"
+AVAILABLE_MODEL_IDS = (*get_available_model_ids(),)
+DEFAULT_MODEL_ID = get_default_model_id()
 QUIZ_GENERATION_TEMPERATURE = 1.0
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
 DEFAULT_QUIZ_DIFFICULTY = 50
 MAX_QUIZ_DIFFICULTY = 100
 ANSWER_JUDGEMENT_CACHE_VERSION = DEFAULT_PROMPT_VERSION
-OPENAI_QUIZ_MODEL_ID = "gpt-4o-mini"
 
 
 def _is_resource_exhausted_error(error: Exception) -> bool:
@@ -59,10 +64,7 @@ def _is_openai_resource_exhausted_error(error: Exception) -> bool:
 
 
 def normalize_model_id(model_id: str | None) -> str:
-    candidate = str(model_id or "").strip()
-    if candidate in AVAILABLE_MODEL_IDS:
-        return candidate
-    return DEFAULT_MODEL_ID
+    return normalize_model_id_from_catalog(model_id)
 
 
 def normalize_difficulty(difficulty: int | str | None) -> int:
@@ -136,7 +138,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
     prompt = get_quiz_prompt(genre, normalized_difficulty)
     selected_model_id = normalize_model_id(model_id)
 
-    if selected_model_id == OPENAI_QUIZ_MODEL_ID:
+    if is_openai_model(selected_model_id):
         try:
             response = await openai_client.chat.completions.create(
                 model=selected_model_id,
@@ -249,7 +251,7 @@ async def check_answer_async(expected_answer: str, user_answer: str):
     if expected_answer == user_answer:
         return True
 
-    selected_model_id = ANSWER_JUDGEMENT_MODEL_ID
+    selected_model_id = get_answer_judgement_model_id()
     cached_result = get_cached_answer_judgement(
         expected_answer,
         user_answer,
@@ -310,12 +312,12 @@ if __name__ == "__main__":
         print()
 
     async def alltest(genre: str = "一般常識", difficulty: int | str | None = 0):
-        for model in AVAILABLE_MODEL_IDS:
+        for model in get_available_model_ids():
             await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
     async def main():
         genre = "アニメ・マンガ"
         difficulty = 30
-        await test_quiz_generation(model_id=OPENAI_QUIZ_MODEL_ID, genre=genre, difficulty=difficulty)
+        await test_quiz_generation(model_id=get_default_model_id(), genre=genre, difficulty=difficulty)
 
     asyncio.run(main())

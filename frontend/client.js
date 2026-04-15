@@ -72,15 +72,9 @@ const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
-const DEFAULT_AI_MODEL_ID = "gemini-2.5-flash";
-const AI_MODEL_OPTIONS = [
-    ["gpt-4o-mini", "gpt-4o-mini (OpenAI)"],
-    ["gemini-2.5-flash-lite", "gemini-2.5-flash-lite (生成時間目安:約2秒)"],
-    ["gemini-2.5-flash", "gemini-2.5-flash (生成時間目安:約10秒)"],
-    ["gemini-2.5-pro", "gemini-2.5-pro (生成時間目安:約30秒)"],
-    ["gemini-3-flash-preview", "gemini-3-flash-preview (生成時間目安:約60秒)"],
-    ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview (生成時間:約2秒)"],
-];
+let aiModelOptions = [];
+let defaultAiModelId = "";
+let aiModelsLoaded = false;
 const DEFAULT_AI_ACCURACY_RATE = 50;
 const MIN_AI_ACCURACY_RATE = 10;
 const ARENA_MASK_CHAR = "■";
@@ -204,16 +198,57 @@ function getRoleDisplayLabel(role) {
 }
 
 function populateAiModelSelect() {
-    if (!aiModelSelectEl || aiModelSelectEl.options.length > 0) {
+    if (!aiModelSelectEl) {
         return;
     }
 
-    AI_MODEL_OPTIONS.forEach(([value, label]) => {
+    aiModelSelectEl.innerHTML = "";
+
+    aiModelOptions.forEach(([value, label]) => {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = label;
         aiModelSelectEl.appendChild(option);
     });
+}
+
+async function loadAiModelOptions() {
+    if (aiModelsLoaded) {
+        return true;
+    }
+
+    try {
+        const response = await fetch("/api/ai-models");
+        if (!response.ok) {
+            throw new Error(`failed_to_fetch_ai_models:${response.status}`);
+        }
+        const payload = await response.json();
+        const models = Array.isArray(payload?.models) ? payload.models : [];
+
+        const normalizedOptions = models
+            .map((model) => {
+                const modelId = String(model?.id || "").trim();
+                const label = String(model?.label || modelId).trim();
+                if (!modelId) return null;
+                return [modelId, label];
+            })
+            .filter(Boolean);
+
+        if (normalizedOptions.length > 0) {
+            aiModelOptions = normalizedOptions;
+            const defaultFromApi = String(payload?.default_model_id || "").trim();
+            const allIds = new Set(normalizedOptions.map(([id]) => id));
+            defaultAiModelId = allIds.has(defaultFromApi) ? defaultFromApi : normalizedOptions[0][0];
+            aiModelsLoaded = true;
+            return true;
+        }
+
+        throw new Error("empty_ai_model_options");
+    } catch (error) {
+        console.warn("AIモデル一覧の取得に失敗しました", error);
+        aiModelsLoaded = false;
+        return false;
+    }
 }
 
 function normalizeAiAccuracyRate(rawValue) {
@@ -3060,19 +3095,26 @@ function showAiGenreInputModal() {
             return;
         }
 
-        populateAiModelSelect();
-        initializeAiAccuracyRateControl();
-        aiGenreInputEl.value = "";
-        aiModelSelectEl.value = DEFAULT_AI_MODEL_ID;
-        aiAccuracyRateRangeEl.value = String(DEFAULT_AI_ACCURACY_RATE);
-        updateAiAccuracyRateDisplay(aiAccuracyRateRangeEl.value);
-        setAiQuestionLoading(false);
+        void loadAiModelOptions().then((loaded) => {
+            if (!loaded || aiModelOptions.length === 0) {
+                void showAlertModal("AIモデル一覧の取得に失敗しました。時間をおいて再度お試しください。").then(() => close(null));
+                return;
+            }
 
-        if (!aiQuestionModalEl.open) {
-            aiQuestionModalEl.showModal();
-        }
-        aiGenreInputEl.focus();
-        updateArenaInteractionLock();
+            populateAiModelSelect();
+            initializeAiAccuracyRateControl();
+            aiGenreInputEl.value = "";
+            aiModelSelectEl.value = defaultAiModelId;
+            aiAccuracyRateRangeEl.value = String(DEFAULT_AI_ACCURACY_RATE);
+            updateAiAccuracyRateDisplay(aiAccuracyRateRangeEl.value);
+            setAiQuestionLoading(false);
+
+            if (!aiQuestionModalEl.open) {
+                aiQuestionModalEl.showModal();
+            }
+            aiGenreInputEl.focus();
+            updateArenaInteractionLock();
+        });
 
         const close = (value) => {
             if (aiQuestionModalEl.open) {
@@ -3090,7 +3132,7 @@ function showAiGenreInputModal() {
 
         const onSubmit = () => {
             const genre = String(aiGenreInputEl.value || "").trim();
-            const modelId = String(aiModelSelectEl.value || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
+            const modelId = String(aiModelSelectEl.value || defaultAiModelId).trim() || defaultAiModelId;
             const accuracyRate = normalizeAiAccuracyRate(aiAccuracyRateRangeEl.value);
             close({ genre, modelId, accuracyRate });
         };
@@ -4686,7 +4728,7 @@ async function submitAiQuestion() {
     }
 
     const normalizedGenre = String(selection.genre || "").trim().slice(0, 40);
-    const normalizedModelId = String(selection.modelId || DEFAULT_AI_MODEL_ID).trim() || DEFAULT_AI_MODEL_ID;
+    const normalizedModelId = String(selection.modelId || defaultAiModelId).trim() || defaultAiModelId;
     const normalizedAccuracyRate = normalizeAiAccuracyRate(selection.accuracyRate);
     setAiQuestionLoading(true);
     pendingArenaMode = "owner";

@@ -31,6 +31,7 @@ from backend.game_logic import (
     resolve_client_room_context,
 )
 from backend.ai_logic import check_answer_async, generate_quiz_async, normalize_difficulty, normalize_model_id
+from backend.model_catalog import get_frontend_model_payload
 from backend.kifu_storage import (
     append_action,
     begin_kifu_record,
@@ -3544,6 +3545,11 @@ async def issue_ws_ticket(request: WsTicketIssueRequest):
     ticket_payload = ws_auth_manager.issue_ticket(client_id, nickname)
     ticket_payload["nickname"] = nickname
     return ticket_payload
+
+
+@app.get("/api/ai-models")
+async def get_ai_models():
+    return get_frontend_model_payload()
 
 
 @app.websocket("/ws/{client_id}")
