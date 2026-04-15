@@ -103,13 +103,59 @@ function appendEventLog(eventType, eventMessage) {
     }
 
     const logEl = document.getElementById("event-log");
-    const item = document.createElement("li");
-    item.textContent = eventMessage;
+    const item = document.createElement("div");
+    item.className = "event-log-item";
+
+    const messageEl = document.createElement("span");
+    messageEl.className = "event-log-message";
+    messageEl.textContent = eventMessage;
+
+    let actionsEl = null;
+
+    if (eventType === "question") {
+        actionsEl = document.createElement("div");
+        actionsEl.className = "event-log-actions";
+
+        const joinBtn = document.createElement("button");
+        joinBtn.type = "button";
+        joinBtn.className = "event-log-mini-btn";
+        joinBtn.textContent = "参加";
+        joinBtn.addEventListener("click", () => {
+            void showAlertModal("参加を選択しました");
+        });
+
+        const watchBtn = document.createElement("button");
+        watchBtn.type = "button";
+        watchBtn.className = "event-log-mini-btn secondary";
+        watchBtn.textContent = "観戦";
+        watchBtn.addEventListener("click", () => {
+            void showAlertModal("観戦を選択しました");
+        });
+
+        actionsEl.appendChild(joinBtn);
+        actionsEl.appendChild(watchBtn);
+    }
+
+    const timestampEl = document.createElement("span");
+    timestampEl.className = "event-log-time";
+    timestampEl.textContent = new Date().toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
+    item.appendChild(messageEl);
+    if (actionsEl) {
+        item.appendChild(actionsEl);
+    }
+    item.appendChild(timestampEl);
     logEl.appendChild(item);
 
     while (logEl.children.length > 50) {
         logEl.removeChild(logEl.firstChild);
     }
+
+    const logBoxEl = document.getElementById("event-log-box");
+    logBoxEl.scrollTop = logBoxEl.scrollHeight;
 }
 
 function buildWebSocketUrl(clientId, nickname) {

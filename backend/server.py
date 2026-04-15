@@ -92,7 +92,7 @@ class QuizGameManager:
             public_info="行動が受理されました",
             private_map=private_map,
             event_type="question",
-            event_message=f"{actor_name} が {question_text} を出題しました",
+            event_message=f"{actor_name} が 出題をしました",
         )
 
 

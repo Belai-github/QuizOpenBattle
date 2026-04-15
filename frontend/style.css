@@ -65,7 +65,7 @@ textarea {
 .question-input-row {
     margin-top: 8px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
 }
 
@@ -73,6 +73,7 @@ textarea {
     flex: 0 0 auto;
     font-weight: 700;
     color: #0f172a;
+    margin-top: 10px;
 }
 
 #question-box {
@@ -95,6 +96,68 @@ button:hover {
 #participants-list {
     margin: 8px 0 0;
     padding-left: 20px;
+}
+
+#event-log-box {
+    margin-top: 8px;
+    height: 220px;
+    overflow-y: auto;
+    background: #ffedd5;
+    border: 1px solid #fdba74;
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+#event-log {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.event-log-item {
+    margin: 0;
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.event-log-message {
+    flex: 1 1 auto;
+    word-break: break-word;
+}
+
+.event-log-actions {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+}
+
+.event-log-time {
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: #7c2d12;
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+.event-log-mini-btn {
+    width: auto;
+    min-height: 28px;
+    margin-top: 0;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    line-height: 1;
+}
+
+.event-log-mini-btn.secondary {
+    background: #9a3412;
+}
+
+.event-log-mini-btn.secondary:hover {
+    background: #7c2d12;
 }
 
 .modal {
