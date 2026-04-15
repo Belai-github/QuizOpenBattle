@@ -166,8 +166,10 @@ class QuizGameManager:
             await self.send_private_info(client_id, "投票対象の陣営参加者がいません。")
             return
 
+        total_voters = len(voter_ids)
+        should_emit_vote_log = total_voters > 1
         vote_id = str(uuid.uuid4())
-        required_approvals = (len(voter_ids) // 2) + 1
+        required_approvals = (total_voters // 2) + 1
         room["pending_open_vote"] = {
             "vote_id": vote_id,
             "requester_id": client_id,
@@ -185,7 +187,8 @@ class QuizGameManager:
         await self.broadcast_state(
             public_info=f"{team_label}陣営で文字オープン投票を開始しました。",
             event_type="open_vote_request",
-            event_message=f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。",
+            event_message=(f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。" if should_emit_vote_log else None),
+            event_chat_type=team,
             event_room_id=owner_id,
             event_recipient_ids=voter_ids,
             event_payload={
@@ -193,7 +196,7 @@ class QuizGameManager:
                 "team": team,
                 "char_index": char_index,
                 "required_approvals": required_approvals,
-                "total_voters": len(voter_ids),
+                "total_voters": total_voters,
             },
         )
 
@@ -234,6 +237,12 @@ class QuizGameManager:
         required = pending_vote["required_approvals"]
         team = pending_vote["team"]
         char_index = pending_vote["char_index"]
+        should_emit_vote_log = len(voter_ids) > 1
+
+        team_chat_recipients = set(voter_ids)
+        team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
+        if team_chat_result.get("ok"):
+            team_chat_recipients = team_chat_result["event_recipient_ids"]
 
         if approvals >= required:
             pending_vote["status"] = "approved"
@@ -244,6 +253,7 @@ class QuizGameManager:
                 await self.broadcast_state(
                     public_info="文字オープン投票は可決されましたが、オープン処理に失敗しました。",
                     event_type="open_vote_resolved",
+                    event_chat_type=team,
                     event_room_id=owner_id,
                     event_payload={
                         "vote_id": vote_id,
@@ -251,7 +261,7 @@ class QuizGameManager:
                         "char_index": char_index,
                         "reason": result.get("error", "open_failed"),
                     },
-                    event_recipient_ids=voter_ids,
+                    event_recipient_ids=team_chat_recipients,
                 )
                 return
 
@@ -259,7 +269,8 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{char_index + 1}文字目がオープンされました。",
                 event_type="open_vote_resolved",
-                event_message=f"オープン投票可決: {char_index + 1}文字目",
+                event_message=(f"オープン投票可決: {char_index + 1}文字目" if should_emit_vote_log else None),
+                event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
                     "vote_id": vote_id,
@@ -267,6 +278,7 @@ class QuizGameManager:
                     "char_index": char_index,
                     "is_yakumono": is_yakumono,
                 },
+                event_recipient_ids=team_chat_recipients,
             )
             return
 
@@ -277,7 +289,8 @@ class QuizGameManager:
             await self.broadcast_state(
                 public_info=f"{char_index + 1}文字目のオープン投票は否決されました。",
                 event_type="open_vote_resolved",
-                event_message=f"オープン投票否決: {char_index + 1}文字目",
+                event_message=(f"オープン投票否決: {char_index + 1}文字目" if should_emit_vote_log else None),
+                event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
                     "vote_id": vote_id,
@@ -285,6 +298,7 @@ class QuizGameManager:
                     "char_index": char_index,
                     "reason": "rejected",
                 },
+                event_recipient_ids=team_chat_recipients,
             )
 
     async def send_private_info(

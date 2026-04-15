@@ -17,6 +17,10 @@ def _build_visible_question_text(normalized_chars: list[str], game: dict | None,
     if chat_role == "questioner":
         return "".join(normalized_chars)
 
+    # 対戦終了後は全員に全文を公開する。
+    if game and game.get("game_status") == "finished":
+        return "".join(normalized_chars)
+
     if chat_role == "spectator" and game and game.get("game_status") == "playing":
         return "".join(normalized_chars)
 
@@ -31,6 +35,15 @@ def _build_visible_question_text(normalized_chars: list[str], game: dict | None,
             masked[idx] = ch
 
     return "".join(masked)
+
+
+def _sync_room_game_state_with_game_status(room: dict):
+    game = room.get("game") or {}
+    game_status = game.get("game_status")
+    if game_status == "finished":
+        room["game_state"] = "finished"
+    elif game_status == "playing":
+        room["game_state"] = "playing"
 
 
 def remove_client_from_all_rooms(rooms: dict, client_id: str):
@@ -85,6 +98,8 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
     owner_id = ctx["room_owner_id"]
     room = ctx["room"]
     chat_role = ctx["chat_role"]
+
+    _sync_room_game_state_with_game_status(room)
 
     left_participants = []
     for pid in room["left_participants"]:
@@ -170,7 +185,7 @@ def apply_join_room(rooms: dict, client_id: str, room_owner_id: str, role: str):
     converted_to_spectator = False
 
     final_role = role
-    if final_role == "participant" and room.get("game_state", "waiting") == "playing":
+    if final_role == "participant" and room.get("game_state", "waiting") != "waiting":
         final_role = "spectator"
         converted_to_spectator = True
 
@@ -473,6 +488,8 @@ def apply_open_character(room: dict, team: str, char_index: int):
         else:
             yield_turn(game)
 
+    _sync_room_game_state_with_game_status(room)
+
     return {
         "ok": True,
         "is_yakumono": is_yakumono,
@@ -545,6 +562,8 @@ def apply_submit_answer(room: dict, team: str, is_correct: bool):
             # 通常はターン終了時に次のターンへ（自動的に遷移）
             yield_turn(game)
 
+    _sync_room_game_state_with_game_status(room)
+
     return {
         "ok": True,
         "game_status": game.get("game_status"),
@@ -578,6 +597,7 @@ def apply_end_turn(room: dict, team: str):
         game["winner"] = "team-left"
         game["game_status"] = "finished"
         game["left_correct_waiting"] = False
+        _sync_room_game_state_with_game_status(room)
         return {
             "ok": True,
             "current_turn_team": game.get("current_turn_team"),
@@ -588,6 +608,8 @@ def apply_end_turn(room: dict, team: str):
 
     # 新しいターン側の通常アクション権付与は yield_turn 側で行う
     new_turn_team = game.get("current_turn_team")
+
+    _sync_room_game_state_with_game_status(room)
 
     return {
         "ok": True,

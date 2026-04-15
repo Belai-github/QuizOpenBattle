@@ -23,7 +23,7 @@ const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
-let currentRoomGameState = null; // "waiting" | "playing" | null
+let currentRoomGameState = null; // "waiting" | "playing" | "finished" | null
 let currentGameState = null; // game中の詳細状態: {current_turn_team, team_left: {...}, team_right: {...}, ...}
 const handledOpenVoteIds = new Set();
 let openVoteRequestPending = false;
@@ -449,7 +449,8 @@ function showGameArenaScreen() {
 }
 
 function isGameFinished() {
-    return currentRoomGameState === "playing" && currentGameState?.game_status === "finished";
+    return currentRoomGameState === "finished"
+        || (currentRoomGameState === "playing" && currentGameState?.game_status === "finished");
 }
 
 function canToggleQuestionViewMode() {
@@ -1177,10 +1178,13 @@ function renderRooms(rooms) {
 
         const metaEl = document.createElement("div");
         metaEl.className = "room-card-meta";
-        let gameStateLabel = "準備中";
-        if (room.game_state === "playing") {
-            gameStateLabel = room.game?.game_status === "finished" ? "対戦終了" : "対戦中";
-        }
+        const roomState = String(room.game_state || "waiting");
+        const gameStateLabelByState = {
+            waiting: "準備中",
+            playing: "対戦中",
+            finished: "対戦終了",
+        };
+        const gameStateLabel = gameStateLabelByState[roomState] || "準備中";
         metaEl.textContent = `状態 ${gameStateLabel} / 参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
 
         if (!room.is_owner) {
@@ -1293,15 +1297,16 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
         return;
     }
 
-    // アリーナ内で発生するゲーム進行ログは待機所ログへは送らない。
-    const arenaOnlyTypes = new Set(["room_shuffle", "open_vote_request", "open_vote_resolved"]);
-    if (arenaOnlyTypes.has(eventType)) {
+    // チャット種別が指定されているイベントは、対応するゲーム内ログに流す。
+    if (eventChatType && eventChatType !== "lobby") {
+        const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
+        appendLogToContainer(roomLogEl, eventType, eventMessage);
         return;
     }
 
-    if (eventType === "chat" && eventChatType && eventChatType !== "lobby") {
-        const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
-        appendLogToContainer(roomLogEl, eventType, eventMessage);
+    // アリーナ内で発生するゲーム進行ログは待機所ログへは送らない。
+    const arenaOnlyTypes = new Set(["room_shuffle", "open_vote_request", "open_vote_resolved"]);
+    if (arenaOnlyTypes.has(eventType)) {
         return;
     }
 
@@ -1589,13 +1594,18 @@ function requestOpenVote(charIndex) {
 async function handleOpenVoteRequest(payload) {
     const voteId = String(payload?.vote_id || "");
     const charIndex = Number(payload?.char_index);
+    const totalVoters = Number(payload?.total_voters || 0);
     if (!voteId || !Number.isFinite(charIndex)) return;
     if (handledOpenVoteIds.has(voteId)) return;
 
     handledOpenVoteIds.add(voteId);
 
+    const majorityNote = totalVoters > 1
+        ? "\n（陣営の過半数OKで実行されます）"
+        : "";
+
     const confirmed = await showConfirmModal(
-        `${charIndex + 1}文字目をオープンしますか？\n（陣営の過半数OKで実行されます）`,
+        `${charIndex + 1}文字目をオープンしますか？${majorityNote}`,
         {
             okLabel: "OK",
             cancelLabel: "キャンセル"
