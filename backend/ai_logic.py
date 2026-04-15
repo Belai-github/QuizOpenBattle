@@ -8,8 +8,10 @@ from dotenv import load_dotenv
 
 try:
     from backend.pronpt import get_quiz_prompt, get_judge_prompt
+    from backend.judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
 except ImportError:
     from pronpt import get_quiz_prompt, get_judge_prompt
+    from judge_cache import DEFAULT_PROMPT_VERSION, get_cached_answer_judgement, store_answer_judgement
 
 # .envファイルからAPIキーを環境変数として読み込む
 load_dotenv()
@@ -25,10 +27,12 @@ AVAILABLE_MODEL_IDS = (
     "gemini-3.1-flash-lite-preview",
 )
 DEFAULT_MODEL_ID = "gemini-2.5-flash"
+ANSWER_JUDGEMENT_MODEL_ID = "gemini-2.5-flash-lite"
 QUIZ_GENERATION_TEMPERATURE = 1.0
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
 DEFAULT_QUIZ_DIFFICULTY = 50
 MAX_QUIZ_DIFFICULTY = 100
+ANSWER_JUDGEMENT_CACHE_VERSION = DEFAULT_PROMPT_VERSION
 
 
 def _is_resource_exhausted_error(error: Exception) -> bool:
@@ -174,15 +178,23 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
         return {"question": "AI問題の生成に失敗しました。", "answer": "エラー"}
 
 
-async def check_answer_async(expected_answer: str, user_answer: str, model_id: str | None = None):
+async def check_answer_async(expected_answer: str, user_answer: str):
     """プレイヤーの解答が正解と意味的に同じか判定する非同期関数"""
 
     if expected_answer == user_answer:
         return True
 
+    selected_model_id = ANSWER_JUDGEMENT_MODEL_ID
+    cached_result = get_cached_answer_judgement(
+        expected_answer,
+        user_answer,
+        selected_model_id,
+        ANSWER_JUDGEMENT_CACHE_VERSION,
+    )
+    if cached_result is not None:
+        return cached_result
+
     prompt = get_judge_prompt(expected_answer, user_answer)
-    _ = model_id
-    selected_model_id = DEFAULT_MODEL_ID
 
     try:
         response = await client.aio.models.generate_content(
@@ -193,7 +205,16 @@ async def check_answer_async(expected_answer: str, user_answer: str, model_id: s
         response_text = response.text or ""
         result_text = response_text.strip().lower()
 
-        return "true" in result_text
+        is_correct = result_text == "true"
+        store_answer_judgement(
+            expected_answer,
+            user_answer,
+            selected_model_id,
+            ANSWER_JUDGEMENT_CACHE_VERSION,
+            is_correct,
+            source="gemini",
+        )
+        return is_correct
 
     except Exception as e:
         if _is_resource_exhausted_error(e):

@@ -417,7 +417,6 @@ class QuizGameManager:
             return
 
         expected_answer = str(room.get("ai_expected_answer", "")).strip()
-        model_id = normalize_model_id(room.get("ai_model_id"))
         if expected_answer == "":
             game["pending_answer_judgement"] = None
             private_map = {target_id: "AI正誤判定に失敗しました。再度アンサーしてください。" for target_id in self._room_member_ids(owner_id, room)}
@@ -430,7 +429,7 @@ class QuizGameManager:
             return
 
         try:
-            answer_judgement_result = check_answer_async(expected_answer, answer_text, model_id=model_id)
+            answer_judgement_result = check_answer_async(expected_answer, answer_text)
             if asyncio.iscoroutine(answer_judgement_result):
                 is_correct = await asyncio.wait_for(answer_judgement_result, timeout=12.0)
             else:
