@@ -302,10 +302,16 @@
     </dialog>
 
     <script>
-        const qp = new URLSearchParams(window.location.search);
-        const v = qp.get("t") || String(Date.now()); // tがなければ都度バスター
+        const url = new URL(window.location.href);
+        const unix = String(Math.floor(Date.now() / 1000));
+
+        // 毎回 t を現在時刻に更新（URL表示も更新）
+        url.searchParams.set("t", unix);
+        history.replaceState(null, "", url.toString());
+
+        // client.js も同じ値でキャッシュバスター
         const s = document.createElement("script");
-        s.src = `client.js?v=${encodeURIComponent(v)}`;
+        s.src = `client.js?v=${encodeURIComponent(unix)}`;
         document.body.appendChild(s);
     </script>
 
