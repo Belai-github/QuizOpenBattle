@@ -1,4 +1,5 @@
 import random
+import time
 import unicodedata
 
 
@@ -51,6 +52,9 @@ def remove_client_from_all_rooms(rooms: dict, client_id: str):
         room["left_participants"].discard(client_id)
         room["right_participants"].discard(client_id)
         room["spectators"].discard(client_id)
+        pending_disconnects = room.get("pending_disconnects")
+        if isinstance(pending_disconnects, dict):
+            pending_disconnects.pop(client_id, None)
 
 
 def resolve_client_room_context(rooms: dict, client_id: str):
@@ -101,12 +105,26 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
 
     _sync_room_game_state_with_game_status(room)
 
+    pending_disconnects_raw = room.get("pending_disconnects", {})
+    now = time.time()
+
+    def _resolve_display_name(target_client_id: str):
+        if target_client_id in nicknames:
+            return nicknames.get(target_client_id, "ゲスト")
+
+        if isinstance(pending_disconnects_raw, dict):
+            pending_info = pending_disconnects_raw.get(target_client_id)
+            if isinstance(pending_info, dict):
+                return str(pending_info.get("nickname") or "ゲスト")
+
+        return "ゲスト"
+
     left_participants = []
     for pid in room["left_participants"]:
         left_participants.append(
             {
                 "client_id": pid,
-                "nickname": nicknames.get(pid, "ゲスト"),
+                "nickname": _resolve_display_name(pid),
             }
         )
 
@@ -115,7 +133,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         right_participants.append(
             {
                 "client_id": pid,
-                "nickname": nicknames.get(pid, "ゲスト"),
+                "nickname": _resolve_display_name(pid),
             }
         )
 
@@ -124,9 +142,33 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         spectators.append(
             {
                 "client_id": sid,
-                "nickname": nicknames.get(sid, "ゲスト"),
+                "nickname": _resolve_display_name(sid),
             }
         )
+
+    pending_disconnects = []
+    if isinstance(pending_disconnects_raw, dict):
+        for pending_id, pending_info in pending_disconnects_raw.items():
+            if not isinstance(pending_info, dict):
+                continue
+
+            expires_at = float(pending_info.get("expires_at") or 0)
+            if expires_at <= now:
+                continue
+
+            team = str(pending_info.get("team") or "")
+            if team not in {"team-left", "team-right"}:
+                continue
+
+            pending_disconnects.append(
+                {
+                    "client_id": pending_id,
+                    "nickname": _resolve_display_name(pending_id),
+                    "team": team,
+                    "expires_at": expires_at,
+                }
+            )
+    pending_disconnects.sort(key=lambda item: item.get("expires_at", 0))
 
     raw_question_text = str(room.get("question_text", ""))
     normalized_chars = _normalized_question_chars(raw_question_text)
@@ -164,6 +206,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "left_participants": left_participants,
         "right_participants": right_participants,
         "spectators": spectators,
+        "pending_disconnects": pending_disconnects,
     }
 
 
@@ -345,6 +388,7 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         "left_participants": set(),
         "right_participants": set(),
         "spectators": set(),
+        "pending_disconnects": {},
     }
 
     remove_client_from_all_rooms(rooms, player_id)

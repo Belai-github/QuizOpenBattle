@@ -525,30 +525,66 @@ function getTeamLabel(team) {
     return team === "team-right" ? "後攻" : "先攻";
 }
 
+function getPendingDisconnectAnnouncementText() {
+    const pendingDisconnects = Array.isArray(currentRoomSnapshot?.pending_disconnects)
+        ? currentRoomSnapshot.pending_disconnects
+        : [];
+    if (pendingDisconnects.length === 0) {
+        return "";
+    }
+
+    const nowSeconds = Date.now() / 1000;
+    const lines = [];
+    pendingDisconnects.forEach((entry) => {
+        const team = String(entry?.team || "");
+        if (team !== "team-left" && team !== "team-right") {
+            return;
+        }
+
+        const expiresAt = Number(entry?.expires_at || 0);
+        if (!Number.isFinite(expiresAt) || expiresAt <= nowSeconds) {
+            return;
+        }
+
+        const remainingSeconds = Math.max(0, Math.ceil(expiresAt - nowSeconds));
+        const nickname = String(entry?.nickname || "ゲスト");
+        const teamLabel = getTeamLabel(team);
+        lines.push(`${teamLabel}: ${nickname} が接続タイムアウト中...（残り${remainingSeconds}秒）`);
+    });
+
+    return lines.join("\n");
+}
+
 function getArenaProgressAnnouncementText() {
     const roomState = currentRoomGameState || "waiting";
+    const timeoutNotice = getPendingDisconnectAnnouncementText();
+
+    let baseText = "";
 
     if (roomState === "finished" || currentGameState?.game_status === "finished") {
         const winner = String(currentGameState?.winner || "");
         if (winner === "team-left") {
-            return "対戦結果：先攻の勝利";
+            baseText = "対戦結果：先攻の勝利";
+        } else if (winner === "team-right") {
+            baseText = "対戦結果：後攻の勝利";
+        } else {
+            baseText = "対戦結果：引き分け";
         }
-        if (winner === "team-right") {
-            return "対戦結果：後攻の勝利";
+    } else if (roomState !== "playing") {
+        baseText = "出題者による開始を待っています...";
+    } else {
+        const currentTurnLabel = getTeamLabel(currentGameState?.current_turn_team);
+        if (currentGameState?.is_judging_answer) {
+            baseText = `${currentTurnLabel}の解答の正誤判定中です...`;
+        } else {
+            baseText = `${currentTurnLabel}のターンです`;
         }
-        return "対戦結果：引き分け";
     }
 
-    if (roomState !== "playing") {
-        return "出題者による開始を待っています...";
+    if (!timeoutNotice) {
+        return baseText;
     }
-
-    const currentTurnLabel = getTeamLabel(currentGameState?.current_turn_team);
-    if (currentGameState?.is_judging_answer) {
-        return `${currentTurnLabel}の解答の正誤判定中です...`;
-    }
-
-    return `${currentTurnLabel}のターンです`;
+    return `${baseText}\n${timeoutNotice}`;
 }
 
 function updateArenaProgressAnnouncement() {
@@ -1566,6 +1602,13 @@ window.onload = () => {
         }, 0);
     }
 };
+
+window.setInterval(() => {
+    if (!isInGameArena()) {
+        return;
+    }
+    updateArenaProgressAnnouncement();
+}, 1000);
 
 // 「ゲームに参加」ボタンを押したときの処理
 document.getElementById("join-btn").addEventListener("click", async () => {

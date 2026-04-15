@@ -841,6 +841,7 @@ body.modal-open #arena-question-text .arena-question-line {
     font-weight: 700;
     font-size: 0.95rem;
     line-height: 1.35;
+    white-space: pre-wrap;
 }
 
 #arena-question-text {
