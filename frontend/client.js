@@ -76,29 +76,33 @@ function updateChatBoxVisibility() {
 function syncArenaPlayerBoxHeights() {
     const leftBoxEl = document.getElementById("arena-player-left");
     const rightBoxEl = document.getElementById("arena-player-right");
-    if (!leftBoxEl || !rightBoxEl) return;
+    const questionBoxEl = document.getElementById("arena-question-board");
+    if (!leftBoxEl || !rightBoxEl || !questionBoxEl) return;
 
     leftBoxEl.style.minHeight = "";
     rightBoxEl.style.minHeight = "";
+    questionBoxEl.style.minHeight = "";
 
     if (!isInGameArena()) return;
     if (!window.matchMedia("(min-width: 768px)").matches) return;
 
-    const leftHasVisibleChat = Boolean(leftBoxEl.querySelector(".chat-box:not(.hidden)"));
-    const rightHasVisibleChat = Boolean(rightBoxEl.querySelector(".chat-box:not(.hidden)"));
-
-    // 片側だけチャットが見えているケースで高さ差が出るため、このときだけ揃える。
-    if (leftHasVisibleChat === rightHasVisibleChat) return;
-
-    const targetHeight = Math.max(leftBoxEl.offsetHeight, rightBoxEl.offsetHeight);
+    // 問題文が長い場合でも左右の参加者ボックスが追従するようにする。
+    const targetHeight = Math.max(
+        questionBoxEl.offsetHeight,
+        leftBoxEl.offsetHeight,
+        rightBoxEl.offsetHeight,
+    );
     leftBoxEl.style.minHeight = `${targetHeight}px`;
     rightBoxEl.style.minHeight = `${targetHeight}px`;
+    questionBoxEl.style.minHeight = `${targetHeight}px`;
 }
 
 function setChatBoxEditable(chatBoxEl, editable) {
     const inputEl = chatBoxEl.querySelector(".chat-input");
     const sendBtnEl = chatBoxEl.querySelector(".chat-send-btn");
     const composeEl = chatBoxEl.querySelector(".chat-compose");
+
+    chatBoxEl.classList.toggle("read-only", !editable);
 
     if (composeEl) {
         composeEl.classList.toggle("hidden", !editable);
@@ -619,7 +623,21 @@ document.getElementById("question-box").addEventListener("keydown", (event) => {
     submitQuestion();
 });
 
-function requestRoomExit() {
+async function requestRoomExit() {
+    const isQuestioner = userRole === "questioner";
+    const confirmMessage = isQuestioner
+        ? "部屋を閉じると参加者と観戦者は全員退室になります。\n\n本当に部屋を閉じますか？"
+        : "本当に退室しますか？";
+    const okLabel = isQuestioner ? "部屋を閉じる" : "退室する";
+
+    const confirmed = await showConfirmModal(confirmMessage, {
+        okLabel,
+        cancelLabel: "キャンセル"
+    });
+    if (!confirmed) {
+        return;
+    }
+
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "room_exit" }));
     }

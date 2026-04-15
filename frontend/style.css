@@ -583,10 +583,16 @@ button:hover {
 
 .arena-player-box .chat-box {
     margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .arena-player-box .chat-log {
-    height: 150px;
+    height: auto;
+    min-height: 150px;
+    flex: 1 1 auto;
 }
 
 #game-chat-log-team-left {
@@ -608,6 +614,8 @@ button:hover {
     border-radius: 12px;
     padding: 10px;
     min-height: 120px;
+    display: flex;
+    flex-direction: column;
 }
 
 .arena-player-box.left {
@@ -664,6 +672,41 @@ button:hover {
     margin-top: 12px;
 }
 
+/* 狭いチャット欄でも本文が1文字ずつ縦崩れしないようにする */
+.arena-player-box .chat-log .event-log-item,
+#arena-spectator-box .chat-log .event-log-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 6px;
+}
+
+.arena-player-box .chat-log .event-log-message,
+#arena-spectator-box .chat-log .event-log-message {
+    min-width: 0;
+}
+
+.arena-player-box .chat-log .event-log-message.chat,
+#arena-spectator-box .chat-log .event-log-message.chat {
+    display: block;
+}
+
+.arena-player-box .chat-log .event-log-chat-name,
+#arena-spectator-box .chat-log .event-log-chat-name,
+.arena-player-box .chat-log .event-log-chat-body,
+#arena-spectator-box .chat-log .event-log-chat-body {
+    display: inline;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.arena-player-box .chat-log .event-log-time,
+#arena-spectator-box .chat-log .event-log-time {
+    margin-left: 0;
+    white-space: nowrap;
+    align-self: end;
+}
+
 .arena-spectator-label {
     font-weight: 700;
     margin-bottom: 6px;
@@ -695,7 +738,7 @@ button:hover {
     }
 
     #arena-board-layout {
-        grid-template-columns: minmax(220px, 1fr) minmax(340px, 1.45fr) minmax(220px, 1fr);
+        grid-template-columns: minmax(250px, 1.1fr) minmax(300px, 1.2fr) minmax(250px, 1.1fr);
         align-items: start;
         gap: 12px;
     }
@@ -718,6 +761,11 @@ button:hover {
     #arena-question-board {
         min-height: 180px;
         align-items: flex-start;
+    }
+
+    #arena-player-left .chat-box.read-only .chat-log,
+    #arena-player-right .chat-box.read-only .chat-log {
+        min-height: 230px;
     }
 
     #arena-question-text {
