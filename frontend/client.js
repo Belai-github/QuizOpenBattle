@@ -64,34 +64,10 @@ const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const DEFAULT_AI_MODEL_ID = "gemini-2.0-flash-lite";
 const AI_MODEL_OPTIONS = [
+    ["gemini-2.0-flash-lite", "gemini-2.0-flash-lite"],
+    ["gemini-2.0-flash", "gemini-2.0-flash"],
     ["gemini-2.5-flash", "gemini-2.5-flash"],
     ["gemini-2.5-pro", "gemini-2.5-pro"],
-    ["gemini-2.0-flash", "gemini-2.0-flash"],
-    ["gemini-2.0-flash-001", "gemini-2.0-flash-001"],
-    ["gemini-2.0-flash-lite-001", "gemini-2.0-flash-lite-001"],
-    ["gemini-2.0-flash-lite", "gemini-2.0-flash-lite"],
-    ["gemini-2.5-flash-preview-tts", "gemini-2.5-flash-preview-tts"],
-    ["gemini-2.5-pro-preview-tts", "gemini-2.5-pro-preview-tts"],
-    ["gemini-flash-latest", "gemini-flash-latest"],
-    ["gemini-flash-lite-latest", "gemini-flash-lite-latest"],
-    ["gemini-pro-latest", "gemini-pro-latest"],
-    ["gemini-2.5-flash-lite", "gemini-2.5-flash-lite"],
-    ["gemini-2.5-flash-image", "gemini-2.5-flash-image"],
-    ["gemini-3-pro-preview", "gemini-3-pro-preview"],
-    ["gemini-3-flash-preview", "gemini-3-flash-preview"],
-    ["gemini-3.1-pro-preview", "gemini-3.1-pro-preview"],
-    ["gemini-3.1-pro-preview-customtools", "gemini-3.1-pro-preview-customtools"],
-    ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview"],
-    ["gemini-3-pro-image-preview", "gemini-3-pro-image-preview"],
-    ["gemini-3.1-flash-image-preview", "gemini-3.1-flash-image-preview"],
-    ["gemini-robotics-er-1.5-preview", "gemini-robotics-er-1.5-preview"],
-    ["gemini-2.5-computer-use-preview-10-2025", "gemini-2.5-computer-use-preview-10-2025"],
-    ["gemini-embedding-001", "gemini-embedding-001"],
-    ["gemini-embedding-2-preview", "gemini-embedding-2-preview"],
-    ["gemini-2.5-flash-native-audio-latest", "gemini-2.5-flash-native-audio-latest"],
-    ["gemini-2.5-flash-native-audio-preview-09-2025", "gemini-2.5-flash-native-audio-preview-09-2025"],
-    ["gemini-2.5-flash-native-audio-preview-12-2025", "gemini-2.5-flash-native-audio-preview-12-2025"],
-    ["gemini-3.1-flash-live-preview", "gemini-3.1-flash-live-preview"],
 ];
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
