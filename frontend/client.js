@@ -9,6 +9,16 @@ const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
 
+function showWaitingRoomScreen() {
+    document.getElementById("waiting-room-screen").style.display = "block";
+    document.getElementById("game-arena-screen").style.display = "none";
+}
+
+function showGameArenaScreen() {
+    document.getElementById("waiting-room-screen").style.display = "none";
+    document.getElementById("game-arena-screen").style.display = "block";
+}
+
 function showAlertModal(message) {
     return new Promise((resolve) => {
         alertMessageEl.textContent = message;
@@ -43,7 +53,42 @@ function showAlertModal(message) {
 
 function showQuestionConfirmModal(questionText) {
     return new Promise((resolve) => {
-        confirmMessageEl.textContent = `以下の問題文で出題しますか？\n\nQ.${questionText}`;
+        confirmMessageEl.textContent = `以下の問題文で出題しますか？\n\nQ. ${questionText}`;
+        confirmModal.classList.remove("hidden");
+        confirmOkBtn.focus();
+
+        const close = (result) => {
+            confirmModal.classList.add("hidden");
+            confirmOkBtn.removeEventListener("click", onOk);
+            confirmCancelBtn.removeEventListener("click", onCancel);
+            confirmModal.removeEventListener("click", onBackdropClick);
+            document.removeEventListener("keydown", onEscape);
+            resolve(result);
+        };
+
+        const onOk = () => close(true);
+        const onCancel = () => close(false);
+        const onBackdropClick = (event) => {
+            if (event.target === confirmModal) {
+                close(false);
+            }
+        };
+        const onEscape = (event) => {
+            if (event.key === "Escape") {
+                close(false);
+            }
+        };
+
+        confirmOkBtn.addEventListener("click", onOk, { once: true });
+        confirmCancelBtn.addEventListener("click", onCancel, { once: true });
+        confirmModal.addEventListener("click", onBackdropClick);
+        document.addEventListener("keydown", onEscape);
+    });
+}
+
+function showConfirmModal(message) {
+    return new Promise((resolve) => {
+        confirmMessageEl.textContent = message;
         confirmModal.classList.remove("hidden");
         confirmOkBtn.focus();
 
@@ -96,6 +141,97 @@ function renderParticipants(participants) {
     });
 }
 
+function requestRoomEntry(roomOwnerId, role) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const payload = {
+        type: "room_entry",
+        room_owner_id: roomOwnerId,
+        role,
+        timestamp: Date.now()
+    };
+    ws.send(JSON.stringify(payload));
+}
+
+function requestCancelQuestion(roomOwnerId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const payload = {
+        type: "cancel_question",
+        room_owner_id: roomOwnerId,
+        timestamp: Date.now()
+    };
+    ws.send(JSON.stringify(payload));
+}
+
+function renderRooms(rooms) {
+    const roomListEl = document.getElementById("room-list");
+    roomListEl.innerHTML = "";
+
+    if (!Array.isArray(rooms) || rooms.length === 0) {
+        const emptyEl = document.createElement("div");
+        emptyEl.className = "room-card-empty";
+        emptyEl.textContent = "現在、出題中の部屋はありません";
+        roomListEl.appendChild(emptyEl);
+        return;
+    }
+
+    rooms.forEach((room) => {
+        const card = document.createElement("div");
+        card.className = "room-card";
+
+        const questionerEl = document.createElement("div");
+        questionerEl.className = "room-card-questioner";
+        questionerEl.textContent = `${room.questioner_name} の部屋`;
+
+        const questionEl = document.createElement("div");
+        questionEl.className = "room-card-question";
+        questionEl.textContent = `Q. ${room.question_text}`;
+
+        const metaEl = document.createElement("div");
+        metaEl.className = "room-card-meta";
+        metaEl.textContent = `参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
+
+        const actionsEl = document.createElement("div");
+        actionsEl.className = "room-card-actions";
+
+        if (room.is_owner) {
+            const cancelBtn = document.createElement("button");
+            cancelBtn.type = "button";
+            cancelBtn.className = "room-card-btn danger";
+            cancelBtn.textContent = "出題取消";
+            cancelBtn.addEventListener("click", async () => {
+                const confirmed = await showConfirmModal("この出題を取り消しますか？");
+                if (!confirmed) return;
+                requestCancelQuestion(room.room_owner_id);
+            });
+            actionsEl.appendChild(cancelBtn);
+        } else {
+            const joinBtn = document.createElement("button");
+            joinBtn.type = "button";
+            joinBtn.className = "room-card-btn";
+            joinBtn.textContent = "参加";
+
+            const watchBtn = document.createElement("button");
+            watchBtn.type = "button";
+            watchBtn.className = "room-card-btn secondary";
+            watchBtn.textContent = "観戦";
+
+            joinBtn.addEventListener("click", () => requestRoomEntry(room.room_owner_id, "participant"));
+            watchBtn.addEventListener("click", () => requestRoomEntry(room.room_owner_id, "spectator"));
+
+            actionsEl.appendChild(joinBtn);
+            actionsEl.appendChild(watchBtn);
+        }
+
+        card.appendChild(questionerEl);
+        card.appendChild(questionEl);
+        card.appendChild(metaEl);
+        card.appendChild(actionsEl);
+        roomListEl.appendChild(card);
+    });
+}
+
 function appendEventLog(eventType, eventMessage) {
     const allowedTypes = new Set(["join", "leave", "question"]);
     if (!allowedTypes.has(eventType) || !eventMessage) {
@@ -110,32 +246,6 @@ function appendEventLog(eventType, eventMessage) {
     messageEl.className = "event-log-message";
     messageEl.textContent = eventMessage;
 
-    let actionsEl = null;
-
-    if (eventType === "question") {
-        actionsEl = document.createElement("div");
-        actionsEl.className = "event-log-actions";
-
-        const joinBtn = document.createElement("button");
-        joinBtn.type = "button";
-        joinBtn.className = "event-log-mini-btn";
-        joinBtn.textContent = "参加";
-        joinBtn.addEventListener("click", () => {
-            void showAlertModal("参加を選択しました");
-        });
-
-        const watchBtn = document.createElement("button");
-        watchBtn.type = "button";
-        watchBtn.className = "event-log-mini-btn secondary";
-        watchBtn.textContent = "観戦";
-        watchBtn.addEventListener("click", () => {
-            void showAlertModal("観戦を選択しました");
-        });
-
-        actionsEl.appendChild(joinBtn);
-        actionsEl.appendChild(watchBtn);
-    }
-
     const timestampEl = document.createElement("span");
     timestampEl.className = "event-log-time";
     timestampEl.textContent = new Date().toLocaleTimeString("ja-JP", {
@@ -144,9 +254,6 @@ function appendEventLog(eventType, eventMessage) {
         second: "2-digit"
     });
     item.appendChild(messageEl);
-    if (actionsEl) {
-        item.appendChild(actionsEl);
-    }
     item.appendChild(timestampEl);
     logEl.appendChild(item);
 
@@ -193,13 +300,22 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     ws.onopen = () => {
         console.log("サーバーに接続しました");
         document.getElementById("login-screen").style.display = "none";
-        document.getElementById("game-screen").style.display = "block";
+        showWaitingRoomScreen();
         document.getElementById("my-name").textContent = nicknameInput;
     };
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        if (data.target_screen === "game_arena") {
+            showGameArenaScreen();
+        }
+
+        if (data.event_type === "private_notice" && data.private_info) {
+            void showAlertModal(data.private_info);
+        }
+
         appendEventLog(data.event_type, data.event_message);
+        renderRooms(data.rooms);
         renderParticipants(data.participants);
     };
 });
