@@ -41,9 +41,9 @@ function showAlertModal(message) {
     });
 }
 
-function showAnswerConfirmModal(answerText) {
+function showQuestionConfirmModal(questionText) {
     return new Promise((resolve) => {
-        confirmMessageEl.textContent = `${answerText} で解答しますか？`;
+        confirmMessageEl.textContent = `以下の問題文で出題しますか？\n\nQ.${questionText}`;
         confirmModal.classList.remove("hidden");
         confirmOkBtn.focus();
 
@@ -96,6 +96,22 @@ function renderParticipants(participants) {
     });
 }
 
+function appendEventLog(eventType, eventMessage) {
+    const allowedTypes = new Set(["join", "leave", "question"]);
+    if (!allowedTypes.has(eventType) || !eventMessage) {
+        return;
+    }
+
+    const logEl = document.getElementById("event-log");
+    const item = document.createElement("li");
+    item.textContent = eventMessage;
+    logEl.appendChild(item);
+
+    while (logEl.children.length > 50) {
+        logEl.removeChild(logEl.firstChild);
+    }
+}
+
 function buildWebSocketUrl(clientId, nickname) {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = new URL(window.location.origin);
@@ -137,8 +153,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        document.getElementById("public-info").textContent = data.public_info;
-        document.getElementById("private-info").textContent = data.private_info;
+        appendEventLog(data.event_type, data.event_message);
         renderParticipants(data.participants);
     };
 });
@@ -149,37 +164,37 @@ document.getElementById("nickname").addEventListener("keydown", (event) => {
     document.getElementById("join-btn").click();
 });
 
-async function submitAnswer() {
+async function submitQuestion() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-    const answerInput = document.getElementById("answer-box");
-    const answerText = answerInput.value.trim();
-    if (answerText === "") {
-        await showAlertModal("解答を入力してください");
+    const questionInput = document.getElementById("question-box");
+    const questionText = questionInput.value.trim();
+    if (questionText === "") {
+        await showAlertModal("問題を入力してください");
         return;
     }
 
-    const confirmed = await showAnswerConfirmModal(answerText);
+    const confirmed = await showQuestionConfirmModal(questionText);
     if (!confirmed) {
         return;
     }
 
-    const actionData = {
-        action: "解答",
-        content: answerText,
+    const questionPayload = {
+        type: "question_submission",
+        question_text: questionText,
         timestamp: Date.now()
     };
 
-    ws.send(JSON.stringify(actionData));
-    answerInput.value = "";
+    ws.send(JSON.stringify(questionPayload));
+    questionInput.value = "";
 }
 
-document.getElementById("action-btn").addEventListener("click", () => {
-    submitAnswer();
+document.getElementById("submit-question-btn").addEventListener("click", () => {
+    submitQuestion();
 });
 
-document.getElementById("answer-box").addEventListener("keydown", (event) => {
+document.getElementById("question-box").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.isComposing) return;
     event.preventDefault();
-    submitAnswer();
+    submitQuestion();
 });

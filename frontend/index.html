@@ -19,13 +19,12 @@
     <div id="game-screen" style="display: none;">
         <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
 
-        <input type="text" id="answer-box" placeholder="解答を入力...">
-        <button id="action-btn">解答を送信</button>
+        <input type="text" id="question-box" placeholder="問題を入力...">
+        <button id="submit-question-btn">出題</button>
 
         <hr>
-        <h3>サーバーからの受信データ</h3>
-        <p>全体公開情報: <span id="public-info">-</span></p>
-        <p>あなただけの情報: <span id="private-info">-</span></p>
+        <h3>イベントログ</h3>
+        <ul id="event-log"></ul>
 
         <h3>参加者一覧</h3>
         <ul id="participants-list"></ul>

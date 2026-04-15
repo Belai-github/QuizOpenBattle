@@ -20,7 +20,13 @@ class QuizGameManager:
             participants.append({"client_id": client_id, "nickname": nickname})
         return participants
 
-    async def broadcast_state(self, public_info: str, private_map: dict | None = None):
+    async def broadcast_state(
+        self,
+        public_info: str,
+        private_map: dict | None = None,
+        event_type: str | None = None,
+        event_message: str | None = None,
+    ):
         participants = self.build_participants()
         for client_id, ws in self.active_connections.items():
             private_info = ""
@@ -31,6 +37,8 @@ class QuizGameManager:
                 "public_info": public_info,
                 "private_info": private_info,
                 "participants": participants,
+                "event_type": event_type,
+                "event_message": event_message,
             }
             await ws.send_text(json.dumps(response))
 
@@ -51,6 +59,8 @@ class QuizGameManager:
         await self.broadcast_state(
             public_info=f"{nickname} が参加しました",
             private_map={client_id: "QuizOpenBattleへようこそ"},
+            event_type="join",
+            event_message=f"{nickname} が入室しました",
         )
         return True
 
@@ -59,18 +69,31 @@ class QuizGameManager:
             del self.active_connections[client_id]
             nickname = self.nicknames.pop(client_id, client_id)
             print(f"プレイヤー切断: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
-            await self.broadcast_state(public_info=f"{nickname} が退出しました")
+            await self.broadcast_state(
+                public_info=f"{nickname} が退出しました",
+                event_type="leave",
+                event_message=f"{nickname} が退室しました",
+            )
 
-    async def process_action(self, action_player_id: str, action_data: dict):
+    async def process_question(self, player_id: str, payload: dict):
         private_map = {}
-        actor_name = self.nicknames.get(action_player_id, "相手")
+        actor_name = self.nicknames.get(player_id, "相手")
+        question_text = str(payload.get("question_text", payload.get("content", ""))).strip()
+        if question_text == "":
+            question_text = "（空欄）"
+
         for client_id in self.active_connections.keys():
-            if client_id == action_player_id:
-                private_map[client_id] = f"あなたは「{action_data.get('action')}」を選択しました。"
+            if client_id == player_id:
+                private_map[client_id] = "あなたは問題を出題しました。"
             else:
                 private_map[client_id] = f"{actor_name} が行動を完了しました。あなたのターンです。"
 
-        await self.broadcast_state(public_info="行動が受理されました", private_map=private_map)
+        await self.broadcast_state(
+            public_info="行動が受理されました",
+            private_map=private_map,
+            event_type="question",
+            event_message=f"{actor_name} が {question_text} を出題しました",
+        )
 
 
 manager = QuizGameManager()
@@ -92,8 +115,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             data = await websocket.receive_text()
             try:
                 # 【対策2】受信したデータが正しいJSONかチェックする
-                action_data = json.loads(data)
-                await manager.process_action(client_id, action_data)
+                payload = json.loads(data)
+                await manager.process_question(client_id, payload)
 
             except json.JSONDecodeError:
                 # 不正な文字列スパムが送られてきた場合、エラーでサーバーを落とさずに「無視」する
