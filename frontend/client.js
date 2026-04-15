@@ -1548,8 +1548,25 @@ function canUseRoomCloseLabel(room) {
 function updateArenaLeaveLabel(modeOrRoom) {
     if (!leaveGameArenaEl) return;
 
-    leaveGameArenaEl.textContent = "←退室";
-    leaveGameArenaEl.setAttribute("aria-label", "退室");
+    if (isKifuMode) {
+        leaveGameArenaEl.textContent = "←一覧へ戻る";
+        leaveGameArenaEl.setAttribute("aria-label", "一覧へ戻る");
+        return;
+    }
+
+    const snapshot = (modeOrRoom && typeof modeOrRoom === "object") ? modeOrRoom : currentRoomSnapshot;
+    const ownerId = String(snapshot?.room_owner_id || "");
+    const me = String(myClientId || "");
+    const isOwner = ownerId !== "" && me !== "" && ownerId === me;
+
+    if (isOwner) {
+        leaveGameArenaEl.textContent = "✕ 部屋を閉じる";
+        leaveGameArenaEl.setAttribute("aria-label", "部屋を閉じる");
+        return;
+    }
+
+    leaveGameArenaEl.textContent = "←退室する";
+    leaveGameArenaEl.setAttribute("aria-label", "退室する");
 }
 
 function getTeamLabel(team) {
