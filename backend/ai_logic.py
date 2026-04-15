@@ -25,7 +25,7 @@ AVAILABLE_MODEL_IDS = (
     "gemini-3.1-flash-lite-preview",
 )
 DEFAULT_MODEL_ID = "gemini-2.5-flash"
-QUIZ_GENERATION_TEMPERATURE = 1.9
+QUIZ_GENERATION_TEMPERATURE = 1.0
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
 DEFAULT_QUIZ_DIFFICULTY = 50
 MAX_QUIZ_DIFFICULTY = 100
@@ -211,9 +211,7 @@ if __name__ == "__main__":
 
     async def main():
         genre = "アニメ・マンガ"
-        for i in range(1, 11):
-            difficulty = i * 10
-            await test_quiz_generation(model_id="gemini-2.5-flash", genre=genre, difficulty=difficulty)
-            await asyncio.sleep(5)
+        difficulty = 50
+        await test_quiz_generation(model_id="gemini-2.5-flash", genre=genre, difficulty=difficulty)
 
     asyncio.run(main())
