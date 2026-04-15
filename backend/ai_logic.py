@@ -626,6 +626,6 @@ if __name__ == "__main__":
     async def main():
         genre = "アニメ・マンガ"
         difficulty = 30
-        await test_quiz_generation(model_id=get_default_model_id(), genre=genre, difficulty=difficulty)
+        await test_quiz_generation(model_id="gpt-4o-mini", genre=genre, difficulty=difficulty)
 
     asyncio.run(main())

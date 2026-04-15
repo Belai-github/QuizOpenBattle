@@ -17,7 +17,7 @@ get_quiz_system_prompt = """
     "question": "問題文",
     "answer": "正解"
 }}
-"""
+""".strip()
 
 
 def get_quiz_user_prompt(genre: str, accuracy_rate: int = 0) -> str:
@@ -27,7 +27,7 @@ def get_quiz_user_prompt(genre: str, accuracy_rate: int = 0) -> str:
 以下の条件で1問作成せよ。
 ジャンル：{genre}
 想定正答率：{accuracy_rate}%
-"""
+""".strip()
 
 
 get_judge_system_prompt = """
@@ -39,7 +39,7 @@ get_judge_system_prompt = """
 ・解答に「〜です」「答えは〜」などの余分な語尾が含まれていても、本質的な解答部分が合っていれば「正解 (true)」とする。
 ・誤字脱字（タイポ）については、明らかに正解を意図していると判断できる軽微なもの（1文字の変換ミスなど）は「正解 (true)」とする。
 ・全く別の概念や、上位/下位すぎる概念（例: 想定正解「りんご」に対し、解答「果物」など）は「不正解 (false)」とする。
-"""
+""".strip()
 
 
 def get_judge_user_prompt(expected_answer: str, user_answer: str) -> str:
@@ -47,4 +47,4 @@ def get_judge_user_prompt(expected_answer: str, user_answer: str) -> str:
 以下の【想定正解】と【プレイヤーの解答】がクイズの文脈において実質的に同じものを指しているか判定してください。
 【想定正解】: {expected_answer}
 【プレイヤーの解答】: {user_answer}
-"""
+""".strip()
