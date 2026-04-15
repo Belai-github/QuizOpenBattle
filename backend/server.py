@@ -48,10 +48,16 @@ class QuizGameManager:
         for owner_id, room in self.rooms.items():
             if owner_id == client_id:
                 role = "owner"
+                chat_role = "questioner"
             elif client_id in room["left_participants"] or client_id in room["right_participants"]:
                 role = "participant"
+                if client_id in room["left_participants"]:
+                    chat_role = "team-left"
+                else:
+                    chat_role = "team-right"
             elif client_id in room["spectators"]:
                 role = "spectator"
+                chat_role = "spectator"
             else:
                 continue
 
@@ -73,6 +79,7 @@ class QuizGameManager:
                 "questioner_name": room["questioner_name"],
                 "question_text": room["question_text"],
                 "role": role,
+                "chat_role": chat_role,
                 "left_participants": left_participant_names,
                 "right_participants": right_participant_names,
                 "spectators": spectator_names,
@@ -86,8 +93,10 @@ class QuizGameManager:
         private_map: dict | None = None,
         event_type: str | None = None,
         event_message: str | None = None,
+        event_chat_type: str | None = None,
         event_room_id: str | None = None,
         target_screen: str | None = None,
+        event_recipient_ids: set[str] | None = None,
     ):
         participants = self.build_participants()
         for client_id, ws in self.active_connections.items():
@@ -97,14 +106,20 @@ class QuizGameManager:
             if private_map is not None:
                 private_info = private_map.get(client_id, "")
 
+            is_event_recipient = event_recipient_ids is None or client_id in event_recipient_ids
+            response_event_type = event_type if is_event_recipient else None
+            response_event_message = event_message if is_event_recipient else None
+            response_event_chat_type = event_chat_type if is_event_recipient else None
+
             response = {
                 "public_info": public_info,
                 "private_info": private_info,
                 "participants": participants,
                 "rooms": rooms,
                 "current_room": current_room,
-                "event_type": event_type,
-                "event_message": event_message,
+                "event_type": response_event_type,
+                "event_message": response_event_message,
+                "event_chat_type": response_event_chat_type,
                 "event_room_id": event_room_id,
                 "target_screen": target_screen,
             }
@@ -129,6 +144,7 @@ class QuizGameManager:
             "current_room": self.build_current_room_for_client(client_id),
             "event_type": event_type,
             "event_message": None,
+            "event_chat_type": None,
             "event_room_id": None,
             "target_screen": target_screen,
         }
@@ -354,6 +370,8 @@ class QuizGameManager:
         if message == "":
             return
 
+        chat_type = str(payload.get("chat_type", "lobby")).strip() or "lobby"
+
         if len(message) > self.CHAT_MAX_LENGTH:
             await self.send_private_info(
                 client_id,
@@ -388,14 +406,68 @@ class QuizGameManager:
                 await self.send_private_info(client_id, "同じ内容の連投は少し時間を空けてください。")
                 return
 
-        history.append(now)
-        self.chat_last_message[client_id] = (message, now)
         nickname = self.nicknames.get(client_id, "ゲスト")
 
+        if chat_type == "lobby":
+            history.append(now)
+            self.chat_last_message[client_id] = (message, now)
+            await self.broadcast_state(
+                public_info=f"{nickname} がチャットを送信しました",
+                event_type="chat",
+                event_message=f"{nickname}: {message}",
+                event_chat_type="lobby",
+            )
+            return
+
+        current_room = self.build_current_room_for_client(client_id)
+        if current_room is None:
+            await self.send_private_info(client_id, "部屋に参加していないため、部屋内チャットは送信できません。")
+            return
+
+        room_owner_id = current_room.get("room_owner_id")
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            await self.send_private_info(client_id, "部屋情報の取得に失敗しました。")
+            return
+
+        sender_chat_role = current_room.get("chat_role")
+        sendable_roles_by_type = {
+            "team-left": {"team-left", "questioner"},
+            "team-right": {"team-right", "questioner"},
+            "spectator": {"spectator", "questioner"},
+        }
+        readable_roles_by_type = {
+            "team-left": {"team-left", "questioner", "spectator"},
+            "team-right": {"team-right", "questioner", "spectator"},
+            "spectator": {"spectator", "questioner"},
+        }
+
+        if chat_type not in sendable_roles_by_type:
+            await self.send_private_info(client_id, "未対応のチャット種別です。")
+            return
+
+        if sender_chat_role not in sendable_roles_by_type[chat_type]:
+            await self.send_private_info(client_id, "このチャット欄では発言できません。")
+            return
+
+        role_to_ids = {
+            "questioner": {room_owner_id},
+            "team-left": set(room["left_participants"]),
+            "team-right": set(room["right_participants"]),
+            "spectator": set(room["spectators"]),
+        }
+        event_recipient_ids = set()
+        for role_name in readable_roles_by_type[chat_type]:
+            event_recipient_ids |= role_to_ids.get(role_name, set())
+
+        history.append(now)
+        self.chat_last_message[client_id] = (message, now)
         await self.broadcast_state(
             public_info=f"{nickname} がチャットを送信しました",
             event_type="chat",
             event_message=f"{nickname}: {message}",
+            event_chat_type=chat_type,
+            event_recipient_ids=event_recipient_ids,
         )
 
     async def process_client_payload(self, client_id: str, payload: dict):

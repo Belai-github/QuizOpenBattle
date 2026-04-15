@@ -227,7 +227,7 @@ button:hover {
 
 #event-log-box {
     margin-top: 8px;
-    height: 220px;
+    height: 280px;
     overflow-y: auto;
     background: #ffedd5;
     border: 1px solid #fdba74;
@@ -245,17 +245,73 @@ button:hover {
     flex-direction: column;
 }
 
+.chat-compose {
+    position: relative;
+}
+
+.arena-chat-title {
+    font-weight: 700;
+    font-size: 0.88rem;
+    margin-bottom: 4px;
+}
+
+.chat-log {
+    height: 140px;
+    overflow-y: auto;
+    background: #ffedd5;
+    border: 1px solid #fdba74;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+}
+
+.chat-log .event-log-item {
+    gap: 6px;
+}
+
+.chat-log .event-log-time {
+    color: #9a3412;
+}
+
 .chat-input {
     margin-top: 0;
     min-height: 84px;
+    padding-right: 48px;
 }
 
 .chat-send-btn {
-    margin-top: 8px;
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: 32px;
+    min-height: 32px;
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    color: #ffffff;
+    background: #16a34a;
+    box-shadow: 0 4px 10px rgba(22, 163, 74, 0.24);
+    z-index: 1;
+}
+
+.chat-send-btn:hover {
+    background: #15803d;
+}
+
+.chat-send-btn:disabled {
+    background: #94a3b8;
+    box-shadow: none;
+    cursor: not-allowed;
 }
 
 .chat-length-warning {
-    margin: 4px 2px 0;
+    margin: 8px 2px 0;
     color: #b91c1c;
     font-size: 0.76rem;
     line-height: 1.35;
@@ -274,7 +330,7 @@ button:hover {
 
 #room-list-box {
     margin-top: 8px;
-    min-height: 220px;
+    min-height: 280px;
     flex: 1 1 auto;
     overflow-y: auto;
     background: #fff7ed;
@@ -512,6 +568,42 @@ button:hover {
     gap: 10px;
 }
 
+/* モバイルでは問題文を最上段に固定する */
+#arena-question-board {
+    order: 1;
+}
+
+#arena-player-left {
+    order: 2;
+}
+
+#arena-player-right {
+    order: 3;
+}
+
+.arena-player-box .chat-box {
+    margin-top: 12px;
+}
+
+.arena-player-box .chat-log {
+    height: 150px;
+}
+
+#game-chat-log-team-left {
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+
+#game-chat-log-team-right {
+    background: #dbeafe;
+    border-color: #93c5fd;
+}
+
+#game-chat-log-spectator {
+    background: #e5e7eb;
+    border-color: #cbd5e1;
+}
+
 .arena-player-box {
     border-radius: 12px;
     padding: 10px;
@@ -553,8 +645,8 @@ button:hover {
 
 #arena-question-text {
     margin: 0;
-    font-size: 2.25rem;
-    line-height: 1.5;
+    font-size: clamp(1.8rem, 4vw, 2.5rem);
+    line-height: 1.35;
     font-weight: 700;
     text-align: left;
     word-break: break-word;
@@ -566,6 +658,10 @@ button:hover {
     border-radius: 12px;
     background: #e5e7eb;
     padding: 10px;
+}
+
+#arena-spectator-box .chat-box {
+    margin-top: 12px;
 }
 
 .arena-spectator-label {
@@ -589,13 +685,43 @@ button:hover {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
 
+    .waiting-left-panel #event-log-box {
+        height: 360px;
+    }
+
+    .waiting-right-panel #room-list-box {
+        height: 296px;
+        min-height: 296px;
+    }
+
     #arena-board-layout {
-        grid-template-columns: 110px minmax(0, 1fr) 110px;
-        align-items: stretch;
+        grid-template-columns: minmax(220px, 1fr) minmax(340px, 1.45fr) minmax(220px, 1fr);
+        align-items: start;
+        gap: 12px;
+    }
+
+    #arena-player-left {
+        order: 1;
+        grid-column: 1;
+    }
+
+    #arena-question-board {
+        order: 2;
+        grid-column: 2;
+    }
+
+    #arena-player-right {
+        order: 3;
+        grid-column: 3;
+    }
+
+    #arena-question-board {
+        min-height: 180px;
+        align-items: flex-start;
     }
 
     #arena-question-text {
-        font-size: 2.7rem;
+        font-size: clamp(2rem, 3.3vw, 2.7rem);
     }
 }
 

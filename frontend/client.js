@@ -43,6 +43,7 @@ function updateChatBoxVisibility() {
     document.querySelectorAll(".chat-box").forEach((chatBox) => {
         const visibility = chatBox.getAttribute("data-visibility");
         const chatRoom = chatBox.getAttribute("data-chat-room");
+        const chatType = chatBox.getAttribute("data-chat-type") || "lobby";
 
         // チャットルームが異なれば非表示
         if (chatRoom === "game" && !isInGameArena()) {
@@ -57,13 +58,80 @@ function updateChatBoxVisibility() {
         // visibility属性がなければ誰でも見れる
         if (!visibility) {
             chatBox.classList.remove("hidden");
+            setChatBoxEditable(chatBox, canSendChatType(chatType));
             return;
         }
 
         // visibility属性があれば権限チェック
         const canView = canViewChatBox(visibility);
         chatBox.classList.toggle("hidden", !canView);
+        if (canView) {
+            setChatBoxEditable(chatBox, canSendChatType(chatType));
+        }
     });
+
+    syncArenaPlayerBoxHeights();
+}
+
+function syncArenaPlayerBoxHeights() {
+    const leftBoxEl = document.getElementById("arena-player-left");
+    const rightBoxEl = document.getElementById("arena-player-right");
+    if (!leftBoxEl || !rightBoxEl) return;
+
+    leftBoxEl.style.minHeight = "";
+    rightBoxEl.style.minHeight = "";
+
+    if (!isInGameArena()) return;
+    if (!window.matchMedia("(min-width: 768px)").matches) return;
+
+    const leftHasVisibleChat = Boolean(leftBoxEl.querySelector(".chat-box:not(.hidden)"));
+    const rightHasVisibleChat = Boolean(rightBoxEl.querySelector(".chat-box:not(.hidden)"));
+
+    // 片側だけチャットが見えているケースで高さ差が出るため、このときだけ揃える。
+    if (leftHasVisibleChat === rightHasVisibleChat) return;
+
+    const targetHeight = Math.max(leftBoxEl.offsetHeight, rightBoxEl.offsetHeight);
+    leftBoxEl.style.minHeight = `${targetHeight}px`;
+    rightBoxEl.style.minHeight = `${targetHeight}px`;
+}
+
+function setChatBoxEditable(chatBoxEl, editable) {
+    const inputEl = chatBoxEl.querySelector(".chat-input");
+    const sendBtnEl = chatBoxEl.querySelector(".chat-send-btn");
+    const composeEl = chatBoxEl.querySelector(".chat-compose");
+
+    if (composeEl) {
+        composeEl.classList.toggle("hidden", !editable);
+    }
+
+    if (inputEl) {
+        inputEl.disabled = !editable;
+        inputEl.setAttribute("aria-disabled", String(!editable));
+    }
+
+    if (sendBtnEl) {
+        sendBtnEl.disabled = !editable;
+        sendBtnEl.setAttribute("aria-disabled", String(!editable));
+    }
+}
+
+function canSendChatType(chatType) {
+    if (chatType === "lobby") {
+        return true;
+    }
+
+    const sendableRolesByType = {
+        "team-left": new Set(["team-left", "questioner"]),
+        "team-right": new Set(["team-right", "questioner"]),
+        spectator: new Set(["spectator", "questioner"]),
+    };
+
+    const allowedRoles = sendableRolesByType[chatType];
+    if (!allowedRoles) {
+        return false;
+    }
+
+    return allowedRoles.has(userRole);
 }
 
 function canViewChatBox(visibility) {
@@ -353,13 +421,11 @@ function renderRooms(rooms) {
     });
 }
 
-function appendEventLog(eventType, eventMessage) {
-    const allowedTypes = new Set(["join", "leave", "question", "chat"]);
-    if (!allowedTypes.has(eventType) || !eventMessage) {
-        return;
+function createEventLogItem(eventType, eventMessage) {
+    if (!eventMessage) {
+        return null;
     }
 
-    const logEl = document.getElementById("event-log");
     const item = document.createElement("div");
     item.className = "event-log-item";
 
@@ -406,16 +472,44 @@ function appendEventLog(eventType, eventMessage) {
         minute: "2-digit",
         second: "2-digit"
     });
+
     item.appendChild(messageEl);
     item.appendChild(timestampEl);
-    logEl.appendChild(item);
+    return item;
+}
 
+function appendLogToContainer(logEl, eventType, eventMessage) {
+    if (!logEl) {
+        return;
+    }
+
+    const item = createEventLogItem(eventType, eventMessage);
+    if (!item) {
+        return;
+    }
+
+    logEl.appendChild(item);
     while (logEl.children.length > 50) {
         logEl.removeChild(logEl.firstChild);
     }
 
-    const logBoxEl = document.getElementById("event-log-box");
-    logBoxEl.scrollTop = logBoxEl.scrollHeight;
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+function appendEventLog(eventType, eventMessage, eventChatType = null) {
+    const allowedTypes = new Set(["join", "leave", "question", "chat"]);
+    if (!allowedTypes.has(eventType) || !eventMessage) {
+        return;
+    }
+
+    if (eventType === "chat" && eventChatType && eventChatType !== "lobby") {
+        const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
+        appendLogToContainer(roomLogEl, eventType, eventMessage);
+        return;
+    }
+
+    const waitingLogEl = document.getElementById("event-log");
+    appendLogToContainer(waitingLogEl, eventType, eventMessage);
 }
 
 function buildWebSocketUrl(clientId, nickname) {
@@ -459,6 +553,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        userRole = data.current_room?.chat_role ?? null;
         if (data.target_screen === "game_arena") {
             updateArenaLeaveLabel(pendingArenaMode === "owner" ? "owner" : "guest");
             showGameArenaScreen();
@@ -474,10 +569,11 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             void showAlertModal(data.private_info);
         }
 
-        appendEventLog(data.event_type, data.event_message);
+        appendEventLog(data.event_type, data.event_message, data.event_chat_type);
         renderRooms(data.rooms);
         renderParticipants(data.participants);
         renderArena(data.current_room);
+        updateChatBoxVisibility();
     };
 });
 
@@ -552,6 +648,11 @@ function sendChatMessage(chatBoxEl) {
     }
 
     const chatType = chatBoxEl.getAttribute("data-chat-type") || "lobby";
+    if (!canSendChatType(chatType)) {
+        void showAlertModal("このチャット欄では発言できません。");
+        return;
+    }
+
     const now = Date.now();
     const lastSent = lastChatSentAt[chatType] || 0;
 
@@ -607,6 +708,10 @@ function bindChatHandlers() {
 }
 
 bindChatHandlers();
+
+window.addEventListener("resize", () => {
+    syncArenaPlayerBoxHeights();
+});
 
 leaveGameArenaEl?.addEventListener("click", requestRoomExit);
 leaveGameArenaEl?.addEventListener("keydown", (event) => {
