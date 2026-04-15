@@ -10,18 +10,16 @@ const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
-const lobbyChatInputEl = document.getElementById("lobby-chat-input");
-const lobbyChatSendBtnEl = document.getElementById("lobby-chat-send-btn");
-const lobbyChatLengthWarningEl = document.getElementById("lobby-chat-length-warning");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
 const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
 
 let pendingArenaMode = null;
+let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
-let lastChatSentAt = 0;
+const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
 let lastRulebookTriggerEl = null;
 
 function removeWhitespaceTextNodes(rootEl) {
@@ -41,11 +39,53 @@ function removeWhitespaceTextNodes(rootEl) {
     });
 }
 
-function updateLobbyChatLengthWarning() {
-    if (!lobbyChatInputEl || !lobbyChatLengthWarningEl) return;
+function updateChatBoxVisibility() {
+    document.querySelectorAll(".chat-box").forEach((chatBox) => {
+        const visibility = chatBox.getAttribute("data-visibility");
+        const chatRoom = chatBox.getAttribute("data-chat-room");
 
-    const reachedLimit = lobbyChatInputEl.value.length >= CHAT_MAX_LENGTH;
-    lobbyChatLengthWarningEl.classList.toggle("hidden", !reachedLimit);
+        // チャットルームが異なれば非表示
+        if (chatRoom === "game" && !isInGameArena()) {
+            chatBox.classList.add("hidden");
+            return;
+        }
+        if (chatRoom === "lobby" && isInGameArena()) {
+            chatBox.classList.add("hidden");
+            return;
+        }
+
+        // visibility属性がなければ誰でも見れる
+        if (!visibility) {
+            chatBox.classList.remove("hidden");
+            return;
+        }
+
+        // visibility属性があれば権限チェック
+        const canView = canViewChatBox(visibility);
+        chatBox.classList.toggle("hidden", !canView);
+    });
+}
+
+function canViewChatBox(visibility) {
+    if (!visibility) return true;
+
+    // 複数の権限が指定される場合に対応 (例: "team-left,questioner")
+    const visibilities = visibility.split(",").map((v) => v.trim());
+    return visibilities.includes(userRole);
+}
+
+function isInGameArena() {
+    return document.getElementById("game-arena-screen").style.display !== "none";
+}
+
+function updateChatLengthWarning(inputEl) {
+    if (!inputEl) return;
+
+    const warningEl = inputEl.closest(".chat-box")?.querySelector(".chat-length-warning");
+    if (!warningEl) return;
+
+    const reachedLimit = inputEl.value.length >= CHAT_MAX_LENGTH;
+    warningEl.classList.toggle("hidden", !reachedLimit);
 }
 
 function updateArenaLeaveLabel(mode) {
@@ -64,11 +104,13 @@ function updateArenaLeaveLabel(mode) {
 function showWaitingRoomScreen() {
     document.getElementById("waiting-room-screen").style.display = "block";
     document.getElementById("game-arena-screen").style.display = "none";
+    updateChatBoxVisibility();
 }
 
 function showGameArenaScreen() {
     document.getElementById("waiting-room-screen").style.display = "none";
     document.getElementById("game-arena-screen").style.display = "block";
+    updateChatBoxVisibility();
 }
 
 function showAlertModal(message) {
@@ -490,15 +532,18 @@ function requestRoomExit() {
     showWaitingRoomScreen();
 }
 
-function sendLobbyChatMessage() {
-    if (!lobbyChatInputEl) return;
+function sendChatMessage(chatBoxEl) {
+    if (!chatBoxEl) return;
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         void showAlertModal("サーバー接続後にチャットを送信できます");
         return;
     }
 
-    const message = lobbyChatInputEl.value.trim();
+    const inputEl = chatBoxEl.querySelector(".chat-input");
+    if (!inputEl) return;
+
+    const message = inputEl.value.trim();
     if (message === "") return;
 
     if (message.length > CHAT_MAX_LENGTH) {
@@ -506,9 +551,12 @@ function sendLobbyChatMessage() {
         return;
     }
 
+    const chatType = chatBoxEl.getAttribute("data-chat-type") || "lobby";
     const now = Date.now();
-    if (now - lastChatSentAt < CHAT_MIN_INTERVAL_MS) {
-        const waitMs = CHAT_MIN_INTERVAL_MS - (now - lastChatSentAt);
+    const lastSent = lastChatSentAt[chatType] || 0;
+
+    if (now - lastSent < CHAT_MIN_INTERVAL_MS) {
+        const waitMs = CHAT_MIN_INTERVAL_MS - (now - lastSent);
         void showAlertModal(`連続投稿が早すぎます。${(waitMs / 1000).toFixed(1)}秒待ってください`);
         return;
     }
@@ -517,37 +565,48 @@ function sendLobbyChatMessage() {
         JSON.stringify({
             type: "chat_message",
             message,
+            chat_type: chatType,
             timestamp: Date.now()
         })
     );
-    lastChatSentAt = now;
-    lobbyChatInputEl.value = "";
-    updateLobbyChatLengthWarning();
+    lastChatSentAt[chatType] = now;
+    inputEl.value = "";
+    updateChatLengthWarning(inputEl);
 }
 
-function bindLobbyChatHandlers() {
-    if (lobbyChatSendBtnEl) {
-        lobbyChatSendBtnEl.addEventListener("click", () => {
-            sendLobbyChatMessage();
-        });
-    }
+function bindChatHandlers() {
+    // イベント委譲：全チャットボックスの送信ボタン
+    document.addEventListener("click", (event) => {
+        if (event.target.classList.contains("chat-send-btn")) {
+            const chatBox = event.target.closest(".chat-box");
+            if (chatBox) {
+                sendChatMessage(chatBox);
+            }
+        }
+    });
 
-    if (lobbyChatInputEl) {
-        lobbyChatInputEl.addEventListener("input", () => {
-            updateLobbyChatLengthWarning();
-        });
+    // イベント委譲：全チャットボックスの入力欄
+    document.addEventListener("input", (event) => {
+        if (event.target.classList.contains("chat-input")) {
+            updateChatLengthWarning(event.target);
+        }
+    });
 
-        lobbyChatInputEl.addEventListener("keydown", (event) => {
-            if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    // イベント委譲：Enterキーで送信
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+
+        if (event.target.classList.contains("chat-input")) {
             event.preventDefault();
-            sendLobbyChatMessage();
-        });
-    }
-
-    updateLobbyChatLengthWarning();
+            const chatBox = event.target.closest(".chat-box");
+            if (chatBox) {
+                sendChatMessage(chatBox);
+            }
+        }
+    });
 }
 
-bindLobbyChatHandlers();
+bindChatHandlers();
 
 leaveGameArenaEl?.addEventListener("click", requestRoomExit);
 leaveGameArenaEl?.addEventListener("keydown", (event) => {

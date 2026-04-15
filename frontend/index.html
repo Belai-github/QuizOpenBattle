@@ -36,10 +36,10 @@
                 <div id="event-log-box">
                     <div id="event-log"></div>
                 </div>
-                <div id="lobby-chat-box">
-                    <textarea id="lobby-chat-input" rows="1" maxlength="200" placeholder="チャットを入力..."></textarea>
-                    <p id="lobby-chat-length-warning" class="hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
-                    <button id="lobby-chat-send-btn" type="button">送信</button>
+                <div class="chat-box" data-chat-room="lobby" data-chat-type="lobby">
+                    <textarea class="chat-input" rows="1" maxlength="200" placeholder="チャットを入力..."></textarea>
+                    <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
+                    <button class="chat-send-btn" type="button">送信</button>
                 </div>
             </div>
 
@@ -82,6 +82,32 @@
         <div id="arena-spectator-box">
             <div class="arena-spectator-label">観戦者</div>
             <ul id="arena-spectator-list"></ul>
+        </div>
+
+        <div class="game-chat-boxes">
+            <div class="chat-box" data-chat-room="game" data-chat-type="game-all">
+                <textarea class="chat-input" rows="1" maxlength="200" placeholder="全員向けチャット..."></textarea>
+                <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
+                <button class="chat-send-btn" type="button">送信</button>
+            </div>
+
+            <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-left" data-visibility="team-left">
+                <textarea class="chat-input" rows="1" maxlength="200" placeholder="先攻チーム専用チャット..."></textarea>
+                <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
+                <button class="chat-send-btn" type="button">送信</button>
+            </div>
+
+            <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-right" data-visibility="team-right">
+                <textarea class="chat-input" rows="1" maxlength="200" placeholder="後攻チーム専用チャット..."></textarea>
+                <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
+                <button class="chat-send-btn" type="button">送信</button>
+            </div>
+
+            <div class="chat-box hidden" data-chat-room="game" data-chat-type="questioner" data-visibility="questioner">
+                <textarea class="chat-input" rows="1" maxlength="200" placeholder="出題者専用チャット..."></textarea>
+                <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
+                <button class="chat-send-btn" type="button">送信</button>
+            </div>
         </div>
     </div>
 

@@ -239,20 +239,37 @@ button:hover {
     margin-top: 8px;
 }
 
-#lobby-chat-input {
+.chat-box {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-input {
     margin-top: 0;
     min-height: 84px;
 }
 
-#lobby-chat-send-btn {
+.chat-send-btn {
     margin-top: 8px;
 }
 
-#lobby-chat-length-warning {
+.chat-length-warning {
     margin: 4px 2px 0;
     color: #b91c1c;
     font-size: 0.76rem;
     line-height: 1.35;
+}
+
+.game-chat-boxes {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+#lobby-chat-send-btn {
+    margin-top: 8px;
 }
 
 #room-list-box {
