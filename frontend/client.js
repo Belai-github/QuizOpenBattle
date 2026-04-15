@@ -1464,10 +1464,16 @@ function updateChatBoxVisibility() {
             if (logEl) {
                 logEl.classList.remove("hidden");
             }
-            const inputAreaEls = chatBox.querySelectorAll(".chat-input-area, .chat-input");
-            inputAreaEls.forEach((el) => el.classList.add("hidden"));
+            // テキストエリアへ hidden を直接付けると復帰時に残留するため、compose単位で隠す。
+            setChatBoxEditable(chatBox, false);
             chatBox.classList.remove("hidden");
             return;
+        }
+
+        // 過去の不整合で chat-input に hidden が残っていても通常モードで復帰できるよう補正する。
+        const inputEl = chatBox.querySelector(".chat-input");
+        if (inputEl && inputEl.classList.contains("hidden")) {
+            inputEl.classList.remove("hidden");
         }
 
         // チャットルームが異なれば非表示

@@ -397,7 +397,6 @@ class QuizGameManager:
             self._format_answer_result_message(team_label, is_correct),
             event_payload={
                 "team": team,
-                "log_marker_id": answer_log_marker_id,
             },
         )
 
