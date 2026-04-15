@@ -1,2 +1,6 @@
-.venv/*
-.vscode/*
+.venv/
+.vscode/
+
+# Python cache
+__pycache__/
+*.py[cod]
