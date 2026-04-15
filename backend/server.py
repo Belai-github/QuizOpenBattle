@@ -920,6 +920,112 @@ class QuizGameManager:
             event_recipient_ids=all_recipient_ids,
         )
 
+    async def _resend_pending_votes_to_client(self, room_owner_id: str, client_id: str):
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            return
+
+        if room.get("game_state") != "playing":
+            return
+
+        recipient_ids = {client_id}
+
+        pending_open_vote = room.get("pending_open_vote")
+        if isinstance(pending_open_vote, dict) and pending_open_vote.get("status") == "pending":
+            voter_ids = set(pending_open_vote.get("voter_ids", set()))
+            approved_ids = set(pending_open_vote.get("approved_ids", set()))
+            rejected_ids = set(pending_open_vote.get("rejected_ids", set()))
+            if client_id in voter_ids and client_id not in approved_ids and client_id not in rejected_ids:
+                vote_id = str(pending_open_vote.get("vote_id") or "").strip()
+                team = str(pending_open_vote.get("team") or "").strip()
+                char_index = pending_open_vote.get("char_index")
+                required_approvals = int(pending_open_vote.get("required_approvals") or 0)
+                total_voters = len(voter_ids)
+                if vote_id and team in {"team-left", "team-right"} and isinstance(char_index, int):
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="open_vote_request",
+                        event_message="",
+                        event_chat_type=team,
+                        event_room_id=room_owner_id,
+                        event_recipient_ids=recipient_ids,
+                        event_payload={
+                            "vote_id": vote_id,
+                            "team": team,
+                            "char_index": char_index,
+                            "required_approvals": required_approvals,
+                            "total_voters": total_voters,
+                            "log_marker_id": vote_id,
+                            "skip_history": True,
+                            "resend": True,
+                        },
+                    )
+
+        pending_answer_vote = room.get("pending_answer_vote")
+        if isinstance(pending_answer_vote, dict) and pending_answer_vote.get("status") == "pending":
+            voter_ids = set(pending_answer_vote.get("voter_ids", set()))
+            approved_ids = set(pending_answer_vote.get("approved_ids", set()))
+            rejected_ids = set(pending_answer_vote.get("rejected_ids", set()))
+            if client_id in voter_ids and client_id not in approved_ids and client_id not in rejected_ids:
+                vote_id = str(pending_answer_vote.get("vote_id") or "").strip()
+                team = str(pending_answer_vote.get("team") or "").strip()
+                answer_text = str(pending_answer_vote.get("answer_text") or "").strip()
+                requester_id = pending_answer_vote.get("requester_id")
+                requester_name = self.nicknames.get(requester_id, "ゲスト")
+                required_approvals = int(pending_answer_vote.get("required_approvals") or 0)
+                total_voters = len(voter_ids)
+                if vote_id and team in {"team-left", "team-right"}:
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="answer_vote_request",
+                        event_message="",
+                        event_chat_type=team,
+                        event_room_id=room_owner_id,
+                        event_recipient_ids=recipient_ids,
+                        event_payload={
+                            "vote_id": vote_id,
+                            "team": team,
+                            "team_label": self._team_label(team),
+                            "answer_text": answer_text,
+                            "answerer_name": requester_name,
+                            "required_approvals": required_approvals,
+                            "total_voters": total_voters,
+                            "log_marker_id": vote_id,
+                            "skip_history": True,
+                            "resend": True,
+                        },
+                    )
+
+        pending_turn_end_vote = room.get("pending_turn_end_vote")
+        if isinstance(pending_turn_end_vote, dict) and pending_turn_end_vote.get("status") == "pending":
+            voter_ids = set(pending_turn_end_vote.get("voter_ids", set()))
+            approved_ids = set(pending_turn_end_vote.get("approved_ids", set()))
+            rejected_ids = set(pending_turn_end_vote.get("rejected_ids", set()))
+            if client_id in voter_ids and client_id not in approved_ids and client_id not in rejected_ids:
+                vote_id = str(pending_turn_end_vote.get("vote_id") or "").strip()
+                team = str(pending_turn_end_vote.get("team") or "").strip()
+                required_approvals = int(pending_turn_end_vote.get("required_approvals") or 0)
+                total_voters = len(voter_ids)
+                if vote_id and team in {"team-left", "team-right"}:
+                    await self.broadcast_state(
+                        public_info="",
+                        event_type="turn_end_vote_request",
+                        event_message="",
+                        event_chat_type=team,
+                        event_room_id=room_owner_id,
+                        event_recipient_ids=recipient_ids,
+                        event_payload={
+                            "vote_id": vote_id,
+                            "team": team,
+                            "team_label": self._team_label(team),
+                            "required_approvals": required_approvals,
+                            "total_voters": total_voters,
+                            "log_marker_id": vote_id,
+                            "skip_history": True,
+                            "resend": True,
+                        },
+                    )
+
     async def request_open_vote(self, client_id: str, char_index):
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
@@ -977,6 +1083,63 @@ class QuizGameManager:
             return
 
         total_voters = len(voter_ids)
+        open_log_recipient_ids = {owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
+        team_label = self._team_label(team)
+
+        if total_voters == 1:
+            previous_turn_team = (room.get("game") or {}).get("current_turn_team")
+            result = apply_open_character(room, team, char_index)
+            vote_id = str(uuid.uuid4())
+
+            if not result.get("ok"):
+                await self.broadcast_state(
+                    public_info="",
+                    event_type="open_vote_resolved",
+                    event_message="",
+                    event_chat_type=team,
+                    event_room_id=owner_id,
+                    event_payload={
+                        "vote_id": vote_id,
+                        "approved": False,
+                        "char_index": char_index,
+                        "reason": result.get("error", "open_failed"),
+                        "log_marker_id": vote_id,
+                    },
+                    event_recipient_ids=open_log_recipient_ids,
+                )
+                return
+
+            is_yakumono = result.get("is_yakumono", False)
+            await self.broadcast_state(
+                public_info=f"{char_index + 1}文字目がオープンされました。",
+                event_type="open_vote_resolved",
+                event_message=self._format_open_vote_resolution_message(team_label, char_index, True),
+                event_chat_type=team,
+                event_room_id=owner_id,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": True,
+                    "char_index": char_index,
+                    "is_yakumono": is_yakumono,
+                    "log_marker_id": vote_id,
+                },
+                event_recipient_ids=open_log_recipient_ids,
+            )
+
+            next_turn_team = (room.get("game") or {}).get("current_turn_team")
+            should_notify_turn_changed = (room.get("game") or {}).get("game_status") == "playing" and previous_turn_team != next_turn_team
+            if should_notify_turn_changed:
+                turn_changed_message = self._format_turn_changed_message(next_turn_team)
+                await self.broadcast_state(
+                    public_info=turn_changed_message,
+                    event_type="turn_changed",
+                    event_room_id=owner_id,
+                )
+                await self._broadcast_team_log_message(owner_id, room, "turn_changed", turn_changed_message)
+
+            await self.send_private_info(client_id, "オープンしました。")
+            return
+
         vote_id = str(uuid.uuid4())
         required_approvals = (total_voters // 2) + 1
         approved_ids = {client_id} if total_voters > 1 else set()
@@ -991,8 +1154,6 @@ class QuizGameManager:
             "required_approvals": required_approvals,
             "status": "pending",
         }
-
-        open_log_recipient_ids = {owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
 
         request_public_info = ""
         request_event_message = ""
@@ -1547,6 +1708,10 @@ class QuizGameManager:
             target_screen=result.get("target_screen"),
         )
 
+        joined_ctx = resolve_client_room_context(self.rooms, client_id)
+        if result.get("target_screen") == "game_arena" and joined_ctx is not None and joined_ctx.get("role") == "participant" and joined_ctx.get("room_owner_id") == room_owner_id:
+            await self._resend_pending_votes_to_client(room_owner_id, client_id)
+
         role_name = result.get("event_role_name")
         if role_name is None:
             return
@@ -1952,6 +2117,7 @@ class QuizGameManager:
                 target_screen="game_arena",
                 event_type="room_reconnected",
             )
+            await self._resend_pending_votes_to_client(restored_room_owner_id, client_id)
         return True
 
     async def disconnect(self, client_id: str):

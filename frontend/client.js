@@ -821,6 +821,9 @@ function resetArenaChatCaches() {
     arenaRoomLogStore.clear();
     arenaChatHistorySeenSeqSetByRoom.clear();
     preGameGlobalHistorySeenSeqSetByRoom.clear();
+    handledOpenVoteIds.clear();
+    handledAnswerVoteIds.clear();
+    handledTurnEndVoteIds.clear();
     currentArenaLogRoomId = null;
     clearArenaLogElements();
 }
@@ -2939,6 +2942,26 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             void showAlertModal(data.private_info);
         }
 
+        // 投票が解決されたらハンドル状態を解放し、再提案/再投票を阻害しないようにする。
+        if (data.event_type === "open_vote_resolved") {
+            const resolvedVoteId = String(data.event_payload?.vote_id || "");
+            if (resolvedVoteId !== "") {
+                handledOpenVoteIds.delete(resolvedVoteId);
+            }
+        }
+        if (data.event_type === "answer_vote_resolved") {
+            const resolvedVoteId = String(data.event_payload?.vote_id || "");
+            if (resolvedVoteId !== "") {
+                handledAnswerVoteIds.delete(resolvedVoteId);
+            }
+        }
+        if (data.event_type === "turn_end_vote_resolved") {
+            const resolvedVoteId = String(data.event_payload?.vote_id || "");
+            if (resolvedVoteId !== "") {
+                handledTurnEndVoteIds.delete(resolvedVoteId);
+            }
+        }
+
         if (data.event_type === "open_vote_request" && data.event_payload) {
             void handleOpenVoteRequest(data.event_payload);
         }
@@ -3242,9 +3265,13 @@ async function handleOpenVoteRequest(payload) {
     const charIndex = Number(payload?.char_index);
     const totalVoters = Number(payload?.total_voters || 0);
     const targetTeam = String(payload?.team || "").trim();
+    const isResend = payload?.resend === true;
     if (targetTeam !== "team-left" && targetTeam !== "team-right") return;
     if (userRole !== targetTeam) return;
     if (!voteId || !Number.isFinite(charIndex)) return;
+    if (isResend) {
+        handledOpenVoteIds.delete(voteId);
+    }
     if (handledOpenVoteIds.has(voteId)) return;
 
     handledOpenVoteIds.add(voteId);
@@ -3262,17 +3289,24 @@ async function handleOpenVoteRequest(payload) {
     );
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
+        handledOpenVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。再接続後にもう一度回答してください。");
         return;
     }
 
-    ws.send(
-        JSON.stringify({
-            type: "open_vote_response",
-            vote_id: voteId,
-            approve: Boolean(confirmed),
-            timestamp: Date.now()
-        })
-    );
+    try {
+        ws.send(
+            JSON.stringify({
+                type: "open_vote_response",
+                vote_id: voteId,
+                approve: Boolean(confirmed),
+                timestamp: Date.now()
+            })
+        );
+    } catch {
+        handledOpenVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
+    }
 }
 
 async function handleAnswerVoteRequest(payload) {
@@ -3282,10 +3316,14 @@ async function handleAnswerVoteRequest(payload) {
     const answererName = String(payload?.answerer_name || "参加者");
     const answerText = String(payload?.answer_text || "");
     const totalVoters = Number(payload?.total_voters || 0);
+    const isResend = payload?.resend === true;
 
     if (!voteId) return;
     if (isPlayerRole(userRole) && payloadTeam && payloadTeam !== userRole) return;
     if (!answerText) return;
+    if (isResend) {
+        handledAnswerVoteIds.delete(voteId);
+    }
     if (handledAnswerVoteIds.has(voteId)) return;
     handledAnswerVoteIds.add(voteId);
 
@@ -3302,24 +3340,35 @@ async function handleAnswerVoteRequest(payload) {
     );
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
+        handledAnswerVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。再接続後にもう一度回答してください。");
         return;
     }
 
-    ws.send(
-        JSON.stringify({
-            type: "answer_vote_response",
-            vote_id: voteId,
-            approve: Boolean(confirmed),
-            timestamp: Date.now(),
-        })
-    );
+    try {
+        ws.send(
+            JSON.stringify({
+                type: "answer_vote_response",
+                vote_id: voteId,
+                approve: Boolean(confirmed),
+                timestamp: Date.now(),
+            })
+        );
+    } catch {
+        handledAnswerVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
+    }
 }
 
 async function handleTurnEndVoteRequest(payload) {
     const voteId = String(payload?.vote_id || "");
     const teamLabel = String(payload?.team_label || "");
     const totalVoters = Number(payload?.total_voters || 0);
+    const isResend = payload?.resend === true;
     if (!voteId) return;
+    if (isResend) {
+        handledTurnEndVoteIds.delete(voteId);
+    }
     if (handledTurnEndVoteIds.has(voteId)) return;
 
     handledTurnEndVoteIds.add(voteId);
@@ -3336,17 +3385,24 @@ async function handleTurnEndVoteRequest(payload) {
     );
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
+        handledTurnEndVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。再接続後にもう一度回答してください。");
         return;
     }
 
-    ws.send(
-        JSON.stringify({
-            type: "turn_end_vote_response",
-            vote_id: voteId,
-            approve: Boolean(confirmed),
-            timestamp: Date.now(),
-        })
-    );
+    try {
+        ws.send(
+            JSON.stringify({
+                type: "turn_end_vote_response",
+                vote_id: voteId,
+                approve: Boolean(confirmed),
+                timestamp: Date.now(),
+            })
+        );
+    } catch {
+        handledTurnEndVoteIds.delete(voteId);
+        await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
+    }
 }
 
 async function handleAnswerJudgementRequest(payload) {
