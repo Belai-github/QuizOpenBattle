@@ -3603,13 +3603,26 @@ function renderArenaQuestionText() {
 
 function renderArena(currentRoom) {
     const titleEl = document.getElementById("arena-room-title");
+    const questionerListEl = document.getElementById("arena-questioner-list");
+    const roomMetaEl = document.getElementById("arena-room-meta");
     const questionEl = document.getElementById("arena-question-text");
     const leftListEl = document.getElementById("arena-player-left-list");
     const rightListEl = document.getElementById("arena-player-right-list");
     const spectatorListEl = document.getElementById("arena-spectator-list");
 
     if (!currentRoom) {
-        titleEl.textContent = "出題者: -";
+        if (questionerListEl) {
+            questionerListEl.innerHTML = "";
+            const emptyItemEl = document.createElement("li");
+            emptyItemEl.className = "player-list-item questioner-list-item player-list-item-empty";
+            emptyItemEl.textContent = "出題者: -";
+            questionerListEl.appendChild(emptyItemEl);
+        } else if (titleEl) {
+            titleEl.textContent = "出題者: -";
+        }
+        if (roomMetaEl) {
+            roomMetaEl.innerHTML = "";
+        }
         currentArenaQuestionRawText = "";
         questionerViewMode = "all";
         selectedArenaQuestionCharIndexes.clear();
@@ -3624,35 +3637,52 @@ function renderArena(currentRoom) {
     }
 
     const isMeQuestioner = currentRoom.questioner_id === myClientId;
-    const questionerLabel = isMeQuestioner
-        ? `${currentRoom.questioner_name} (You)`
-        : currentRoom.questioner_name;
+    const questionerName = String(currentRoom.questioner_name || "ゲスト");
     const genreLabel = String(currentRoom.genre || "").trim() || "未設定";
     const difficultyLabel = currentRoom.is_ai_mode
         ? `${normalizeAiAccuracyRate(currentRoom.difficulty)}%`
         : "未設定";
     const shouldShowGenre = String(currentRoom.genre || "").trim() !== "";
     const shouldShowDifficulty = Boolean(currentRoom.is_ai_mode) && difficultyLabel !== "未設定";
-    titleEl.textContent = "";
-    const questionerSpanEl = document.createElement("span");
-    questionerSpanEl.className = "arena-title-questioner";
-    questionerSpanEl.textContent = `出題者: ${questionerLabel}`;
+    if (questionerListEl) {
+        questionerListEl.innerHTML = "";
+        const questionerItemEl = document.createElement("li");
+        questionerItemEl.className = "player-list-item questioner-list-item";
 
-    const genreSpanEl = document.createElement("span");
-    genreSpanEl.className = "arena-title-genre";
-    genreSpanEl.style.marginLeft = "20px";
-    genreSpanEl.textContent = `ジャンル:${genreLabel}`;
+        const questionerNameEl = document.createElement("span");
+        questionerNameEl.className = "player-list-item-name";
+        questionerNameEl.textContent = `出題者: ${questionerName}`;
+        questionerItemEl.appendChild(questionerNameEl);
 
-    titleEl.appendChild(questionerSpanEl);
-    if (shouldShowGenre) {
-        titleEl.appendChild(genreSpanEl);
+        if (isMeQuestioner) {
+            questionerItemEl.classList.add("player-list-item-me", "questioner-list-item-me");
+            const meTagEl = document.createElement("span");
+            meTagEl.className = "player-list-item-tag";
+            meTagEl.textContent = "You";
+            questionerItemEl.appendChild(meTagEl);
+        }
+
+        questionerListEl.appendChild(questionerItemEl);
+    } else if (titleEl) {
+        titleEl.textContent = `出題者: ${questionerName}${isMeQuestioner ? " (You)" : ""}`;
     }
-    if (shouldShowDifficulty) {
-        const difficultySpanEl = document.createElement("span");
-        difficultySpanEl.className = "arena-title-difficulty";
-        difficultySpanEl.style.marginLeft = "20px";
-        difficultySpanEl.textContent = `難易度:${difficultyLabel}`;
-        titleEl.appendChild(difficultySpanEl);
+
+    if (roomMetaEl) {
+        roomMetaEl.innerHTML = "";
+
+        if (shouldShowGenre) {
+            const genreChipEl = document.createElement("span");
+            genreChipEl.className = "arena-room-meta-chip";
+            genreChipEl.textContent = `ジャンル: ${genreLabel}`;
+            roomMetaEl.appendChild(genreChipEl);
+        }
+
+        if (shouldShowDifficulty) {
+            const difficultyChipEl = document.createElement("span");
+            difficultyChipEl.className = "arena-room-meta-chip";
+            difficultyChipEl.textContent = `難易度: ${difficultyLabel}`;
+            roomMetaEl.appendChild(difficultyChipEl);
+        }
     }
 
     const serverQuestionText = String(currentRoom.question_text || "");
