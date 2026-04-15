@@ -49,6 +49,22 @@ from backend.broadcast import (
     resolve_log_marker_id,
 )
 from backend.api_routes import register_api_routes
+from backend.handlers.voting import (
+    request_intentional_draw_vote as request_intentional_draw_vote_handler,
+    request_open_vote as request_open_vote_handler,
+    request_turn_end_attempt as request_turn_end_attempt_handler,
+    respond_answer_vote as respond_answer_vote_handler,
+    respond_intentional_draw_vote as respond_intentional_draw_vote_handler,
+    respond_open_vote as respond_open_vote_handler,
+    respond_turn_end_vote as respond_turn_end_vote_handler,
+)
+from backend.handlers.room_ops import (
+    cancel_question as cancel_question_handler,
+    join_room as join_room_handler,
+    remove_client_from_all_rooms as remove_client_from_all_rooms_handler,
+    shuffle_participants as shuffle_participants_handler,
+    swap_participant_team as swap_participant_team_handler,
+)
 
 from backend.game_logic import (
     _normalized_question_chars,
@@ -1112,6 +1128,8 @@ class QuizGameManager:
         )
 
     async def request_open_vote(self, client_id: str, char_index):
+        return await request_open_vote_handler(self, client_id, char_index)
+
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -1291,6 +1309,8 @@ class QuizGameManager:
             await self.send_private_info(client_id, "提案しました。")
 
     async def respond_open_vote(self, client_id: str, vote_id: str, approve: bool):
+        return await respond_open_vote_handler(self, client_id, vote_id, approve)
+
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -1442,6 +1462,8 @@ class QuizGameManager:
             )
 
     async def respond_answer_vote(self, client_id: str, vote_id: str, approve: bool):
+        return await respond_answer_vote_handler(self, client_id, vote_id, approve)
+
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -1618,6 +1640,8 @@ class QuizGameManager:
             return
 
     async def request_turn_end_attempt(self, client_id: str):
+        return await request_turn_end_attempt_handler(self, client_id)
+
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -1744,6 +1768,8 @@ class QuizGameManager:
         await self.send_private_info(client_id, "提案しました。")
 
     async def request_intentional_draw_vote(self, client_id: str):
+        return await request_intentional_draw_vote_handler(self, client_id)
+
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -1822,6 +1848,8 @@ class QuizGameManager:
         await self.send_private_info(client_id, "フルオープン決着を提案しました。")
 
     async def respond_intentional_draw_vote(self, client_id: str, vote_id: str, approve: bool):
+        return await respond_intentional_draw_vote_handler(self, client_id, vote_id, approve)
+
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -1955,6 +1983,8 @@ class QuizGameManager:
             return
 
     async def respond_turn_end_vote(self, client_id: str, vote_id: str, approve: bool):
+        return await respond_turn_end_vote_handler(self, client_id, vote_id, approve)
+
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
@@ -2109,6 +2139,8 @@ class QuizGameManager:
         await ws.send_text(json.dumps(response))
 
     async def cancel_question(self, requester_id: str, room_owner_id: str):
+        return await cancel_question_handler(self, requester_id, room_owner_id)
+
         room = self.rooms.get(room_owner_id)
         if room is None:
             await self.send_private_info(requester_id, "取り消し対象の部屋が見つかりません。")
@@ -2149,9 +2181,13 @@ class QuizGameManager:
         )
 
     def remove_client_from_all_rooms(self, client_id: str):
+        return remove_client_from_all_rooms_handler(self, client_id)
+
         remove_client_from_all_rooms_logic(self.rooms, client_id)
 
     async def join_room(self, client_id: str, room_owner_id: str, role: str):
+        return await join_room_handler(self, client_id, room_owner_id, role)
+
         self._cancel_disconnect_grace_timer(client_id)
         self._clear_pending_disconnect_everywhere(client_id)
         self.reconnect_reservations.pop(client_id, None)
@@ -2223,6 +2259,8 @@ class QuizGameManager:
         )
 
     async def shuffle_participants(self, client_id: str):
+        return await shuffle_participants_handler(self, client_id)
+
         result = apply_shuffle_participants(self.rooms, client_id)
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "参加者シャッフルに失敗しました。"))
@@ -2239,6 +2277,8 @@ class QuizGameManager:
         )
 
     async def swap_participant_team(self, client_id: str, target_client_id: str):
+        return await swap_participant_team_handler(self, client_id, target_client_id)
+
         result = apply_swap_participant_team(self.rooms, client_id, target_client_id)
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "参加者入れ替えに失敗しました。"))
