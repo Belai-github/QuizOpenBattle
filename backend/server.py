@@ -1796,6 +1796,7 @@ class QuizGameManager:
             private_map={client_id: "QuizOpenBattleへようこそ"},
             event_type="join",
             event_message=f"{nickname} が入場しました",
+            event_chat_type="lobby",
         )
 
         if restored_room_owner_id:
@@ -1862,6 +1863,7 @@ class QuizGameManager:
                 public_info=f"{nickname} が退室しました",
                 event_type="leave",
                 event_message=f"{nickname} が退場しました",
+                event_chat_type="lobby",
             )
 
             if closed_room is not None:

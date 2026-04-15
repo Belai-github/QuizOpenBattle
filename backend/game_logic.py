@@ -251,7 +251,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             if not readable_roles or chat_role not in readable_roles:
                 continue
 
-            if room_state == "playing" and ctx["role"] == "participant" and event_type == "chat":
+            if room_state == "playing" and ctx["role"] == "participant" and event_chat_type == "game-global" and event_type == "chat":
                 continue
 
             arena_chat_history.append(

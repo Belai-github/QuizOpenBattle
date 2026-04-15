@@ -2779,6 +2779,8 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         currentRoomGameState = data.current_room?.game_state ?? null;
         currentGameState = data.current_room?.game ?? null;
         const activeRoomId = String(data.current_room?.room_owner_id || "").trim() || null;
+        const shouldRevealFinishedArenaLogs = data.event_type === "game_finished"
+            || (currentRoomGameState === "finished" && previousRoomGameState !== "finished");
 
         const isEnteringArena = data.target_screen === "game_arena" && (!wasInArena || activeRoomId !== currentArenaLogRoomId);
         const isLeavingArena = wasInArena && data.target_screen === "waiting_room";
@@ -2806,6 +2808,16 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             debugArenaHistory("ws.onmessage rebuilt from snapshot", {
                 roomId: activeRoomId,
                 reason: "shouldRebuildArenaLogs",
+            });
+        }
+
+        if (shouldRevealFinishedArenaLogs && activeRoomId) {
+            hydrateArenaChatHistoryIfNeeded(data.current_room);
+            hydratePreGameGlobalHistoryIfNeeded(data.current_room);
+            renderArenaLogsForRoom(activeRoomId, { forceScrollToBottom: true });
+            debugArenaHistory("ws.onmessage revealed finished arena logs", {
+                roomId: activeRoomId,
+                reason: "game_finished",
             });
         }
 
