@@ -1844,6 +1844,10 @@ body[data-room-role="spectator"] #arena-answer-box {
     align-items: center;
 }
 
+#close-room-btn.hidden {
+    display: none !important;
+}
+
 #close-room-btn:hover {
     text-decoration: underline;
 }

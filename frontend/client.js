@@ -1520,14 +1520,18 @@ function updateArenaAnswerLengthWarning() {
     updateLengthWarning(arenaAnswerInputEl, arenaAnswerLengthWarningEl, ANSWER_MAX_LENGTH);
 }
 
-function updateArenaLeaveLabel(mode) {
-    if (!leaveGameArenaEl) return;
-
-    if (mode === "owner") {
-        leaveGameArenaEl.textContent = "✕ 部屋を閉じる";
-        leaveGameArenaEl.setAttribute("aria-label", "部屋を閉じる");
-        return;
+function canUseRoomCloseLabel(room) {
+    const snapshot = room || currentRoomSnapshot;
+    if (!snapshot || typeof snapshot !== "object") {
+        return false;
     }
+    const ownerId = String(snapshot.room_owner_id || "");
+    const me = String(myClientId || "");
+    return ownerId !== "" && me !== "" && ownerId === me && Boolean(snapshot.is_ai_mode);
+}
+
+function updateArenaLeaveLabel(modeOrRoom) {
+    if (!leaveGameArenaEl) return;
 
     leaveGameArenaEl.textContent = "←退室";
     leaveGameArenaEl.setAttribute("aria-label", "退室");
@@ -2201,16 +2205,14 @@ function updateArenaCloseButtonVisibility(currentRoom) {
 
     if (isKifuMode) {
         closeRoomBtnEl.classList.add("hidden");
+        closeRoomBtnEl.style.display = "none";
         return;
     }
 
     const room = currentRoom || currentRoomSnapshot;
-    const canManageRoom = Boolean(room?.can_manage_room);
-    const isRoomOwner = String(room?.room_owner_id || "") === String(myClientId || "");
-    const isAiMode = Boolean(room?.is_ai_mode);
-    const roomState = String(room?.game_state || currentRoomGameState || "waiting");
-    const canShow = isInGameArena() && canManageRoom && isRoomOwner && isAiMode && roomState === "finished";
+    const canShow = isInGameArena() && canUseRoomCloseLabel(room);
     closeRoomBtnEl.classList.toggle("hidden", !canShow);
+    closeRoomBtnEl.style.display = canShow ? "" : "none";
 }
 
 async function requestCloseRoom(roomOwnerId) {
@@ -3697,7 +3699,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         document.body.dataset.roomRole = String(data.current_room?.role || "");
 
         if (data.target_screen === "game_arena") {
-            updateArenaLeaveLabel(pendingArenaMode === "owner" ? "owner" : "guest");
+            updateArenaLeaveLabel(data.current_room);
             showGameArenaScreen();
         } else if (data.target_screen === "waiting_room") {
             pendingArenaMode = null;
@@ -3778,6 +3780,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         updateGameStateUI();
         updateStartGameButtonVisibility(data.current_room);
         updateArenaCloseButtonVisibility(data.current_room);
+        if (isInGameArena()) {
+            updateArenaLeaveLabel(data.current_room);
+        }
         updateArenaAnswerFormVisibility();
         updateChatBoxVisibility();
     };
