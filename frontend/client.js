@@ -74,6 +74,7 @@ const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const DEFAULT_AI_MODEL_ID = "gemini-2.5-flash";
 const AI_MODEL_OPTIONS = [
+    ["gpt-4o-mini", "gpt-4o-mini (OpenAI)"],
     ["gemini-2.5-flash-lite", "gemini-2.5-flash-lite (生成時間目安:約2秒)"],
     ["gemini-2.5-flash", "gemini-2.5-flash (生成時間目安:約10秒)"],
     ["gemini-2.5-pro", "gemini-2.5-pro (生成時間目安:約30秒)"],

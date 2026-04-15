@@ -3,6 +3,7 @@ import json
 import re
 import unicodedata
 from difflib import SequenceMatcher
+from openai import AsyncOpenAI
 from google import genai
 from dotenv import load_dotenv
 
@@ -17,9 +18,11 @@ except ImportError:
 load_dotenv()
 
 # 新しいSDKのクライアントを初期化（環境変数 GEMINI_API_KEY が自動で使われます）
-client = genai.Client()
+gemini_client = genai.Client()
+openai_client = AsyncOpenAI()
 
 AVAILABLE_MODEL_IDS = (
+    "gpt-4o-mini",
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
@@ -33,12 +36,26 @@ ANSWER_JUDGEMENT_TEMPERATURE = 0.0
 DEFAULT_QUIZ_DIFFICULTY = 50
 MAX_QUIZ_DIFFICULTY = 100
 ANSWER_JUDGEMENT_CACHE_VERSION = DEFAULT_PROMPT_VERSION
+OPENAI_QUIZ_MODEL_ID = "gpt-4o-mini"
 
 
 def _is_resource_exhausted_error(error: Exception) -> bool:
     message = str(error)
     upper = message.upper()
     return "RESOURCE_EXHAUSTED" in upper or "SPENDING CAP" in upper
+
+
+def _is_openai_resource_exhausted_error(error: Exception) -> bool:
+    message = str(error)
+    upper = message.upper()
+    if "INSUFFICIENT_QUOTA" in upper or "BILLING" in upper:
+        return True
+
+    status_code = getattr(error, "status_code", None)
+    if status_code in {402, 429}:
+        return True
+
+    return False
 
 
 def normalize_model_id(model_id: str | None) -> str:
@@ -119,9 +136,57 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
     prompt = get_quiz_prompt(genre, normalized_difficulty)
     selected_model_id = normalize_model_id(model_id)
 
+    if selected_model_id == OPENAI_QUIZ_MODEL_ID:
+        try:
+            response = await openai_client.chat.completions.create(
+                model=selected_model_id,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "あなたはクイズ作成アシスタントです。必ずJSONオブジェクトのみを返してください。",
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                temperature=QUIZ_GENERATION_TEMPERATURE,
+                response_format={"type": "json_object"},
+            )
+            response_text = (response.choices[0].message.content or "").strip()
+            return json.loads(response_text)
+        except Exception as e:
+            if _is_openai_resource_exhausted_error(e):
+                print(
+                    "クイズ生成エラー(OpenAI 課金上限):",
+                    {
+                        "model_id": selected_model_id,
+                        "genre": genre,
+                        "difficulty": normalized_difficulty,
+                        "error": repr(e),
+                    },
+                )
+                return {
+                    "question": "",
+                    "answer": "",
+                    "error_code": "RESOURCE_EXHAUSTED",
+                    "error_message": "Your OpenAI project has exceeded its quota or billing limit.",
+                }
+
+            print(
+                "クイズ生成エラー(OpenAI):",
+                {
+                    "model_id": selected_model_id,
+                    "genre": genre,
+                    "difficulty": normalized_difficulty,
+                    "error": repr(e),
+                },
+            )
+            return {"question": "AI問題の生成に失敗しました。", "answer": "エラー"}
+
     try:
         # 新しいSDKの非同期メソッド (client.aio) を使用して呼び出し
-        response = await client.aio.models.generate_content(
+        response = await gemini_client.aio.models.generate_content(
             model=selected_model_id,
             contents=prompt,
             config={
@@ -151,7 +216,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
     except Exception as e:
         if _is_resource_exhausted_error(e):
             print(
-                "クイズ生成エラー(課金上限):",
+                "クイズ生成エラー(Gemini 課金上限):",
                 {
                     "model_id": selected_model_id,
                     "genre": genre,
@@ -167,7 +232,7 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
             }
 
         print(
-            "クイズ生成エラー:",
+            "クイズ生成エラー(Gemini):",
             {
                 "model_id": selected_model_id,
                 "genre": genre,
@@ -197,7 +262,7 @@ async def check_answer_async(expected_answer: str, user_answer: str):
     prompt = get_judge_prompt(expected_answer, user_answer)
 
     try:
-        response = await client.aio.models.generate_content(
+        response = await gemini_client.aio.models.generate_content(
             model=selected_model_id,
             contents=prompt,
             config={"temperature": ANSWER_JUDGEMENT_TEMPERATURE},
@@ -218,10 +283,10 @@ async def check_answer_async(expected_answer: str, user_answer: str):
 
     except Exception as e:
         if _is_resource_exhausted_error(e):
-            print("判定エラー(課金上限): RESOURCE_EXHAUSTED -> ローカル簡易判定にフォールバックします")
+            print("判定エラー(Gemini 課金上限): RESOURCE_EXHAUSTED -> ローカル簡易判定にフォールバックします")
             return _fallback_answer_judgement(expected_answer, user_answer)
 
-        print(f"判定エラー: {e} -> ローカル簡易判定にフォールバックします")
+        print(f"判定エラー(Gemini): {e} -> ローカル簡易判定にフォールバックします")
         return _fallback_answer_judgement(expected_answer, user_answer)
 
 
@@ -249,8 +314,8 @@ if __name__ == "__main__":
             await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
     async def main():
-        genre = "代数学"
-        difficulty = 10
-        await test_quiz_generation(model_id="gemini-2.5-flash", genre=genre, difficulty=difficulty)
+        genre = "アニメ・マンガ"
+        difficulty = 30
+        await test_quiz_generation(model_id=OPENAI_QUIZ_MODEL_ID, genre=genre, difficulty=difficulty)
 
     asyncio.run(main())
