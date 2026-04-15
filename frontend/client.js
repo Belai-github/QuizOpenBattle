@@ -325,9 +325,17 @@ function renderNameList(listEl, names) {
         return;
     }
 
-    names.forEach((name) => {
+    names.forEach((entry) => {
         const item = document.createElement("li");
-        item.textContent = name;
+        if (typeof entry === "string") {
+            item.textContent = entry;
+            listEl.appendChild(item);
+            return;
+        }
+
+        const nickname = entry?.nickname || "ゲスト";
+        const isMe = entry?.client_id === myClientId;
+        item.textContent = isMe ? `${nickname} (You)` : nickname;
         listEl.appendChild(item);
     });
 }
@@ -348,7 +356,11 @@ function renderArena(currentRoom) {
         return;
     }
 
-    titleEl.textContent = `出題者: ${currentRoom.questioner_name}`;
+    const isMeQuestioner = currentRoom.questioner_id === myClientId;
+    const questionerLabel = isMeQuestioner
+        ? `${currentRoom.questioner_name} (You)`
+        : currentRoom.questioner_name;
+    titleEl.textContent = `出題者: ${questionerLabel}`;
     questionEl.textContent = currentRoom.question_text || "問題文を準備中...";
 
     const leftPlayers = Array.isArray(currentRoom.left_participants) ? currentRoom.left_participants : [];

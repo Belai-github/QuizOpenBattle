@@ -61,28 +61,44 @@ class QuizGameManager:
             else:
                 continue
 
-            # 左右の参加者を別々にリスト化
-            left_participant_names = []
+            # 左右の参加者を別々にリスト化（client_idも返して同名判定に対応）
+            left_participants = []
             for pid in room["left_participants"]:
-                left_participant_names.append(self.nicknames.get(pid, "ゲスト"))
+                left_participants.append(
+                    {
+                        "client_id": pid,
+                        "nickname": self.nicknames.get(pid, "ゲスト"),
+                    }
+                )
 
-            right_participant_names = []
+            right_participants = []
             for pid in room["right_participants"]:
-                right_participant_names.append(self.nicknames.get(pid, "ゲスト"))
+                right_participants.append(
+                    {
+                        "client_id": pid,
+                        "nickname": self.nicknames.get(pid, "ゲスト"),
+                    }
+                )
 
-            spectator_names = []
+            spectators = []
             for sid in room["spectators"]:
-                spectator_names.append(self.nicknames.get(sid, "ゲスト"))
+                spectators.append(
+                    {
+                        "client_id": sid,
+                        "nickname": self.nicknames.get(sid, "ゲスト"),
+                    }
+                )
 
             return {
                 "room_owner_id": owner_id,
+                "questioner_id": owner_id,
                 "questioner_name": room["questioner_name"],
                 "question_text": room["question_text"],
                 "role": role,
                 "chat_role": chat_role,
-                "left_participants": left_participant_names,
-                "right_participants": right_participant_names,
-                "spectators": spectator_names,
+                "left_participants": left_participants,
+                "right_participants": right_participants,
+                "spectators": spectators,
             }
 
         return None
