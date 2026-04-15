@@ -18,12 +18,12 @@ load_dotenv()
 client = genai.Client()
 
 AVAILABLE_MODEL_IDS = (
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash",
+    "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
+    "gemini-3.1-flash-lite-preview",
 )
-DEFAULT_MODEL_ID = "gemini-2.0-flash-lite"
+DEFAULT_MODEL_ID = "gemini-2.5-flash-lite"
 
 
 def normalize_model_id(model_id: str | None) -> str:
