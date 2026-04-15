@@ -311,6 +311,8 @@ body[data-app-mode="kifu"] .chat-compose {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-bottom: 10px;
 }
 
@@ -710,7 +712,7 @@ body[data-app-mode="kifu"] .chat-compose {
 .lobby-chat-send-btn,
 .arena-chat-send-btn {
     position: absolute;
-    right: 8px;
+    right: 4px;
     width: 32px;
     min-height: 32px;
     height: 32px;
@@ -1835,6 +1837,24 @@ body.modal-open #arena-question-text .arena-question-line {
     gap: 8px;
 }
 
+.arena-logs-toggle-btn {
+    width: auto;
+    min-height: 32px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #eab308;
+    background: #fff7cc;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #111827;
+    white-space: nowrap;
+}
+
+.arena-logs-toggle-btn:hover {
+    background: #eab308;
+}
+
 /* 狭いチャット欄でも本文が1文字ずつ縦崩れしないようにする */
 .arena-player-box .chat-log .event-log-item {
     display: grid;
@@ -1870,7 +1890,149 @@ body.modal-open #arena-question-text .arena-question-line {
     margin-bottom: 8px;
 }
 
-/* >= 768px: tablet base */
+#arena-global-chat-toggle {
+    display: none;
+}
+
+#arena-logs-toggle-btn {
+    color: #111827 !important;
+    background: #fff7cc !important;
+    margin-top: 0;
+    display: none;
+}
+
+#arena-logs-toggle-btn:hover {
+    background: #eab308 !important;
+}
+
+/* モバイル版（768px未満）: 進行ログをオーバーレイ化 */
+@media (max-width: 767px) {
+    #arena-logs-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #arena-logs-modal {
+        padding: 12px;
+        border: none;
+        background: transparent;
+        width: min(100vw - 24px, 760px);
+        height: min(100vh - 24px, 860px);
+        max-width: none;
+        max-height: none;
+        overflow: visible;
+    }
+
+    #arena-logs-modal::backdrop {
+        background: rgba(15, 23, 42, 0.48);
+    }
+
+    .arena-logs-modal-shell {
+        width: 100%;
+        height: 100%;
+        display: flex;
+    }
+
+    .arena-logs-modal-slot {
+        width: 100%;
+        height: 100%;
+        display: flex;
+    }
+
+    #arena-global-chat-box {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        max-width: none;
+        border-radius: 14px;
+        padding: 10px 10px 0;
+        border: 1px solid #facc15;
+        background: #fff7cc;
+        align-self: stretch;
+    }
+
+    #arena-global-chat-box .arena-chat-title {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #fff7cc;
+        padding: 10px;
+        border-bottom: 1px solid #facc15;
+    }
+
+    #arena-logs-close-btn {
+        width: 32px;
+        height: 32px;
+        min-height: auto;
+        margin: 0;
+        padding: 0;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: #111827;
+        font-size: 1.4rem;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #arena-logs-close-btn:hover {
+        background: #fef3c7;
+    }
+
+    #arena-global-chat-box .log-scroll-shell {
+        flex: 1 1 auto;
+        max-height: none;
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    #arena-global-chat-box .chat-log {
+        background: #fef3c7;
+        min-height: auto;
+        max-height: none;
+    }
+
+    #arena-global-chat-box .chat-compose {
+        position: relative;
+        background: #fff7cc;
+        padding: 10px 10px 10px;
+        padding-right: 48px;
+        border-top: 1px solid #facc15;
+    }
+
+    #arena-global-chat-box .chat-input {
+        padding-right: 46px;
+    }
+
+    #arena-global-chat-box .arena-chat-send-btn {
+        position: absolute;
+        right: 8px;
+        bottom: 10px;
+    }
+
+    /* 時系列ボタン群を小さく、折行対応 */
+    #kifu-replay-controls {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .kifu-step-btn {
+        width: 28px !important;
+        min-height: 28px !important;
+        font-size: 0.7rem;
+    }
+
+    #kifu-step-label {
+        min-width: 50px;
+        font-size: 0.7rem;
+    }
+}
+
 @media (min-width: 768px) {
     .rulebook-modal-card {
         width: min(94vw, 900px);

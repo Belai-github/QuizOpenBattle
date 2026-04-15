@@ -17,6 +17,9 @@ const closeRoomBtnEl = document.getElementById("close-room-btn");
 const startGameBtnEl = document.getElementById("start-game-btn");
 const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
 const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-visibility-btn");
+const arenaGlobalChatBoxEl = document.getElementById("arena-global-chat-box");
+const arenaLogsModalEl = document.getElementById("arena-logs-modal");
+const arenaLogsModalSlotEl = document.getElementById("arena-logs-modal-slot");
 const arenaAnswerBoxEl = document.getElementById("arena-answer-box");
 const arenaAnswerInputEl = document.getElementById("arena-answer-input");
 const arenaAnswerLengthWarningEl = document.getElementById("arena-answer-length-warning");
@@ -551,7 +554,9 @@ function attachChatLogFilterControls(chatBoxEl) {
     if (!titleEl || !logEl) return;
     if (titleEl.querySelector(".chat-log-filter-tools")) return;
 
-    const titleText = titleEl.textContent.trim();
+    const closeBtnEl = titleEl.querySelector("#arena-logs-close-btn");
+    const titleTextSourceEl = Array.from(titleEl.children).find((child) => child !== closeBtnEl);
+    const titleText = String(titleTextSourceEl?.textContent || titleEl.textContent || "").replace("×", "").trim();
     titleEl.textContent = "";
 
     const textEl = document.createElement("span");
@@ -606,6 +611,9 @@ function attachChatLogFilterControls(chatBoxEl) {
     toolsEl.appendChild(logFilterBtn);
     titleEl.appendChild(textEl);
     titleEl.appendChild(toolsEl);
+    if (closeBtnEl) {
+        titleEl.appendChild(closeBtnEl);
+    }
 
     chatLogFilterControlById.set(logEl.id, {
         logEl,
@@ -1657,6 +1665,43 @@ function isInGameArena() {
     return document.getElementById("game-arena-screen").style.display !== "none";
 }
 
+function isMobileArenaLogsMode() {
+    return window.matchMedia("(max-width: 767px)").matches;
+}
+
+function mountArenaLogsIntoModal() {
+    if (!arenaGlobalChatBoxEl || !arenaLogsModalSlotEl) return;
+    if (arenaGlobalChatBoxEl.parentElement === arenaLogsModalSlotEl) return;
+    arenaLogsModalSlotEl.appendChild(arenaGlobalChatBoxEl);
+}
+
+function restoreArenaLogsToLayout() {
+    const arenaLowerLayoutEl = document.getElementById("arena-lower-layout");
+    if (!arenaGlobalChatBoxEl || !arenaLowerLayoutEl) return;
+    if (arenaGlobalChatBoxEl.parentElement === arenaLowerLayoutEl) return;
+    arenaLowerLayoutEl.appendChild(arenaGlobalChatBoxEl);
+}
+
+function closeArenaLogsPresentation(restoreLayout = !isMobileArenaLogsMode()) {
+    if (arenaLogsModalEl?.open) {
+        arenaLogsModalEl.close();
+    }
+    if (restoreLayout) {
+        restoreArenaLogsToLayout();
+    }
+}
+
+function syncArenaLogsPresentation() {
+    if (!arenaGlobalChatBoxEl) return;
+
+    if (isMobileArenaLogsMode()) {
+        mountArenaLogsIntoModal();
+        return;
+    }
+
+    closeArenaLogsPresentation(true);
+}
+
 function canSelectArenaQuestionChars() {
     if (isKifuMode) return false;
     const roomState = currentRoomGameState || "waiting";
@@ -2298,6 +2343,8 @@ function showGameArenaScreen() {
     updateArenaCloseButtonVisibility(currentRoomSnapshot);
     updateChatBoxVisibility();
     updateAiQuestionButtonState(currentRoomsSnapshot);
+
+    syncArenaLogsPresentation();
 }
 
 function showKifuListScreen() {
@@ -5615,6 +5662,16 @@ toggleQuestionVisibilityBtnEl?.addEventListener("click", () => {
     renderArenaQuestionText();
 });
 
+document.getElementById("arena-logs-close-btn")?.addEventListener("click", () => {
+    closeArenaLogsPresentation();
+});
+
+arenaLogsModalEl?.addEventListener("click", (event) => {
+    if (event.target === arenaLogsModalEl) {
+        closeArenaLogsPresentation();
+    }
+});
+
 arenaAnswerSubmitBtnEl?.addEventListener("click", () => {
     void submitArenaAnswer();
 });
@@ -5640,10 +5697,21 @@ arenaAnswerInputEl?.addEventListener("input", () => {
     updateArenaAnswerLengthWarning();
 });
 
+document.addEventListener("click", (event) => {
+    const toggleBtnEl = document.getElementById("arena-logs-toggle-btn");
+    if (!arenaLogsModalEl || !toggleBtnEl || !arenaLogsModalEl.open) return;
+
+    const isClickInside = arenaLogsModalEl.contains(event.target) || toggleBtnEl.contains(event.target);
+    if (!isClickInside) {
+        closeArenaLogsPresentation();
+    }
+});
+
 window.addEventListener("resize", () => {
     syncArenaPlayerBoxHeights();
     if (isInGameArena()) {
         renderArenaQuestionText();
+        syncArenaLogsPresentation();
     }
     updateViewportDebugOverlay();
 });
@@ -5654,6 +5722,23 @@ leaveGameArenaEl?.addEventListener("keydown", (event) => {
         event.preventDefault();
         requestRoomExit();
     }
+});
+
+document.getElementById("arena-logs-toggle-btn")?.addEventListener("click", () => {
+    if (!arenaGlobalChatBoxEl) return;
+
+    if (isMobileArenaLogsMode()) {
+        if (arenaLogsModalEl?.open) {
+            closeArenaLogsPresentation();
+            return;
+        }
+
+        mountArenaLogsIntoModal();
+        arenaLogsModalEl?.showModal();
+        return;
+    }
+
+    arenaGlobalChatBoxEl.classList.toggle("open");
 });
 
 closeRoomBtnEl?.addEventListener("click", () => {

@@ -98,6 +98,10 @@
                     title="ルールを見る">
                     <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
                 </button>
+                <button id="arena-logs-toggle-btn" class="arena-logs-toggle-btn hidden" type="button"
+                    aria-label="進行ログを表示">
+                    進行ログ
+                </button>
             </div>
         </div>
 
@@ -190,7 +194,10 @@
             </div>
 
             <div id="arena-global-chat-box" class="chat-box hidden" data-chat-room="game" data-chat-type="game-global">
-                <div class="arena-chat-title">進行ログ</div>
+                <div class="arena-chat-title">
+                    <span>進行ログ</span>
+                    <button id="arena-logs-close-btn" type="button" aria-label="進行ログを閉じる">×</button>
+                </div>
                 <div class="log-scroll-shell">
                     <div id="game-chat-log-game-global" class="chat-log"></div>
                 </div>
@@ -202,6 +209,14 @@
                 </div>
             </div>
         </div>
+
+        <dialog id="arena-logs-modal" class="modal arena-logs-modal" aria-labelledby="arena-logs-modal-title">
+            <div class="arena-logs-modal-shell">
+                <div id="arena-logs-modal-slot" class="arena-logs-modal-slot">
+                    <h2 id="arena-logs-modal-title" class="hidden">進行ログ</h2>
+                </div>
+            </div>
+        </dialog>
     </div>
 
     <div id="kifu-list-screen" style="display: none;">
