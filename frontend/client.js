@@ -28,12 +28,14 @@ const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
+const DEBUG_VIEWPORT_OVERLAY_ENABLED = true;
 let currentArenaQuestionRawText = "";
 let questionerShowRawQuestionText = false;
 const selectedArenaQuestionCharIndexes = new Set();
 let lastAutoSelectedQuestionKey = null;
 const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
 let lastRulebookTriggerEl = null;
+let viewportDebugEl = null;
 
 function removeWhitespaceTextNodes(rootEl) {
     if (!rootEl) return;
@@ -50,6 +52,27 @@ function removeWhitespaceTextNodes(rootEl) {
     nodesToRemove.forEach((node) => {
         node.parentNode?.removeChild(node);
     });
+}
+
+function ensureViewportDebugOverlay() {
+    if (!DEBUG_VIEWPORT_OVERLAY_ENABLED) return null;
+    if (viewportDebugEl) return viewportDebugEl;
+
+    const el = document.createElement("div");
+    el.id = "viewport-debug";
+    el.setAttribute("aria-hidden", "true");
+    document.body.appendChild(el);
+    viewportDebugEl = el;
+    return viewportDebugEl;
+}
+
+function updateViewportDebugOverlay() {
+    if (!DEBUG_VIEWPORT_OVERLAY_ENABLED) return;
+    const el = ensureViewportDebugOverlay();
+    if (!el) return;
+
+    const viewportWidth = Math.round(window.innerWidth);
+    el.textContent = `W: ${viewportWidth}px`;
 }
 
 function updateChatBoxVisibility() {
@@ -591,20 +614,23 @@ function getArenaCharsPerLine() {
     }
 
     const boardStyle = window.getComputedStyle(boardEl);
-    const questionStyle = window.getComputedStyle(questionEl);
     const horizontalPadding = parseFloat(boardStyle.paddingLeft || "0") + parseFloat(boardStyle.paddingRight || "0");
     const availableWidth = Math.max(boardEl.clientWidth - horizontalPadding, 40);
 
-    const font = `${questionStyle.fontWeight} ${questionStyle.fontSize} ${questionStyle.fontFamily}`;
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-        return 10;
-    }
+    // 実際の描画スタイル（padding含む）で1文字幅を測る。
+    const probeCharEl = document.createElement("span");
+    probeCharEl.className = "arena-question-char";
+    probeCharEl.textContent = ARENA_MASK_CHAR;
+    probeCharEl.style.visibility = "hidden";
+    probeCharEl.style.position = "absolute";
+    probeCharEl.style.left = "-9999px";
+    probeCharEl.style.top = "-9999px";
+    questionEl.appendChild(probeCharEl);
 
-    ctx.font = font;
-    const maskWidth = Math.max(ctx.measureText(ARENA_MASK_CHAR).width, 1);
-    return Math.max(Math.floor(availableWidth / maskWidth), ARENA_MIN_CHARS_PER_LINE);
+    const measuredCharWidth = Math.max(probeCharEl.getBoundingClientRect().width, 1);
+    probeCharEl.remove();
+
+    return Math.max(Math.floor(availableWidth / measuredCharWidth), ARENA_MIN_CHARS_PER_LINE);
 }
 
 function buildMaskedQuestionText(questionText, charsPerLine) {
@@ -1384,6 +1410,7 @@ window.addEventListener("resize", () => {
     if (isInGameArena()) {
         renderArenaQuestionText();
     }
+    updateViewportDebugOverlay();
 });
 
 leaveGameArenaEl?.addEventListener("click", requestRoomExit);
@@ -1438,3 +1465,4 @@ function bindRulebookHandlers() {
 }
 
 bindRulebookHandlers();
+updateViewportDebugOverlay();
