@@ -13,6 +13,9 @@ const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const startGameBtnEl = document.getElementById("start-game-btn");
 const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
 const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-visibility-btn");
+const arenaAnswerBoxEl = document.getElementById("arena-answer-box");
+const arenaAnswerInputEl = document.getElementById("arena-answer-input");
+const arenaAnswerSubmitBtnEl = document.getElementById("arena-answer-submit-btn");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
@@ -245,11 +248,72 @@ function canSelectArenaQuestionChars() {
     return isInGameArena() && userRole === "questioner" && roomState === "waiting";
 }
 
+function isAnswerJudgementPending() {
+    return Boolean(currentGameState?.is_judging_answer);
+}
+
 function canRequestOpenCharacter() {
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
+    if (isAnswerJudgementPending()) return false;
     if (userRole !== "team-left" && userRole !== "team-right") return false;
     return currentGameState?.current_turn_team === userRole;
+}
+
+function canSubmitArenaAnswer() {
+    if (!isInGameArena()) return false;
+    if ((currentRoomGameState || "waiting") !== "playing") return false;
+    if (isAnswerJudgementPending()) return false;
+    return userRole === "team-left" || userRole === "team-right";
+}
+
+function updateArenaAnswerFormVisibility() {
+    if (!arenaAnswerBoxEl || !arenaAnswerInputEl || !arenaAnswerSubmitBtnEl) return;
+
+    const canUse = canSubmitArenaAnswer();
+    arenaAnswerBoxEl.classList.toggle("hidden", !canUse);
+    arenaAnswerInputEl.disabled = !canUse;
+    arenaAnswerSubmitBtnEl.disabled = !canUse;
+
+    if (!canUse) {
+        arenaAnswerInputEl.value = "";
+    }
+}
+
+async function submitArenaAnswer() {
+    if (!arenaAnswerInputEl) return;
+    if (!canSubmitArenaAnswer()) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        await showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    const answerText = arenaAnswerInputEl.value.trim();
+    if (answerText === "") {
+        await showAlertModal("解答を入力してください");
+        return;
+    }
+
+    const confirmed = await showConfirmModal(
+        `この内容で解答を送信しますか？\n\n${answerText}`,
+        {
+            okLabel: "送信する",
+            cancelLabel: "キャンセル",
+        }
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "answer_attempt",
+            answer_text: answerText,
+            timestamp: Date.now(),
+        })
+    );
+
+    arenaAnswerInputEl.value = "";
 }
 
 function updateChatLengthWarning(inputEl) {
@@ -336,6 +400,7 @@ function showWaitingRoomScreen() {
     document.getElementById("game-arena-screen").style.display = "none";
     updateStartGameButtonVisibility(null);
     updateQuestionVisibilityButton();
+    updateArenaAnswerFormVisibility();
     updateChatBoxVisibility();
 }
 
@@ -350,6 +415,7 @@ function showGameArenaScreen() {
     }
 
     updateQuestionVisibilityButton();
+    updateArenaAnswerFormVisibility();
     updateChatBoxVisibility();
 }
 
@@ -379,7 +445,7 @@ function getQuestionViewModeCycleForCurrentUser() {
 function updateQuestionVisibilityButton() {
     if (!toggleQuestionVisibilityBtnEl) return;
 
-    const canToggle = canToggleQuestionViewMode();
+    const canToggle = canToggleQuestionViewMode() && !isAnswerJudgementPending();
     toggleQuestionVisibilityBtnEl.classList.toggle("hidden", !canToggle);
     toggleQuestionVisibilityBtnEl.disabled = !canToggle;
 
@@ -438,6 +504,15 @@ function updateStartGameButtonVisibility(currentRoom) {
     if (shuffleParticipantsBtnEl) {
         shuffleParticipantsBtnEl.disabled = !canShuffle;
         shuffleParticipantsBtnEl.title = canShuffle ? "参加者をシャッフル" : "参加者が2人以上必要です";
+    }
+}
+
+function closeAllModals() {
+    alertModal.classList.add("hidden");
+    confirmModal.classList.add("hidden");
+    const judgementModal = document.getElementById("answer-judgement-modal");
+    if (judgementModal) {
+        judgementModal.classList.add("hidden");
     }
 }
 
@@ -1017,7 +1092,7 @@ function renderRooms(rooms) {
 
         const metaEl = document.createElement("div");
         metaEl.className = "room-card-meta";
-        const gameStateLabel = room.game_state === "playing" ? "ゲーム中" : "準備中";
+        const gameStateLabel = room.game_state === "playing" ? "対戦中" : "準備中";
         metaEl.textContent = `状態 ${gameStateLabel} / 参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
 
         if (!room.is_owner) {
@@ -1194,13 +1269,18 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
 
         if (data.event_type === "forced_exit_notice" && data.private_info) {
+            closeAllModals();
             void showConfirmModal(data.private_info, { hideCancel: true, okLabel: "OK" });
         } else if (data.event_type === "private_notice" && data.private_info) {
+            closeAllModals();
             void showAlertModal(data.private_info);
         }
 
         if (data.event_type === "open_vote_request" && data.event_payload) {
             void handleOpenVoteRequest(data.event_payload);
+        }
+        if (data.event_type === "answer_judgement_request" && data.event_payload) {
+            void handleAnswerJudgementRequest(data.event_payload);
         }
 
         appendEventLog(data.event_type, data.event_message, data.event_chat_type);
@@ -1209,6 +1289,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         renderArena(data.current_room);
         updateGameStateUI();
         updateStartGameButtonVisibility(data.current_room);
+        updateArenaAnswerFormVisibility();
         updateChatBoxVisibility();
     };
 });
@@ -1441,6 +1522,37 @@ async function handleOpenVoteRequest(payload) {
     );
 }
 
+async function handleAnswerJudgementRequest(payload) {
+    if (userRole !== "questioner") {
+        return;
+    }
+
+    const team = String(payload?.team || "");
+    const teamLabel = team === "team-left" ? "先攻" : "後攻";
+    const answererName = String(payload?.answerer_name || "参加者");
+    const answerText = String(payload?.answer_text || "");
+
+    const confirmed = await showConfirmModal(
+        `${teamLabel} ${answererName} の解答:\n${answerText}\n\n正誤を判定してください。`,
+        {
+            okLabel: "正解",
+            cancelLabel: "誤答",
+        }
+    );
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "judge_answer",
+            is_correct: Boolean(confirmed),
+            timestamp: Date.now(),
+        })
+    );
+}
+
 document.addEventListener("click", (event) => {
     toggleArenaQuestionCharSelectionFromTarget(event.target);
 });
@@ -1518,6 +1630,19 @@ toggleQuestionVisibilityBtnEl?.addEventListener("click", () => {
     questionerViewMode = viewModeCycle[(safeIndex + 1) % viewModeCycle.length];
     updateQuestionVisibilityButton();
     renderArenaQuestionText();
+});
+
+arenaAnswerSubmitBtnEl?.addEventListener("click", () => {
+    void submitArenaAnswer();
+});
+
+arenaAnswerInputEl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) {
+        return;
+    }
+
+    event.preventDefault();
+    void submitArenaAnswer();
 });
 
 window.addEventListener("resize", () => {

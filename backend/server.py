@@ -138,6 +138,10 @@ class QuizGameManager:
             return
 
         game = room.get("game") or {}
+        if game.get("pending_answer_judgement") is not None:
+            await self.send_private_info(client_id, "正誤判定中は行動できません。")
+            return
+
         if game.get("current_turn_team") != team:
             await self.send_private_info(client_id, "あなたの陣営のターンではありません。")
             return
@@ -405,6 +409,9 @@ class QuizGameManager:
 
         room = ctx["room"]
         owner_id = ctx["room_owner_id"]
+        if (room.get("game") or {}).get("pending_answer_judgement") is not None:
+            await self.send_private_info(client_id, "正誤判定中は行動できません。")
+            return
 
         # チームを特定
         team = None
@@ -484,6 +491,9 @@ class QuizGameManager:
 
         room = ctx["room"]
         owner_id = ctx["room_owner_id"]
+        if (room.get("game") or {}).get("pending_answer_judgement") is not None:
+            await self.send_private_info(client_id, "正誤判定中は行動できません。")
+            return
 
         # チームを特定
         team = None
@@ -508,6 +518,179 @@ class QuizGameManager:
             event_type="turn_changed",
             event_room_id=owner_id,
         )
+
+    async def submit_answer_attempt(self, client_id: str, answer_text: str):
+        """参加者が解答内容を提出するアクション"""
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        room_state = room.get("game_state", "waiting")
+        if room_state != "playing":
+            await self.send_private_info(client_id, "対戦中のみ解答できます。")
+            return
+
+        game = room.get("game") or {}
+        if game.get("pending_answer_judgement") is not None:
+            await self.send_private_info(client_id, "現在、別の解答を正誤判定中です。")
+            return
+
+        if client_id in room["left_participants"]:
+            team = "team-left"
+            team_label = "先攻"
+        elif client_id in room["right_participants"]:
+            team = "team-right"
+            team_label = "後攻"
+        else:
+            await self.send_private_info(client_id, "参加者のみ解答できます。")
+            return
+
+        if game.get("current_turn_team") != team:
+            await self.send_private_info(client_id, "自分のターンでのみ解答できます。")
+            return
+
+        team_state_key = "team_left" if team == "team-left" else "team_right"
+        team_state = game.get(team_state_key, {})
+        total_actions = team_state.get("action_points", 0) + team_state.get("bonus_action_points", 0)
+        if total_actions <= 0:
+            await self.send_private_info(client_id, "アクション権がありません。")
+            return
+
+        text = str(answer_text or "").strip()
+        if text == "":
+            await self.send_private_info(client_id, "解答を入力してください。")
+            return
+
+        nickname = self.nicknames.get(client_id, "ゲスト")
+
+        game["pending_answer_judgement"] = {
+            "team": team,
+            "answer_text": text,
+            "answerer_id": client_id,
+        }
+
+        await self.broadcast_state(
+            public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
+            event_type="answer_attempt",
+            event_room_id=owner_id,
+        )
+
+        await self.broadcast_state(
+            public_info="",
+            event_type="answer_judgement_request",
+            event_room_id=owner_id,
+            event_recipient_ids={owner_id},
+            event_payload={
+                "team": team,
+                "team_label": team_label,
+                "answer_text": text,
+                "answerer_name": nickname,
+            },
+        )
+
+        await self.send_private_info(client_id, "解答を送信しました。出題者による正誤判定中です。")
+
+    async def judge_answer(self, client_id: str, is_correct: bool):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
+            return
+
+        if ctx["role"] != "owner":
+            await self.send_private_info(client_id, "正誤判定は出題者のみ実行できます。")
+            return
+
+        room = ctx["room"]
+        owner_id = ctx["room_owner_id"]
+        game = room.get("game") or {}
+        pending = game.get("pending_answer_judgement")
+        if not pending:
+            await self.send_private_info(client_id, "判定待ちの解答がありません。")
+            return
+
+        team = pending.get("team")
+        game["pending_answer_judgement"] = None
+        result = apply_submit_answer(room, team, is_correct)
+
+        if not result.get("ok"):
+            await self.send_private_info(client_id, result.get("error", "正誤判定に失敗しました。"))
+            return
+
+        left_ids = set(room.get("left_participants", set()))
+        right_ids = set(room.get("right_participants", set()))
+        spectator_ids = set(room.get("spectators", set()))
+        questioner_ids = {owner_id}
+
+        private_map = {}
+
+        if is_correct:
+            if team == "team-left":
+                msg = "先攻が正解しました。次の後攻のターンで正解できれば引き分け、そうでなければ先攻の勝利です。"
+                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
+                    private_map[target_id] = msg
+            else:
+                winner = result.get("winner")
+                if winner == "draw":
+                    msg = "後攻が正解しました。引き分けです。"
+                else:
+                    msg = "後攻が正解しました。後攻の勝利です。"
+                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
+                    private_map[target_id] = msg
+        else:
+            # Check if game finished due to wrong answer after left team answered correctly
+            if result.get("game_status") == "finished" and result.get("winner") == "team-left":
+                # Right team failed to answer correctly after left answered correctly
+                end_msg = "後攻が正解できませんでした。先攻の勝利です。"
+                for target_id in left_ids | right_ids | spectator_ids | questioner_ids:
+                    private_map[target_id] = end_msg
+            else:
+                # Normal wrong answer case
+                self_msg = "誤答です。相手に＋アクション権が1回付与されます"
+                other_msg = "相手が誤答しました。＋アクション権を1回獲得しました。"
+
+                if team == "team-left":
+                    for target_id in left_ids:
+                        private_map[target_id] = self_msg
+                    for target_id in right_ids:
+                        private_map[target_id] = other_msg
+                else:
+                    for target_id in right_ids:
+                        private_map[target_id] = self_msg
+                    for target_id in left_ids:
+                        private_map[target_id] = other_msg
+
+                for target_id in spectator_ids | questioner_ids:
+                    private_map[target_id] = "正誤判定が完了しました。"
+
+        await self.broadcast_state(
+            public_info="正誤判定が完了しました。",
+            private_map=private_map,
+            event_type="private_notice",
+            event_room_id=owner_id,
+        )
+
+        # Only send game_finished event if not already handled by private_notice
+        if result.get("game_status") == "finished":
+            # If right team failed after left answered correctly, already handled in private_notice
+            if result.get("winner") == "team-left" and team == "team-right" and not is_correct:
+                pass  # Already shown in private_notice, no need for separate game_finished event
+            else:
+                winner = result.get("winner")
+                if winner == "team-left":
+                    winner_label = "先攻"
+                elif winner == "team-right":
+                    winner_label = "後攻"
+                else:
+                    winner_label = "引き分け"
+
+                await self.broadcast_state(
+                    public_info=f"ゲーム終了！{winner_label}",
+                    event_type="game_finished",
+                    event_room_id=owner_id,
+                )
 
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         await websocket.accept()
@@ -743,6 +926,16 @@ class QuizGameManager:
         if payload_type == "submit_answer":
             is_correct = payload.get("is_correct", False)
             await self.submit_answer(client_id, is_correct)
+            return
+
+        if payload_type == "answer_attempt":
+            answer_text = str(payload.get("answer_text", ""))
+            await self.submit_answer_attempt(client_id, answer_text)
+            return
+
+        if payload_type == "judge_answer":
+            is_correct = bool(payload.get("is_correct", False))
+            await self.judge_answer(client_id, is_correct)
             return
 
         if payload_type == "end_turn":

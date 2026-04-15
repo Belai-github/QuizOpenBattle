@@ -123,6 +123,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             "current_turn_team": game_state.get("current_turn_team"),
             "game_status": game_state.get("game_status"),
             "winner": game_state.get("winner"),
+            "is_judging_answer": game_state.get("pending_answer_judgement") is not None,
             "team_left": game_state.get("team_left", {}),
             "team_right": game_state.get("team_right", {}),
             "opened_char_indexes": sorted(list(game_state.get("opened_char_indexes", set()))),
@@ -242,6 +243,8 @@ def apply_start_game(rooms: dict, client_id: str, payload: dict | None = None):
         "current_turn_team": "team-left",  # 先攻から開始
         "game_status": "playing",  # "playing" | "finished"
         "winner": None,  # None | "team-left" | "team-right"
+        "pending_answer_judgement": None,  # {team, answer_text, answerer_id} | None
+        "left_correct_waiting": False,  # 先攻正解後、後攻の最終ターン待ち
         # チームごとのアクション権
         "team_left": {
             "action_points": 1,  # ターン中のアクション権
@@ -389,6 +392,19 @@ def _is_no_action_remaining(team_state: dict):
     return team_state.get("action_points", 0) <= 0 and team_state.get("bonus_action_points", 0) <= 0
 
 
+def _consume_one_action_point(team_state: dict):
+    total_actions = team_state.get("action_points", 0) + team_state.get("bonus_action_points", 0)
+    if total_actions <= 0:
+        return False
+
+    if team_state.get("action_points", 0) > 0:
+        team_state["action_points"] -= 1
+    else:
+        team_state["bonus_action_points"] -= 1
+
+    return True
+
+
 def apply_open_character(room: dict, team: str, char_index: int):
     """
     指定されたチームが文字をオープンします。
@@ -406,6 +422,9 @@ def apply_open_character(room: dict, team: str, char_index: int):
     # ゲーム中かどうか確認
     if game.get("game_status") != "playing":
         return {"ok": False, "error": "ゲーム中ではありません。"}
+
+    if game.get("pending_answer_judgement") is not None:
+        return {"ok": False, "error": "正誤判定中は行動できません。"}
 
     # ターンが正しいかどうか確認
     if game.get("current_turn_team") != team:
@@ -441,13 +460,16 @@ def apply_open_character(room: dict, team: str, char_index: int):
         game["opened_by_team"][char_index] = team
 
     # アクション権を消費
-    if team_state.get("action_points", 0) > 0:
-        team_state["action_points"] -= 1
-    else:
-        team_state["bonus_action_points"] -= 1
+    _consume_one_action_point(team_state)
 
     if _is_no_action_remaining(team_state):
-        yield_turn(game)
+        # 先攻正解後の後攻ターンで正解できなければ先攻勝利
+        if team == "team-right" and game.get("left_correct_waiting"):
+            game["winner"] = "team-left"
+            game["game_status"] = "finished"
+            game["left_correct_waiting"] = False
+        else:
+            yield_turn(game)
 
     return {
         "ok": True,
@@ -474,6 +496,9 @@ def apply_submit_answer(room: dict, team: str, is_correct: bool):
     if game.get("game_status") != "playing":
         return {"ok": False, "error": "ゲーム中ではありません。"}
 
+    if game.get("pending_answer_judgement") is not None:
+        return {"ok": False, "error": "正誤判定中です。"}
+
     # ターンが正しいかどうか確認
     if game.get("current_turn_team") != team:
         return {"ok": False, "error": "あなたのターンではありません。"}
@@ -482,31 +507,41 @@ def apply_submit_answer(room: dict, team: str, is_correct: bool):
     other_team = "team-right" if team == "team-left" else "team-left"
     other_team_state = game.get(_team_state_key(other_team), {})
 
+    if not _consume_one_action_point(team_state):
+        return {"ok": False, "error": "アクション権がありません。"}
+
     if is_correct:
         # 正解
         team_state["correct_answer"] = True
 
-        # 先攻が正解した場合、後攻が正解すれば引き分け、そうでなければ先攻の勝利
+        # 先攻が正解した場合、後攻の最終ターンへ
         if team == "team-left":
-            if other_team_state.get("correct_answer") is None:
-                # まだ後攻が解答していない → 先攻の勝利
-                game["winner"] = "team-left"
-                game["game_status"] = "finished"
-            else:
-                # 後攻も正解している → 引き分けはないので、先に正解した方が勝利
-                pass
+            game["left_correct_waiting"] = True
+            if game.get("game_status") == "playing":
+                yield_turn(game)
         else:
-            # 後攻が正解した場合、その時点で後攻の勝利
-            game["winner"] = "team-right"
+            # 後攻が正解した場合、その時点で後攻勝利。
+            # ただし先攻正解待ち中なら引き分け。
+            if game.get("left_correct_waiting"):
+                game["winner"] = "draw"
+            else:
+                game["winner"] = "team-right"
             game["game_status"] = "finished"
+            game["left_correct_waiting"] = False
     else:
         # 誤答
         team_state["correct_answer"] = False
         # 相手に＋アクション権を付与
         other_team_state["bonus_action_points"] += 1
 
-        # ターン終了時に次のターンへ（自動的に遷移）
-        yield_turn(game)
+        # 先攻正解後の後攻誤答はその時点で先攻勝利
+        if team == "team-right" and game.get("left_correct_waiting"):
+            game["winner"] = "team-left"
+            game["game_status"] = "finished"
+            game["left_correct_waiting"] = False
+        else:
+            # 通常はターン終了時に次のターンへ（自動的に遷移）
+            yield_turn(game)
 
     return {
         "ok": True,
@@ -525,6 +560,9 @@ def apply_end_turn(room: dict, team: str):
     if game.get("game_status") != "playing":
         return {"ok": False, "error": "ゲーム中ではありません。"}
 
+    if game.get("pending_answer_judgement") is not None:
+        return {"ok": False, "error": "正誤判定中は行動できません。"}
+
     # ターンが正しいかどうか確認
     if game.get("current_turn_team") != team:
         return {"ok": False, "error": "あなたのターンではありません。"}
@@ -532,6 +570,16 @@ def apply_end_turn(room: dict, team: str):
     # 通常アクション権はターン終了時に持ち越さない
     team_state = game.get(_team_state_key(team), {})
     team_state["action_points"] = 0
+
+    # 先攻正解後の後攻ターンで正解できなければ先攻勝利
+    if team == "team-right" and game.get("left_correct_waiting"):
+        game["winner"] = "team-left"
+        game["game_status"] = "finished"
+        game["left_correct_waiting"] = False
+        return {
+            "ok": True,
+            "current_turn_team": game.get("current_turn_team"),
+        }
 
     # 次のターンへ
     yield_turn(game)
@@ -582,6 +630,7 @@ def build_game_state_for_client(room: dict, client_id: str, viewer_team: str):
         "current_turn_team": game.get("current_turn_team"),
         "game_status": game.get("game_status"),
         "winner": game.get("winner"),
+        "is_judging_answer": game.get("pending_answer_judgement") is not None,
         # チームごとの状態
         "team_left": {
             "action_points": team_left_state.get("action_points", 0),
