@@ -1205,7 +1205,7 @@ body[data-room-role="spectator"] #arena-answer-box {
 
     #waiting-panels {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        align-items: start;
+        align-items: stretch;
     }
 
     .waiting-left-panel .chat-box {
@@ -1226,7 +1226,7 @@ body[data-room-role="spectator"] #arena-answer-box {
     }
 
     .waiting-left-panel #event-log-box {
-        height: 360px;
+        flex: 1 1 auto;
     }
 
     .waiting-right-panel #room-list-box {
