@@ -113,6 +113,28 @@ button:hover {
     margin-bottom: 10px;
 }
 
+.arena-header-left-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.start-game-btn {
+    width: auto;
+    min-height: 32px;
+    margin-top: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    line-height: 1;
+    background: #0f766e;
+}
+
+.start-game-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+}
+
 .rulebook-btn {
     flex: 0 0 32px;
     width: 32px;
@@ -581,7 +603,7 @@ button:hover {
     order: 3;
 }
 
-.arena-player-box .chat-box {
+.arena-player-box .chat-box:not(.hidden) {
     margin-top: 12px;
     display: flex;
     flex-direction: column;
@@ -608,6 +630,19 @@ button:hover {
 #game-chat-log-spectator {
     background: #e5e7eb;
     border-color: #cbd5e1;
+}
+
+#arena-global-chat-box {
+    margin-top: 12px;
+    background: #fff7cc;
+    border: 1px solid #facc15;
+    border-radius: 12px;
+    padding: 10px;
+}
+
+#game-chat-log-game-global {
+    background: #fef3c7;
+    border-color: #f59e0b;
 }
 
 .arena-player-box {

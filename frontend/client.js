@@ -10,6 +10,7 @@ const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
+const startGameBtnEl = document.getElementById("start-game-btn");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
@@ -17,6 +18,7 @@ const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
+let currentRoomGameState = null; // "waiting" | "playing" | null
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
@@ -40,6 +42,8 @@ function removeWhitespaceTextNodes(rootEl) {
 }
 
 function updateChatBoxVisibility() {
+    updateArenaLogElementVisibility();
+
     document.querySelectorAll(".chat-box").forEach((chatBox) => {
         const visibility = chatBox.getAttribute("data-visibility");
         const chatRoom = chatBox.getAttribute("data-chat-room");
@@ -53,6 +57,30 @@ function updateChatBoxVisibility() {
         if (chatRoom === "lobby" && isInGameArena()) {
             chatBox.classList.add("hidden");
             return;
+        }
+
+        // アリーナ内チャットはゲーム状態で出し分ける。
+        if (chatRoom === "game") {
+            const roomState = currentRoomGameState || "waiting";
+            const isGlobalChat = chatType === "game-global";
+
+            if (roomState === "waiting") {
+                if (!isGlobalChat) {
+                    setChatBoxEditable(chatBox, false);
+                    chatBox.classList.add("hidden");
+                    return;
+                }
+
+                chatBox.classList.remove("hidden");
+                setChatBoxEditable(chatBox, true);
+                return;
+            }
+
+            if (roomState === "playing" && isGlobalChat) {
+                setChatBoxEditable(chatBox, false);
+                chatBox.classList.add("hidden");
+                return;
+            }
         }
 
         // visibility属性がなければ誰でも見れる
@@ -71,6 +99,27 @@ function updateChatBoxVisibility() {
     });
 
     syncArenaPlayerBoxHeights();
+}
+
+function updateArenaLogElementVisibility() {
+    const roomState = currentRoomGameState || "waiting";
+    const splitLogIds = ["game-chat-log-team-left", "game-chat-log-team-right"];
+
+    splitLogIds.forEach((id) => {
+        const logEl = document.getElementById(id);
+        if (!logEl) return;
+        logEl.classList.toggle("hidden", roomState === "waiting");
+    });
+
+    const splitTitleSelectors = [
+        '.chat-box[data-chat-room="game"][data-chat-type="team-left"] .arena-chat-title',
+        '.chat-box[data-chat-room="game"][data-chat-type="team-right"] .arena-chat-title',
+    ];
+    splitTitleSelectors.forEach((selector) => {
+        const titleEl = document.querySelector(selector);
+        if (!titleEl) return;
+        titleEl.classList.toggle("hidden", roomState === "waiting");
+    });
 }
 
 function syncArenaPlayerBoxHeights() {
@@ -121,6 +170,11 @@ function setChatBoxEditable(chatBoxEl, editable) {
 
 function canSendChatType(chatType) {
     if (chatType === "lobby") {
+        return true;
+    }
+
+    // 準備中はアリーナ内の全体チャットのみ全員が送信できる。
+    if (chatType === "game-global" && (currentRoomGameState || "waiting") === "waiting") {
         return true;
     }
 
@@ -176,6 +230,7 @@ function updateArenaLeaveLabel(mode) {
 function showWaitingRoomScreen() {
     document.getElementById("waiting-room-screen").style.display = "block";
     document.getElementById("game-arena-screen").style.display = "none";
+    updateStartGameButtonVisibility(null);
     updateChatBoxVisibility();
 }
 
@@ -183,6 +238,25 @@ function showGameArenaScreen() {
     document.getElementById("waiting-room-screen").style.display = "none";
     document.getElementById("game-arena-screen").style.display = "block";
     updateChatBoxVisibility();
+}
+
+function updateStartGameButtonVisibility(currentRoom) {
+    if (!startGameBtnEl) return;
+
+    const roomState = currentRoom?.game_state ?? currentRoomGameState ?? null;
+    const canSee = isInGameArena() && userRole === "questioner" && roomState === "waiting";
+    startGameBtnEl.classList.toggle("hidden", !canSee);
+
+    if (!canSee) {
+        startGameBtnEl.disabled = true;
+        return;
+    }
+
+    const leftCount = Array.isArray(currentRoom?.left_participants) ? currentRoom.left_participants.length : 0;
+    const rightCount = Array.isArray(currentRoom?.right_participants) ? currentRoom.right_participants.length : 0;
+    const canStart = leftCount > 0 && rightCount > 0;
+    startGameBtnEl.disabled = !canStart;
+    startGameBtnEl.title = canStart ? "ゲームを開始" : "先攻と後攻に参加者が必要です";
 }
 
 function showAlertModal(message) {
@@ -407,26 +481,28 @@ function renderRooms(rooms) {
 
         const metaEl = document.createElement("div");
         metaEl.className = "room-card-meta";
-        metaEl.textContent = `参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
+        const gameStateLabel = room.game_state === "playing" ? "ゲーム中" : "準備中";
+        metaEl.textContent = `状態 ${gameStateLabel} / 参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人`;
 
         if (!room.is_owner) {
             const actionsEl = document.createElement("div");
             actionsEl.className = "room-card-actions";
-
-            const joinBtn = document.createElement("button");
-            joinBtn.type = "button";
-            joinBtn.className = "room-card-btn";
-            joinBtn.textContent = "参加";
 
             const watchBtn = document.createElement("button");
             watchBtn.type = "button";
             watchBtn.className = "room-card-btn secondary";
             watchBtn.textContent = "観戦";
 
-            joinBtn.addEventListener("click", () => requestRoomEntry(room.room_owner_id, "participant"));
             watchBtn.addEventListener("click", () => requestRoomEntry(room.room_owner_id, "spectator"));
 
-            actionsEl.appendChild(joinBtn);
+            if (room.can_join_as_participant !== false) {
+                const joinBtn = document.createElement("button");
+                joinBtn.type = "button";
+                joinBtn.className = "room-card-btn";
+                joinBtn.textContent = "参加";
+                joinBtn.addEventListener("click", () => requestRoomEntry(room.room_owner_id, "participant"));
+                actionsEl.appendChild(joinBtn);
+            }
             actionsEl.appendChild(watchBtn);
             card.appendChild(actionsEl);
         }
@@ -570,6 +646,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         userRole = data.current_room?.chat_role ?? null;
+        currentRoomGameState = data.current_room?.game_state ?? null;
         if (data.target_screen === "game_arena") {
             updateArenaLeaveLabel(pendingArenaMode === "owner" ? "owner" : "guest");
             showGameArenaScreen();
@@ -589,6 +666,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         renderRooms(data.rooms);
         renderParticipants(data.participants);
         renderArena(data.current_room);
+        updateStartGameButtonVisibility(data.current_room);
         updateChatBoxVisibility();
     };
 });
@@ -738,6 +816,26 @@ function bindChatHandlers() {
 }
 
 bindChatHandlers();
+
+startGameBtnEl?.addEventListener("click", async () => {
+    const confirmed = await showConfirmModal("ゲームを開始しますか？", {
+        okLabel: "開始する",
+        cancelLabel: "キャンセル"
+    });
+    if (!confirmed) return;
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        void showAlertModal("サーバー接続後に操作できます");
+        return;
+    }
+
+    ws.send(
+        JSON.stringify({
+            type: "start_game",
+            timestamp: Date.now()
+        })
+    );
+});
 
 window.addEventListener("resize", () => {
     syncArenaPlayerBoxHeights();

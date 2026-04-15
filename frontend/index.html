@@ -57,7 +57,10 @@
 
     <div id="game-arena-screen" style="display: none;">
         <div class="arena-header-tools">
-            <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">☓部屋を閉じる</div>
+            <div class="arena-header-left-actions">
+                <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">☓部屋を閉じる</div>
+                <button id="start-game-btn" class="start-game-btn hidden" type="button">ゲーム開始</button>
+            </div>
             <button id="rulebook-btn-arena" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
                 <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
             </button>
@@ -100,6 +103,16 @@
                         <button class="chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div id="arena-global-chat-box" class="chat-box hidden" data-chat-room="game" data-chat-type="game-global">
+            <div class="arena-chat-title">全体チャット</div>
+            <div id="game-chat-log-game-global" class="chat-log"></div>
+            <div class="chat-compose">
+                <textarea class="chat-input" rows="1" maxlength="200" placeholder="全員向けチャット..."></textarea>
+                <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
+                <button class="chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
             </div>
         </div>
 
