@@ -1010,14 +1010,6 @@ body.modal-open #arena-question-text .arena-question-line {
     background: #fde68a;
 }
 
-.arena-question-char.is-opened-left {
-    background: #ff8b8b;
-}
-
-.arena-question-char.is-opened-right {
-    background: #8cb6fa;
-}
-
 #arena-spectator-box {
     margin-top: 10px;
     border: 1px solid #d1d5db;
