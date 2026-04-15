@@ -11,6 +11,7 @@ const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
 const questionInputEl = document.getElementById("question-box");
 const questionLengthWarningEl = document.getElementById("question-length-warning");
+const questionLengthCounterEl = document.getElementById("question-length-counter");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const startGameBtnEl = document.getElementById("start-game-btn");
 const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
@@ -542,7 +543,14 @@ function updateLengthWarning(inputEl, warningEl, maxLength) {
 }
 
 function updateQuestionLengthWarning() {
-    updateLengthWarning(questionInputEl, questionLengthWarningEl, QUESTION_MAX_LENGTH);
+    if (!questionInputEl || !questionLengthCounterEl) return;
+
+    const currentLength = countNormalizedQuestionChars(questionInputEl.value);
+    questionLengthCounterEl.textContent = `${currentLength}/${QUESTION_MAX_LENGTH}`;
+
+    if (questionLengthWarningEl) {
+        questionLengthWarningEl.classList.toggle("hidden", currentLength < QUESTION_MAX_LENGTH);
+    }
 }
 
 function updateArenaAnswerLengthWarning() {

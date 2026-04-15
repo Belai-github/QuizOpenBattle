@@ -46,14 +46,19 @@
 
                 <div class="question-input-row">
                     <span class="question-prefix">Q.</span>
-                    <textarea id="question-box" rows="3" maxlength="100" placeholder="問題を入力..."></textarea>
+                    <div class="question-input-field">
+                        <textarea id="question-box" rows="3" maxlength="100" placeholder="問題を入力..."></textarea>
+                        <div class="question-input-meta" aria-live="polite">
+                            <span id="question-length-warning" class="question-length-warning-icon hidden"
+                                aria-hidden="true">⚠️</span>
+                            <span id="question-length-counter" class="question-length-counter">0/100</span>
+                        </div>
+                    </div>
                 </div>
-                <p id="question-length-warning" class="chat-length-warning hidden" aria-live="polite">
-                    ⚠️入力できる文字数は100文字までです</p>
                 <button id="submit-question-btn">出題</button>
             </div>
         </div>
-        <h3>ログインプレイヤー</h3>
+        <h3>入場中プレイヤー</h3>
         <ul id="participants-list"></ul>
     </div>
 

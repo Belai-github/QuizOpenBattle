@@ -70,6 +70,31 @@ textarea {
     gap: 8px;
 }
 
+.question-input-field {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.question-input-meta {
+    margin-top: 4px;
+    min-height: 16px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.76rem;
+    line-height: 1;
+}
+
+.question-length-warning-icon {
+    color: #b91c1c;
+}
+
+.question-length-counter {
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+
 .question-prefix {
     flex: 0 0 auto;
     font-weight: 700;
@@ -80,6 +105,7 @@ textarea {
 #question-box {
     margin-top: 0;
     min-height: 96px;
+    resize: none;
 }
 
 button {
@@ -1179,6 +1205,24 @@ body[data-room-role="spectator"] #arena-answer-box {
 
     #waiting-panels {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .waiting-left-panel .chat-box {
+        overflow: visible;
+    }
+
+    .waiting-left-panel .chat-compose {
+        position: relative;
+    }
+
+    .waiting-left-panel .chat-compose .chat-length-warning {
+        position: absolute;
+        left: 2px;
+        top: calc(100% + 4px);
+        margin: 0;
+        z-index: 2;
+        white-space: nowrap;
     }
 
     .waiting-left-panel #event-log-box {
@@ -1188,6 +1232,7 @@ body[data-room-role="spectator"] #arena-answer-box {
     .waiting-right-panel #room-list-box {
         height: 296px;
         min-height: 296px;
+        flex: 0 0 auto;
     }
 
     #arena-board-layout {
