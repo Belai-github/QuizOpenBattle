@@ -1,17 +1,54 @@
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 import asyncio
-import base64
-import hashlib
-import hmac
 import json
 import os
-import re
-import secrets
 import time
 import uuid
 
-from pydantic import BaseModel
+from backend.auth import WebSocketAuthManager, is_valid_client_id, sanitize_nickname
+from backend.events.formatting import (
+    format_answer_attempt_message,
+    format_answer_result_message,
+    format_answer_vote_request_message,
+    format_answer_vote_resolution_message,
+    format_game_finished_message,
+    format_intentional_draw_vote_resolution_message,
+    format_open_vote_request_message,
+    format_open_vote_resolution_message,
+    format_turn_changed_message,
+    format_turn_end_vote_request_message,
+    format_turn_end_vote_resolution_message,
+)
+from backend.events.identity import derive_event_identity
+from backend.events.masking import (
+    mask_answer_text_for_viewer,
+    resolve_event_message_for_client,
+    resolve_event_payload_for_client,
+)
+from backend.storage.history import (
+    append_arena_chat_history,
+    append_lobby_chat_history,
+    build_lobby_chat_history_snapshot,
+    rebroadcast_finished_answer_logs,
+    should_append_lobby_chat_history,
+)
+from backend.storage.reconnect import (
+    clear_pending_disconnect_everywhere,
+    clear_room_pending_disconnect,
+    clear_room_reconnect_reservations,
+    purge_expired_reconnect_reservations,
+    set_room_pending_disconnect,
+)
+from backend.broadcast import (
+    build_participants as build_participants_payload,
+    build_rooms_summary as build_rooms_summary_payload,
+    build_ws_response,
+    resolve_arena_history_chat_type,
+    resolve_event_timestamp,
+    resolve_log_marker_id,
+)
+from backend.api_routes import register_api_routes
 
 from backend.game_logic import (
     _normalized_question_chars,
@@ -31,13 +68,10 @@ from backend.game_logic import (
     resolve_client_room_context,
 )
 from backend.ai_logic import check_answer_async, generate_quiz_async, normalize_difficulty, normalize_model_id
-from backend.model_catalog import get_frontend_model_payload
 from backend.kifu_storage import (
     append_action,
     begin_kifu_record,
     finalize_kifu_record,
-    get_kifu_detail_for_client,
-    list_kifu_for_client,
     resolve_latest_answer_result,
     touch_spectator,
 )
@@ -47,8 +81,6 @@ app = FastAPI()
 app.mount("/game", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
-CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
-MAX_NICKNAME_LENGTH = 24
 QUIZ_DIAG_API_ENABLED = os.getenv("QUIZ_DIAG_API", "").strip() == "1"
 
 
@@ -58,106 +90,6 @@ def diag_api_log(event: str, **fields):
 
     safe_fields = {str(k): v for k, v in fields.items()}
     print(f"[quiz-diag-api] {event} {json.dumps(safe_fields, ensure_ascii=False)}")
-
-
-def sanitize_nickname(raw_value: str | None) -> str:
-    nickname = str(raw_value or "").strip()
-    if nickname == "":
-        return "ゲスト"
-    return nickname[:MAX_NICKNAME_LENGTH]
-
-
-def is_valid_client_id(client_id: str) -> bool:
-    return bool(CLIENT_ID_PATTERN.fullmatch(str(client_id or "").strip()))
-
-
-class WsTicketIssueRequest(BaseModel):
-    client_id: str
-    nickname: str
-
-
-class WebSocketAuthManager:
-    def __init__(self):
-        secret_text = os.getenv("QUIZ_WS_AUTH_SECRET", "").strip()
-        if secret_text:
-            self._secret = secret_text.encode("utf-8")
-        else:
-            self._secret = secrets.token_bytes(32)
-            print("警告: QUIZ_WS_AUTH_SECRET 未設定のため、再起動ごとに WebSocket 認証鍵が再生成されます。")
-
-        self.ticket_ttl_seconds = 45
-        self.used_ticket_nonces = {}
-
-    def _purge_expired_nonces(self):
-        now = int(time.time())
-        for nonce, exp in list(self.used_ticket_nonces.items()):
-            if exp <= now:
-                self.used_ticket_nonces.pop(nonce, None)
-
-    def _sign(self, payload_segment: str) -> str:
-        signature = hmac.new(self._secret, payload_segment.encode("utf-8"), hashlib.sha256).digest()
-        return base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
-
-    def _decode_base64url(self, value: str) -> bytes:
-        padding = "=" * (-len(value) % 4)
-        return base64.urlsafe_b64decode(value + padding)
-
-    def issue_ticket(self, client_id: str, nickname: str) -> dict:
-        now = int(time.time())
-        expires_at = now + self.ticket_ttl_seconds
-        nonce = secrets.token_urlsafe(18)
-
-        payload = {
-            "cid": client_id,
-            "nick": nickname,
-            "exp": expires_at,
-            "nonce": nonce,
-        }
-        payload_json = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        payload_segment = base64.urlsafe_b64encode(payload_json).decode("ascii").rstrip("=")
-        signature_segment = self._sign(payload_segment)
-
-        return {
-            "ticket": f"{payload_segment}.{signature_segment}",
-            "expires_at": expires_at,
-        }
-
-    def verify_ticket(self, token: str, client_id: str, nickname: str) -> tuple[bool, str]:
-        self._purge_expired_nonces()
-
-        token_text = str(token or "").strip()
-        if token_text.count(".") != 1:
-            return False, "invalid_format"
-
-        payload_segment, signature_segment = token_text.split(".", 1)
-        expected_signature = self._sign(payload_segment)
-        if not hmac.compare_digest(signature_segment, expected_signature):
-            return False, "invalid_signature"
-
-        try:
-            payload_raw = self._decode_base64url(payload_segment)
-            payload = json.loads(payload_raw.decode("utf-8"))
-        except (ValueError, json.JSONDecodeError):
-            return False, "invalid_payload"
-
-        token_client_id = str(payload.get("cid", "")).strip()
-        token_nickname = sanitize_nickname(payload.get("nick", ""))
-        expires_at = int(payload.get("exp", 0))
-        nonce = str(payload.get("nonce", "")).strip()
-
-        if token_client_id != client_id:
-            return False, "client_mismatch"
-        if token_nickname != nickname:
-            return False, "nickname_mismatch"
-        if expires_at <= int(time.time()):
-            return False, "expired"
-        if nonce == "":
-            return False, "invalid_nonce"
-        if nonce in self.used_ticket_nonces:
-            return False, "reused_ticket"
-
-        self.used_ticket_nonces[nonce] = expires_at
-        return True, "ok"
 
 
 class QuizGameManager:
@@ -250,77 +182,20 @@ class QuizGameManager:
         event_chat_type: str | None,
         event_payload: dict | None,
     ):
-        payload = event_payload if isinstance(event_payload, dict) else {}
-        event_kind = str(event_type or "").strip()
-        event_scope = str(event_chat_type or "").strip() or "game-global"
-
-        room_event_version = 1
-        room_event_seq = None
-        if event_room_id:
-            room = self.rooms.get(event_room_id)
-            if room is not None:
-                room_event_seq = int(room.get("arena_event_id_seq", 0)) + 1
-                room["arena_event_id_seq"] = room_event_seq
-                room_event_version = room_event_seq
-
-        payload_event_id = str(payload.get("event_id") or "").strip()
-        vote_id = str(payload.get("vote_id") or "").strip()
-        log_marker_id = str(payload.get("log_marker_id") or "").strip()
-
-        if payload_event_id != "":
-            event_id = payload_event_id
-        elif vote_id != "":
-            event_id = f"vote:{vote_id}"
-        elif log_marker_id != "":
-            event_id = f"marker:{log_marker_id}"
-        elif event_room_id and room_event_seq is not None:
-            event_id = f"{event_room_id}:evt:{room_event_seq}"
-        elif event_room_id:
-            event_id = self._next_room_event_id(event_room_id)
-        else:
-            event_id = str(uuid.uuid4())
-
-        payload_revision = payload.get("event_revision")
-        if isinstance(payload_revision, int) and payload_revision > 0:
-            event_revision = payload_revision
-        elif vote_id != "":
-            event_revision = 2 if event_kind.endswith("_resolved") else 1
-        else:
-            event_revision = 1
-
-        return {
-            "event_id": event_id,
-            "event_kind": event_kind,
-            "event_scope": event_scope,
-            "event_revision": event_revision,
-            "event_version": room_event_version,
-        }
+        return derive_event_identity(
+            event_room_id,
+            event_type,
+            event_chat_type,
+            event_payload,
+            self.rooms,
+            self._next_room_event_id,
+        )
 
     def build_participants(self):
-        participants = []
-        for client_id, nickname in self.nicknames.items():
-            participants.append({"client_id": client_id, "nickname": nickname})
-        return participants
+        return build_participants_payload(self.nicknames)
 
     def build_rooms_summary(self, viewer_client_id: str | None = None):
-        rooms = []
-        for owner_id, room in self.rooms.items():
-            participant_count = len(room["left_participants"]) + len(room["right_participants"])
-            rooms.append(
-                {
-                    "room_owner_id": owner_id,
-                    "room_owner_name": self.nicknames.get(owner_id, "ゲスト"),
-                    "questioner_name": room["questioner_name"],
-                    "genre": str(room.get("genre") or "").strip(),
-                    "is_ai_room": bool(room.get("is_ai_mode")),
-                    "participant_count": participant_count,
-                    "spectator_count": len(room["spectators"]),
-                    "game_state": room.get("game_state", "waiting"),
-                    "can_join_as_participant": room.get("game_state", "waiting") == "waiting",
-                    "is_owner": viewer_client_id == owner_id,
-                }
-            )
-        return rooms
+        return build_rooms_summary_payload(self.rooms, self.nicknames, viewer_client_id)
 
     def build_current_room_for_client(self, client_id: str):
         return build_current_room_for_client(self.rooms, self.nicknames, client_id)
@@ -474,57 +349,15 @@ class QuizGameManager:
         event_recipient_ids: set[str] | None = None,
         event_payload: dict | None = None,
     ):
-        arena_progress_event_types = {
-            "game_start",
-            "game_finished",
-            "question",
-            "room_shuffle",
-            "character_opened",
-            "answer_submitted",
-            "full_open_settlement_start",
-            "full_open_settlement_answer",
-            "full_open_settlement_ready",
-            "full_open_settlement_finished",
-            "open_vote_request",
-            "open_vote_resolved",
-            "answer_attempt",
-            "answer_result",
-            "answer_vote_request",
-            "answer_vote_resolved",
-            "turn_end_vote_request",
-            "turn_end_vote_resolved",
-            "intentional_draw_vote_request",
-            "intentional_draw_vote_resolved",
-            "intentional_draw",
-            "turn_changed",
-            "room_reconnected",
-        }
         history_message = str(event_message or public_info or "").strip()
-        payload_event_timestamp = None
-        if isinstance(event_payload, dict):
-            raw_event_timestamp = event_payload.get("event_timestamp")
-            if isinstance(raw_event_timestamp, int) and raw_event_timestamp > 0:
-                payload_event_timestamp = raw_event_timestamp
-            elif isinstance(raw_event_timestamp, str):
-                raw_event_timestamp = raw_event_timestamp.strip()
-                if raw_event_timestamp.isdigit():
-                    parsed_event_timestamp = int(raw_event_timestamp)
-                    if parsed_event_timestamp > 0:
-                        payload_event_timestamp = parsed_event_timestamp
-
-        event_timestamp = payload_event_timestamp or int(time.time() * 1000)
+        event_timestamp = resolve_event_timestamp(event_payload)
         event_identity = self._derive_event_identity(
             event_room_id=event_room_id,
             event_type=event_type,
             event_chat_type=event_chat_type,
             event_payload=event_payload,
         )
-        log_marker_id = None
-        if isinstance(event_payload, dict):
-            payload_marker = event_payload.get("log_marker_id") or event_payload.get("vote_id")
-            payload_marker_text = str(payload_marker or "").strip()
-            if payload_marker_text != "":
-                log_marker_id = payload_marker_text
+        log_marker_id = resolve_log_marker_id(event_payload)
 
         skip_history = isinstance(event_payload, dict) and bool(event_payload.get("skip_history"))
         if history_message and not skip_history and self._should_append_lobby_chat_history(event_type, event_chat_type, event_room_id):
@@ -538,34 +371,13 @@ class QuizGameManager:
             )
 
         if event_room_id and history_message and not skip_history:
-            if event_chat_type in {"team-left", "team-right", "game-global"}:
+            arena_history_chat_type = resolve_arena_history_chat_type(event_type, event_chat_type)
+            if arena_history_chat_type is not None:
                 self._append_arena_chat_history(
                     event_room_id,
                     event_type or "",
                     history_message,
-                    event_chat_type,
-                    log_marker_id,
-                    event_identity=event_identity,
-                    event_payload=event_payload,
-                    event_timestamp=event_timestamp,
-                )
-            elif event_type in {"room_entry", "room_exit"}:
-                self._append_arena_chat_history(
-                    event_room_id,
-                    event_type,
-                    history_message,
-                    "game-global",
-                    log_marker_id,
-                    event_identity=event_identity,
-                    event_payload=event_payload,
-                    event_timestamp=event_timestamp,
-                )
-            elif event_type in arena_progress_event_types:
-                self._append_arena_chat_history(
-                    event_room_id,
-                    event_type or "",
-                    history_message,
-                    "game-global",
+                    arena_history_chat_type,
                     log_marker_id,
                     event_identity=event_identity,
                     event_payload=event_payload,
@@ -605,36 +417,26 @@ class QuizGameManager:
             )
             response_event_chat_type = event_chat_type if is_event_recipient else None
 
-            response = {
-                "public_info": public_info,
-                "private_info": private_info,
-                "participants": participants,
-                "rooms": rooms,
-                "current_room": current_room,
-                "lobby_chat_history": self._build_lobby_chat_history_snapshot(),
-                "ai_question_generation_active": self.ai_question_generation_active,
-                "ai_question_generation_owner_id": self.ai_question_generation_owner_id,
-                "event_type": response_event_type,
-                "event_message": response_event_message,
-                "event_chat_type": response_event_chat_type,
-                "event_room_id": event_room_id,
-                "target_screen": target_screen,
-                "event_payload": response_event_payload,
-                "event_view": (
-                    {
-                        "display_message": response_event_message,
-                        "masked": bool(response_event_message is not None and response_event_message != history_message),
-                    }
-                    if is_event_recipient
-                    else None
-                ),
-                "event_id": event_identity["event_id"] if is_event_recipient else None,
-                "event_kind": event_identity["event_kind"] if is_event_recipient else None,
-                "event_scope": event_identity["event_scope"] if is_event_recipient else None,
-                "event_revision": event_identity["event_revision"] if is_event_recipient else None,
-                "event_version": event_identity["event_version"] if is_event_recipient else None,
-                "event_timestamp": event_timestamp if is_event_recipient else None,
-            }
+            response = build_ws_response(
+                public_info=public_info,
+                private_info=private_info,
+                participants=participants,
+                rooms=rooms,
+                current_room=current_room,
+                lobby_chat_history=self._build_lobby_chat_history_snapshot(),
+                ai_question_generation_active=self.ai_question_generation_active,
+                ai_question_generation_owner_id=self.ai_question_generation_owner_id,
+                response_event_type=response_event_type,
+                response_event_message=response_event_message,
+                response_event_chat_type=response_event_chat_type,
+                event_room_id=event_room_id,
+                target_screen=target_screen,
+                response_event_payload=response_event_payload,
+                is_event_recipient=is_event_recipient,
+                history_message=history_message,
+                event_identity=event_identity,
+                event_timestamp=event_timestamp,
+            )
             await ws.send_text(json.dumps(response))
 
         should_reveal_finished_answers = event_type == "game_finished" and bool(event_room_id) and not (isinstance(event_payload, dict) and bool(event_payload.get("skip_finished_answer_reveal")))
@@ -665,46 +467,31 @@ class QuizGameManager:
     # 以下、イベントメッセージのフォーマット関数
 
     def _format_turn_changed_message(self, next_turn_team: str | None):
-        next_label = self._team_label(str(next_turn_team or ""))
-        if next_label == "":
-            return "ターン終了。"
-        return f"ターン終了。{next_label}のターンになりました。"
+        return format_turn_changed_message(next_turn_team)
 
     def _format_open_vote_request_message(self, requester_name: str, char_index: int, should_emit_vote_log: bool):
-        if should_emit_vote_log:
-            return f"{requester_name} が {char_index + 1}文字目のオープン投票を開始しました。"
-        return f"{requester_name} が {char_index + 1}文字目をオープンしました。"
+        return format_open_vote_request_message(requester_name, char_index, should_emit_vote_log)
 
     def _format_open_vote_resolution_message(self, team_label: str, char_index: int, approved: bool):
-        if approved:
-            return f"{team_label}が{char_index + 1}文字目をオープンしました。"
-        return f"{team_label}が{char_index + 1}文字目をオープンできませんでした。"
+        return format_open_vote_resolution_message(team_label, char_index, approved)
 
     def _format_answer_attempt_message(self, team_label: str, answer_text: str):
-        return f"{team_label}が「{answer_text}」とアンサーしました。"
+        return format_answer_attempt_message(team_label, answer_text)
 
     def _format_answer_vote_request_message(self, requester_name: str, answer_text: str, should_emit_vote_log: bool):
-        if should_emit_vote_log:
-            return f"{requester_name} が「{answer_text}」とアンサーしました。"
-        return f"{requester_name} が「{answer_text}」とアンサーしました。"
+        return format_answer_vote_request_message(requester_name, answer_text, should_emit_vote_log)
 
     def _format_answer_vote_resolution_message(self, team_label: str, answer_text: str, approved: bool, should_emit_vote_log: bool):
-        if approved:
-            return f"{team_label}が「{answer_text}」とアンサーしました。"
-        if should_emit_vote_log:
-            return "アンサー投票否決"
-        return f"{team_label}の解答送信に失敗しました。"
+        return format_answer_vote_resolution_message(team_label, answer_text, approved, should_emit_vote_log)
 
     def _format_turn_end_vote_request_message(self, requester_name: str, should_emit_vote_log: bool):
-        if should_emit_vote_log:
-            return f"{requester_name} がターンエンド投票を開始しました。"
-        return f"{requester_name} がターンエンドしました。"
+        return format_turn_end_vote_request_message(requester_name, should_emit_vote_log)
 
     def _format_turn_end_vote_resolution_message(self, approved: bool):
-        return "ターンエンド投票可決" if approved else "ターンエンド投票否決"
+        return format_turn_end_vote_resolution_message(approved)
 
     def _format_intentional_draw_vote_resolution_message(self, approved: bool):
-        return "フルオープン決着が成立しました。" if approved else "フルオープン決着は否決されました。"
+        return format_intentional_draw_vote_resolution_message(approved)
 
     def _start_full_open_settlement(self, room: dict, vote_id: str, requester_id: str):
         game = room.get("game") or {}
@@ -741,22 +528,13 @@ class QuizGameManager:
         return state if isinstance(state, dict) else None
 
     def _format_answer_result_message(self, team_label: str, is_correct: bool):
-        result_label = "正解" if is_correct else "誤答"
-        return f"{team_label}の解答は{result_label}でした。"
+        return format_answer_result_message(team_label, is_correct)
 
     def _format_game_finished_message(self, winner: str | None):
-        if winner == "team-left":
-            return "ゲーム終了！先攻の勝利"
-        elif winner == "team-right":
-            return "ゲーム終了！後攻の勝利"
-        else:
-            return "ゲーム終了！引き分け"
+        return format_game_finished_message(winner)
 
     def _mask_answer_text_for_viewer(self, message: str):
-        text = str(message or "")
-        if text == "":
-            return ""
-        return re.sub(r"が「[^」]*」と", "が", text)
+        return mask_answer_text_for_viewer(message)
 
     def _is_intentional_draw_eligible(self, room: dict):
         if not isinstance(room, dict):
@@ -793,35 +571,7 @@ class QuizGameManager:
         event_message: str,
         event_payload: dict | None,
     ):
-        message = str(event_message or "").strip()
-        if message == "":
-            return ""
-
-        if not isinstance(current_room, dict):
-            return message
-
-        room_state = str(current_room.get("game_state", "waiting") or "waiting")
-        viewer_role = str(current_room.get("chat_role", "") or "")
-        viewer_type = str(current_room.get("role", "") or "")
-
-        if room_state != "playing" or viewer_type != "participant" or viewer_role not in {"team-left", "team-right"}:
-            return message
-
-        event_kind = str(event_type or "").strip()
-        if event_kind not in {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}:
-            return message
-
-        payload = event_payload if isinstance(event_payload, dict) else {}
-        source_team = str(payload.get("team") or event_chat_type or "").strip()
-        game = current_room.get("game")
-        left_reveal_window = isinstance(game, dict) and bool(game.get("left_correct_waiting")) and viewer_role == "team-left"
-        if left_reveal_window and source_team == "team-right":
-            return message
-
-        if source_team in {"team-left", "team-right"} and source_team != viewer_role:
-            return self._mask_answer_text_for_viewer(message)
-
-        return message
+        return resolve_event_message_for_client(current_room, event_type, event_chat_type, event_message, event_payload)
 
     def _resolve_event_payload_for_client(
         self,
@@ -830,109 +580,15 @@ class QuizGameManager:
         event_chat_type: str | None,
         event_payload: dict | None,
     ):
-        if not isinstance(event_payload, dict):
-            return event_payload
-
-        payload = dict(event_payload)
-        event_kind = str(event_type or "").strip()
-        if event_kind not in {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}:
-            return payload
-
-        # 終了時の再公開は既存仕様を維持する。
-        if str(payload.get("reveal_phase") or "").strip() == "finished":
-            return payload
-
-        if not isinstance(current_room, dict):
-            return payload
-
-        room_state = str(current_room.get("game_state", "waiting") or "waiting")
-        if room_state != "playing":
-            return payload
-
-        viewer_type = str(current_room.get("role", "") or "")
-        viewer_role = str(current_room.get("chat_role", "") or "")
-        source_team = str(payload.get("team") or event_chat_type or "").strip()
-        game = current_room.get("game")
-        left_reveal_window = isinstance(game, dict) and bool(game.get("left_correct_waiting")) and viewer_role == "team-left"
-
-        if viewer_type == "owner" or viewer_role == "questioner":
-            return payload
-
-        if viewer_type == "participant" and left_reveal_window and source_team == "team-right":
-            return payload
-
-        if viewer_type == "spectator" or viewer_role == "spectator":
-            payload.pop("answer_text", None)
-            return payload
-
-        if viewer_type == "participant" and viewer_role in {"team-left", "team-right"} and source_team in {"team-left", "team-right"} and source_team != viewer_role:
-            payload.pop("answer_text", None)
-
-        return payload
+        return resolve_event_payload_for_client(current_room, event_type, event_chat_type, event_payload)
 
     async def _rebroadcast_finished_answer_logs(self, room_owner_id: str):
-        room = self.rooms.get(room_owner_id)
-        if room is None:
-            return
-
-        if room.get("finished_answer_logs_revealed"):
-            return
-
-        room["finished_answer_logs_revealed"] = True
-
-        history = room.get("arena_chat_history") or []
-        if not isinstance(history, list):
-            return
-
-        answer_event_types = {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}
-        recipients = {room_owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
-
-        sorted_history = sorted(
-            [entry for entry in history if isinstance(entry, dict)],
-            key=lambda entry: (int(entry.get("timestamp", 0)), int(entry.get("seq", 0))),
-        )
-
-        for entry in sorted_history:
-            event_type = str(entry.get("event_type", "")).strip()
-            event_chat_type = str(entry.get("event_chat_type", "")).strip()
-            event_message = str(entry.get("event_message", "")).strip()
-            if event_message == "" or event_type not in answer_event_types:
-                continue
-            if event_chat_type not in {"team-left", "team-right", "game-global"}:
-                continue
-
-            base_revision = max(1, int(entry.get("event_revision", 1) or 1))
-            payload = entry.get("event_payload") if isinstance(entry.get("event_payload"), dict) else {}
-            payload_map = payload if isinstance(payload, dict) else {}
-
-            await self.broadcast_state(
-                public_info="",
-                event_type=event_type,
-                event_message=event_message,
-                event_chat_type=event_chat_type,
-                event_room_id=room_owner_id,
-                event_recipient_ids=recipients,
-                event_payload={
-                    **payload_map,
-                    "event_id": str(entry.get("event_id") or "").strip() or None,
-                    "event_revision": base_revision + 100,
-                    "event_timestamp": int(entry.get("timestamp") or 0),
-                    "reveal_phase": "finished",
-                    "skip_history": True,
-                },
-            )
+        await rebroadcast_finished_answer_logs(self, room_owner_id)
 
     # 以下、内部処理関数
 
     def _should_append_lobby_chat_history(self, event_type: str | None, event_chat_type: str | None, event_room_id: str | None):
-        if event_room_id:
-            return False
-
-        chat_type = str(event_chat_type or "").strip()
-        event_kind = str(event_type or "").strip()
-        if chat_type == "lobby":
-            return True
-        return event_kind in {"join", "leave", "chat"}
+        return should_append_lobby_chat_history(event_type, event_chat_type, event_room_id)
 
     def _append_lobby_chat_history(
         self,
@@ -943,32 +599,18 @@ class QuizGameManager:
         log_marker_id: str | None = None,
         event_timestamp: int | None = None,
     ):
-        message = str(event_message or "").strip()
-        if message == "":
-            return
-
-        stored_timestamp = int(event_timestamp) if isinstance(event_timestamp, int) and event_timestamp > 0 else int(time.time() * 1000)
-        self.lobby_chat_seq = int(self.lobby_chat_seq) + 1
-        self.lobby_chat_history.append(
-            {
-                "seq": int(self.lobby_chat_seq),
-                "timestamp": stored_timestamp,
-                "event_type": str(event_type or "").strip(),
-                "event_message": message,
-                "event_chat_type": str(event_chat_type or "").strip() or "lobby",
-                "log_marker_id": str(log_marker_id or "").strip() or None,
-                "event_id": str((event_identity or {}).get("event_id") or "").strip() or None,
-                "event_revision": int((event_identity or {}).get("event_revision") or 1),
-                "event_version": int((event_identity or {}).get("event_version") or 0),
-            }
+        append_lobby_chat_history(
+            self,
+            event_type,
+            event_message,
+            event_chat_type,
+            event_identity=event_identity,
+            log_marker_id=log_marker_id,
+            event_timestamp=event_timestamp,
         )
 
-        while len(self.lobby_chat_history) > 400:
-            self.lobby_chat_history.pop(0)
-
     def _build_lobby_chat_history_snapshot(self):
-        history = self.lobby_chat_history if isinstance(self.lobby_chat_history, list) else []
-        return [entry for entry in history if isinstance(entry, dict)]
+        return build_lobby_chat_history_snapshot(self)
 
     def _append_arena_chat_history(
         self,
@@ -981,59 +623,17 @@ class QuizGameManager:
         event_payload: dict | None = None,
         event_timestamp: int | None = None,
     ):
-        room = self.rooms.get(room_owner_id)
-        if room is None:
-            return
-
-        if event_chat_type not in {"team-left", "team-right", "game-global"}:
-            return
-
-        message = str(event_message or "").strip()
-        if message == "":
-            return
-
-        stored_timestamp = int(event_timestamp) if isinstance(event_timestamp, int) and event_timestamp > 0 else int(time.time() * 1000)
-        seq = int(room.get("arena_chat_seq", 0)) + 1
-        room["arena_chat_seq"] = seq
-        history = room.setdefault("arena_chat_history", [])
-        if not isinstance(history, list):
-            history = []
-            room["arena_chat_history"] = history
-
-        history.append(
-            {
-                "seq": seq,
-                "timestamp": stored_timestamp,
-                "event_type": str(event_type or ""),
-                "event_message": message,
-                "event_chat_type": event_chat_type,
-                "log_marker_id": str(log_marker_id or "").strip() or None,
-                "event_id": str((event_identity or {}).get("event_id") or "").strip() or None,
-                "event_kind": str((event_identity or {}).get("event_kind") or event_type or "").strip() or None,
-                "event_scope": str((event_identity or {}).get("event_scope") or event_chat_type or "").strip() or None,
-                "event_revision": int((event_identity or {}).get("event_revision") or 1),
-                "event_version": int((event_identity or {}).get("event_version") or 1),
-                "event_payload": event_payload if isinstance(event_payload, dict) else None,
-            }
+        append_arena_chat_history(
+            self,
+            room_owner_id,
+            event_type,
+            event_message,
+            event_chat_type,
+            log_marker_id=log_marker_id,
+            event_identity=event_identity,
+            event_payload=event_payload,
+            event_timestamp=event_timestamp,
         )
-
-        while len(history) > 400:
-            history.pop(0)
-
-    def _purge_expired_reconnect_reservations(self):
-        now = time.time()
-        for reserved_client_id, reservation in list(self.reconnect_reservations.items()):
-            expires_at = reservation.get("expires_at")
-            if expires_at is None:
-                continue
-            if float(expires_at) <= now:
-                self.reconnect_reservations.pop(reserved_client_id, None)
-
-    def _clear_room_reconnect_reservations(self, room_owner_id: str):
-        for reserved_client_id, reservation in list(self.reconnect_reservations.items()):
-            if reservation.get("room_owner_id") == room_owner_id:
-                self.reconnect_reservations.pop(reserved_client_id, None)
-                self._cancel_disconnect_grace_timer(reserved_client_id)
 
     def _cancel_disconnect_grace_timer(self, client_id: str):
         task = self.pending_disconnect_tasks.pop(client_id, None)
@@ -1048,43 +648,19 @@ class QuizGameManager:
         team: str,
         expires_at: float,
     ):
-        room = self.rooms.get(room_owner_id)
-        if room is None:
-            return
-
-        pending_disconnects = room.setdefault("pending_disconnects", {})
-        if not isinstance(pending_disconnects, dict):
-            pending_disconnects = {}
-            room["pending_disconnects"] = pending_disconnects
-
-        pending_disconnects[client_id] = {
-            "nickname": nickname,
-            "team": team,
-            "expires_at": expires_at,
-        }
+        set_room_pending_disconnect(self, room_owner_id, client_id, nickname, team, expires_at)
 
     def _clear_room_pending_disconnect(self, room_owner_id: str, client_id: str):
-        room = self.rooms.get(room_owner_id)
-        if room is None:
-            return
-
-        pending_disconnects = room.get("pending_disconnects")
-        if not isinstance(pending_disconnects, dict):
-            return
-
-        pending_disconnects.pop(client_id, None)
-        if not pending_disconnects:
-            room["pending_disconnects"] = {}
+        clear_room_pending_disconnect(self, room_owner_id, client_id)
 
     def _clear_pending_disconnect_everywhere(self, client_id: str):
-        for room in self.rooms.values():
-            pending_disconnects = room.get("pending_disconnects")
-            if not isinstance(pending_disconnects, dict):
-                continue
+        clear_pending_disconnect_everywhere(self, client_id)
 
-            pending_disconnects.pop(client_id, None)
-            if not pending_disconnects:
-                room["pending_disconnects"] = {}
+    def _purge_expired_reconnect_reservations(self):
+        purge_expired_reconnect_reservations(self)
+
+    def _clear_room_reconnect_reservations(self, room_owner_id: str):
+        clear_room_reconnect_reservations(self, room_owner_id)
 
     def _is_owner_joined_as_guest(self, room_owner_id: str, room: dict | None = None) -> bool:
         target_room = room if isinstance(room, dict) else self.rooms.get(room_owner_id)
@@ -3774,56 +3350,7 @@ class QuizGameManager:
 manager = QuizGameManager()
 ws_auth_manager = WebSocketAuthManager()
 
-
-def _resolve_active_client_or_401(client_id: str) -> str:
-    cid = str(client_id or "").strip()
-    if not is_valid_client_id(cid):
-        diag_api_log("auth_check", path="kifu", client_id=cid, valid_client_id=False, connected=False, status=400)
-        raise HTTPException(status_code=400, detail="invalid_client_id")
-    if cid not in manager.active_connections:
-        diag_api_log("auth_check", path="kifu", client_id=cid, valid_client_id=True, connected=False, status=401)
-        raise HTTPException(status_code=401, detail="not_connected")
-    diag_api_log("auth_check", path="kifu", client_id=cid, valid_client_id=True, connected=True, status=200)
-    return cid
-
-
-@app.get("/api/kifu/list")
-async def kifu_list(client_id: str = Query(...)):
-    cid = _resolve_active_client_or_401(client_id)
-    return {"kifu": list_kifu_for_client(cid)}
-
-
-@app.get("/api/kifu/{kifu_id}")
-async def kifu_detail(kifu_id: str, client_id: str = Query(...)):
-    cid = _resolve_active_client_or_401(client_id)
-    detail = get_kifu_detail_for_client(kifu_id, cid)
-    if detail is None:
-        raise HTTPException(status_code=404, detail="kifu_not_found")
-    if detail == {}:
-        raise HTTPException(status_code=403, detail="forbidden")
-    return detail
-
-
-@app.post("/api/ws-ticket")
-async def issue_ws_ticket(request: WsTicketIssueRequest):
-    client_id = str(request.client_id or "").strip()
-    nickname = sanitize_nickname(request.nickname)
-
-    if not is_valid_client_id(client_id):
-        raise HTTPException(status_code=400, detail="invalid_client_id")
-
-    if client_id in manager.active_connections:
-        raise HTTPException(status_code=409, detail="already_connected")
-
-    ticket_payload = ws_auth_manager.issue_ticket(client_id, nickname)
-    ticket_payload["nickname"] = nickname
-    return ticket_payload
-
-
-@app.get("/api/ai-models")
-async def get_ai_models():
-    diag_api_log("ai_models", connected_count=len(manager.active_connections), status=200)
-    return get_frontend_model_payload()
+register_api_routes(app, manager, ws_auth_manager, diag_api_log)
 
 
 @app.websocket("/ws/{client_id}")
