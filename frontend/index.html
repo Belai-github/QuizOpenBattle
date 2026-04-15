@@ -107,13 +107,13 @@
             <div id="arena-question-board">
                 <p id="arena-question-text">問題文を準備中...</p>
                 <div id="arena-answer-box" class="hidden">
+                    <div class="arena-turn-end-row">
+                        <button id="arena-turn-end-btn" type="button" aria-label="ターンエンド">ターンエンド</button>
+                    </div>
                     <div class="arena-answer-compose">
                         <input id="arena-answer-input" type="text" maxlength="120" placeholder="解答を入力..."
                             aria-label="解答入力">
-                        <div class="arena-answer-actions">
-                            <button id="arena-turn-end-btn" type="button" aria-label="ターンエンド">ターンエンド</button>
-                            <button id="arena-answer-submit-btn" type="button" aria-label="解答送信">解答</button>
-                        </div>
+                        <button id="arena-answer-submit-btn" type="button" aria-label="解答送信">解答</button>
                     </div>
                 </div>
             </div>
@@ -144,16 +144,6 @@
         </div>
 
         <div id="arena-lower-layout">
-            <div id="arena-global-chat-box" class="chat-box hidden" data-chat-room="game" data-chat-type="game-global">
-                <div class="arena-chat-title">全体チャット</div>
-                <div id="game-chat-log-game-global" class="chat-log"></div>
-                <div class="chat-compose">
-                    <textarea class="chat-input" rows="1" maxlength="200" placeholder="全員向けチャット..."></textarea>
-                    <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
-                    <button class="chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
-                </div>
-            </div>
-
             <div id="arena-spectator-box">
                 <div class="arena-spectator-label">観戦者</div>
                 <ul id="arena-spectator-list"></ul>
@@ -166,6 +156,16 @@
                         <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
                         <button class="chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                     </div>
+                </div>
+            </div>
+
+            <div id="arena-global-chat-box" class="chat-box hidden" data-chat-room="game" data-chat-type="game-global">
+                <div class="arena-chat-title">全体チャット</div>
+                <div id="game-chat-log-game-global" class="chat-log"></div>
+                <div class="chat-compose">
+                    <textarea class="chat-input" rows="1" maxlength="200" placeholder="全員向けチャット..."></textarea>
+                    <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
+                    <button class="chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                 </div>
             </div>
         </div>

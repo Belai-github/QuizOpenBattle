@@ -355,7 +355,7 @@ function updateArenaAnswerFormVisibility() {
     arenaAnswerInputEl.disabled = !canSubmit;
     arenaAnswerSubmitBtnEl.disabled = !canSubmit;
     arenaTurnEndBtnEl.disabled = !canEndTurn;
-    arenaAnswerSubmitBtnEl.textContent = isProposalMode ? "提案" : "解答";
+    arenaAnswerSubmitBtnEl.textContent = isProposalMode ? "解答提案" : "解答";
     arenaAnswerSubmitBtnEl.setAttribute("aria-label", isProposalMode ? "解答提案" : "解答送信");
 
     if (!canView) {
