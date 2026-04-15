@@ -478,6 +478,7 @@ class QuizGameManager:
             "room_reconnected",
         }
         history_message = str(event_message or public_info or "").strip()
+        event_timestamp = int(time.time() * 1000)
         event_identity = self._derive_event_identity(
             event_room_id=event_room_id,
             event_type=event_type,
@@ -499,6 +500,7 @@ class QuizGameManager:
                 event_chat_type=str(event_chat_type or "").strip() or "lobby",
                 event_identity=event_identity,
                 log_marker_id=log_marker_id,
+                event_timestamp=event_timestamp,
             )
 
         if event_room_id and history_message and not skip_history:
@@ -511,6 +513,7 @@ class QuizGameManager:
                     log_marker_id,
                     event_identity=event_identity,
                     event_payload=event_payload,
+                    event_timestamp=event_timestamp,
                 )
             elif event_type in {"room_entry", "room_exit"}:
                 self._append_arena_chat_history(
@@ -521,6 +524,7 @@ class QuizGameManager:
                     log_marker_id,
                     event_identity=event_identity,
                     event_payload=event_payload,
+                    event_timestamp=event_timestamp,
                 )
             elif event_type in arena_progress_event_types:
                 self._append_arena_chat_history(
@@ -531,6 +535,7 @@ class QuizGameManager:
                     log_marker_id,
                     event_identity=event_identity,
                     event_payload=event_payload,
+                    event_timestamp=event_timestamp,
                 )
 
         participants = self.build_participants()
@@ -594,6 +599,7 @@ class QuizGameManager:
                 "event_scope": event_identity["event_scope"] if is_event_recipient else None,
                 "event_revision": event_identity["event_revision"] if is_event_recipient else None,
                 "event_version": event_identity["event_version"] if is_event_recipient else None,
+                "event_timestamp": event_timestamp if is_event_recipient else None,
             }
             await ws.send_text(json.dumps(response))
 
@@ -836,16 +842,18 @@ class QuizGameManager:
         event_chat_type: str,
         event_identity: dict | None = None,
         log_marker_id: str | None = None,
+        event_timestamp: int | None = None,
     ):
         message = str(event_message or "").strip()
         if message == "":
             return
 
+        stored_timestamp = int(event_timestamp) if isinstance(event_timestamp, int) and event_timestamp > 0 else int(time.time() * 1000)
         self.lobby_chat_seq = int(self.lobby_chat_seq) + 1
         self.lobby_chat_history.append(
             {
                 "seq": int(self.lobby_chat_seq),
-                "timestamp": int(time.time() * 1000),
+                "timestamp": stored_timestamp,
                 "event_type": str(event_type or "").strip(),
                 "event_message": message,
                 "event_chat_type": str(event_chat_type or "").strip() or "lobby",
@@ -872,6 +880,7 @@ class QuizGameManager:
         log_marker_id: str | None = None,
         event_identity: dict | None = None,
         event_payload: dict | None = None,
+        event_timestamp: int | None = None,
     ):
         room = self.rooms.get(room_owner_id)
         if room is None:
@@ -884,6 +893,7 @@ class QuizGameManager:
         if message == "":
             return
 
+        stored_timestamp = int(event_timestamp) if isinstance(event_timestamp, int) and event_timestamp > 0 else int(time.time() * 1000)
         seq = int(room.get("arena_chat_seq", 0)) + 1
         room["arena_chat_seq"] = seq
         history = room.setdefault("arena_chat_history", [])
@@ -894,7 +904,7 @@ class QuizGameManager:
         history.append(
             {
                 "seq": seq,
-                "timestamp": int(time.time() * 1000),
+                "timestamp": stored_timestamp,
                 "event_type": str(event_type or ""),
                 "event_message": message,
                 "event_chat_type": event_chat_type,
@@ -2148,7 +2158,7 @@ class QuizGameManager:
         if room is not None:
             room["arena_chat_history"] = []
             room["arena_chat_seq"] = 0
-            room["arena_event_id_seq"] = 0
+            # event_id は room 内で単調増加させて重複置換を防ぐ。
             room["finished_answer_logs_revealed"] = False
             room["pre_game_global_chat_history"] = []
             room["pre_game_global_chat_seq"] = 0

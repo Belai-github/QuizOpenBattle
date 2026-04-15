@@ -436,6 +436,56 @@ function getOrCreateArenaRoomLogState(roomOwnerId) {
     return state;
 }
 
+function compareArenaLogOrder(aTimestamp, aVersion, bTimestamp, bVersion) {
+    const aTs = Number(aTimestamp || 0);
+    const bTs = Number(bTimestamp || 0);
+    const hasATs = Number.isFinite(aTs) && aTs > 0;
+    const hasBTs = Number.isFinite(bTs) && bTs > 0;
+
+    if (hasATs && hasBTs && aTs !== bTs) {
+        return aTs - bTs;
+    }
+
+    const aVer = Math.max(0, Number(aVersion || 0));
+    const bVer = Math.max(0, Number(bVersion || 0));
+    if (aVer !== bVer) {
+        return aVer - bVer;
+    }
+
+    return 0;
+}
+
+function insertArenaLogInOrder(logs, entry) {
+    if (!Array.isArray(logs)) {
+        return;
+    }
+
+    let insertIndex = logs.length;
+    for (let i = logs.length - 1; i >= 0; i -= 1) {
+        const candidate = logs[i] || {};
+        const order = compareArenaLogOrder(
+            candidate.eventTimestamp,
+            candidate.eventVersion,
+            entry?.eventTimestamp,
+            entry?.eventVersion,
+        );
+        if (order <= 0) {
+            break;
+        }
+        insertIndex = i;
+    }
+
+    if (insertIndex < logs.length) {
+        logs.splice(insertIndex, 0, entry);
+    } else {
+        logs.push(entry);
+    }
+
+    while (logs.length > 50) {
+        logs.shift();
+    }
+}
+
 function pushArenaRoomLog(
     roomOwnerId,
     chatType,
@@ -491,7 +541,7 @@ function pushArenaRoomLog(
         }
     }
 
-    logs.push({
+    insertArenaLogInOrder(logs, {
         eventType,
         eventMessage,
         eventTimestamp,
@@ -500,9 +550,6 @@ function pushArenaRoomLog(
         eventRevision: Math.max(1, Number(eventRevision || 1)),
         eventVersion: Math.max(0, Number(eventVersion || 0)),
     });
-    while (logs.length > 50) {
-        logs.shift();
-    }
 }
 
 function upsertHydratedArenaLog(
@@ -557,7 +604,7 @@ function upsertHydratedArenaLog(
         }
     }
 
-    logs.push({
+    insertArenaLogInOrder(logs, {
         eventType,
         eventMessage,
         eventTimestamp,
@@ -566,9 +613,6 @@ function upsertHydratedArenaLog(
         eventRevision: Math.max(1, Number(eventRevision || 1)),
         eventVersion: Math.max(0, Number(eventVersion || 0)),
     });
-    while (logs.length > 50) {
-        logs.shift();
-    }
 }
 
 function normalizeLogMarkerId(rawValue) {
@@ -603,7 +647,7 @@ function normalizeArenaEventRecord(rawRecord) {
     const eventType = String(rawRecord?.event_type || rawRecord?.event_kind || "").trim();
     const eventChatType = String(rawRecord?.event_chat_type || rawRecord?.event_scope || "").trim();
     const eventMessage = String(rawRecord?.event_view?.display_message || rawRecord?.event_message || rawRecord?.message || "").trim();
-    const eventTimestamp = Number(rawRecord?.timestamp || rawRecord?.event_timestamp || 0);
+    const eventTimestamp = Number(rawRecord?.event_timestamp || rawRecord?.timestamp || 0);
     const eventId = normalizeEventId(rawRecord?.event_id || rawRecord?.event_payload?.event_id);
     const eventRevision = Math.max(1, Number(rawRecord?.event_revision || rawRecord?.event_payload?.event_revision || 1));
     const eventVersion = Math.max(0, Number(rawRecord?.event_version || rawRecord?.event_payload?.event_version || 0));
@@ -934,6 +978,7 @@ function hydratePreGameGlobalHistoryIfNeeded(currentRoom) {
         const eventType = String(entry?.event_type || "chat").trim() || "chat";
         let eventMessage = String(entry?.event_message || "").trim();
         const eventTimestamp = Number(entry?.timestamp || 0);
+        const eventVersion = Math.max(0, Number(entry?.event_version || 0));
 
         if (!Number.isFinite(seq) || seenSeqSet.has(seq) || eventMessage === "") {
             return;
@@ -945,14 +990,17 @@ function hydratePreGameGlobalHistoryIfNeeded(currentRoom) {
             eventMessage = eventMessage.replace(/が「[^」]*」と/, "が");
         }
 
-        roomStateLogs["game-global"].push({
+        upsertHydratedArenaLog(
+            roomStateLogs,
+            "game-global",
             eventType,
             eventMessage,
             eventTimestamp,
-        });
-        while (roomStateLogs["game-global"].length > 50) {
-            roomStateLogs["game-global"].shift();
-        }
+            null,
+            null,
+            1,
+            eventVersion,
+        );
 
         seenSeqSet.add(seq);
         updated = true;
@@ -3493,9 +3541,10 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
     item.dataset.eventRevision = String(Math.max(1, Number(eventRevision || 1)));
     item.dataset.eventVersion = String(Math.max(0, Number(eventVersion || 0)));
     const numericEventTimestamp = Number(eventTimestamp);
-    if (Number.isFinite(numericEventTimestamp) && numericEventTimestamp > 0) {
-        item.dataset.eventTimestamp = String(Math.floor(numericEventTimestamp));
-    }
+    const resolvedEventTimestamp = Number.isFinite(numericEventTimestamp) && numericEventTimestamp > 0
+        ? Math.floor(numericEventTimestamp)
+        : Date.now();
+    item.dataset.eventTimestamp = String(resolvedEventTimestamp);
 
     const messageEl = document.createElement("span");
     messageEl.className = "event-log-message";
@@ -3542,9 +3591,7 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
 
     const timestampEl = document.createElement("span");
     timestampEl.className = "event-log-time";
-    const timestampDate = Number.isFinite(Number(eventTimestamp)) && Number(eventTimestamp) > 0
-        ? new Date(Number(eventTimestamp))
-        : new Date();
+    const timestampDate = new Date(resolvedEventTimestamp);
     timestampEl.textContent = timestampDate.toLocaleTimeString("ja-JP", {
         hour: "2-digit",
         minute: "2-digit",
@@ -3614,48 +3661,24 @@ function appendLogToContainer(
         return;
     }
 
-    const nextVersion = Math.max(0, Number(eventVersion || 0));
-    if (nextVersion > 0) {
-        const insertBeforeItem = Array.from(logEl.children).find((candidate) => {
-            const candidateVersion = Math.max(0, Number(candidate?.dataset?.eventVersion || 0));
-            return candidateVersion > nextVersion;
-        });
-
-        if (insertBeforeItem) {
-            logEl.insertBefore(item, insertBeforeItem);
-        } else {
-            logEl.appendChild(item);
+    let cursor = logEl.lastElementChild;
+    while (cursor) {
+        const order = compareArenaLogOrder(
+            Number(cursor.dataset?.eventTimestamp || 0),
+            Number(cursor.dataset?.eventVersion || 0),
+            Number(item.dataset?.eventTimestamp || 0),
+            Number(item.dataset?.eventVersion || 0),
+        );
+        if (order <= 0) {
+            break;
         }
+        cursor = cursor.previousElementSibling;
+    }
+
+    if (cursor) {
+        logEl.insertBefore(item, cursor.nextElementSibling);
     } else {
-        const nextTimestamp = Number(item.dataset.eventTimestamp || 0);
-        const lastItem = logEl.lastElementChild;
-        const lastTimestamp = Number(lastItem?.dataset?.eventTimestamp || 0);
-
-        // 通常は末尾追加し、時刻が逆転したときだけ末尾側を局所走査して差し込む。
-        if (
-            Number.isFinite(nextTimestamp)
-            && nextTimestamp > 0
-            && Number.isFinite(lastTimestamp)
-            && lastTimestamp > 0
-            && nextTimestamp < lastTimestamp
-        ) {
-            let cursor = lastItem;
-            while (cursor) {
-                const cursorTimestamp = Number(cursor.dataset?.eventTimestamp || 0);
-                if (!Number.isFinite(cursorTimestamp) || cursorTimestamp <= 0 || cursorTimestamp <= nextTimestamp) {
-                    break;
-                }
-                cursor = cursor.previousElementSibling;
-            }
-
-            if (cursor) {
-                logEl.insertBefore(item, cursor.nextElementSibling);
-            } else {
-                logEl.insertBefore(item, logEl.firstChild);
-            }
-        } else {
-            logEl.appendChild(item);
-        }
+        logEl.insertBefore(item, logEl.firstChild);
     }
     if (logEl.classList.contains("chat-log")) {
         applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
@@ -4077,6 +4100,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
         const shouldRevealFinishedArenaLogs = data.event_type === "game_finished"
             || (currentRoomGameState === "finished" && previousRoomGameState !== "finished");
+        const shouldReconcileArenaLogsOnGameStart = data.event_type === "game_start"
+            && Boolean(activeRoomId)
+            && String(currentRoomGameState || "") === "playing";
 
         const isEnteringArena = data.target_screen === "game_arena" && (!wasInArena || activeRoomId !== currentArenaLogRoomId);
         const isLeavingArena = wasInArena && data.target_screen === "waiting_room";
@@ -4114,6 +4140,16 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             debugArenaHistory("ws.onmessage revealed finished arena logs", {
                 roomId: activeRoomId,
                 reason: "game_finished",
+            });
+        }
+
+        if (shouldReconcileArenaLogsOnGameStart && activeRoomId) {
+            hydrateArenaChatHistoryIfNeeded(data.current_room);
+            hydratePreGameGlobalHistoryIfNeeded(data.current_room);
+            renderArenaLogsForRoom(activeRoomId, { forceScrollToBottom: true });
+            debugArenaHistory("ws.onmessage reconciled arena logs", {
+                roomId: activeRoomId,
+                reason: "game_start",
             });
         }
 
@@ -4176,7 +4212,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         const displayMessage = getArenaDisplayedMessageForViewer(incomingEventRecord);
 
         // 入室時の履歴再描画を除き、受信イベントは増分で追記する。
-        if (!isEnteringArena) {
+        if (!isEnteringArena && !shouldReconcileArenaLogsOnGameStart) {
             // Determine log marker ID
             let logMarkerId = incomingEventRecord.logMarkerId;
             if ((incomingEventRecord.eventType === "answer_vote_request" || incomingEventRecord.eventType === "answer_vote_resolved"
