@@ -19,7 +19,7 @@
     <div id="waiting-room-screen" style="display: none;">
         <div class="waiting-room-header">
             <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
-            <button id="rulebook-btn" class="rulebook-btn" aria-label="ルールブック" title="ルールを見る">
+            <button id="rulebook-btn" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
                 <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
             </button>
         </div>
@@ -37,7 +37,7 @@
                     <div id="event-log"></div>
                 </div>
                 <div id="lobby-chat-box">
-                    <textarea id="lobby-chat-input" rows="1" maxlength="200" placeholder="ロビーチャットを入力..."></textarea>
+                    <textarea id="lobby-chat-input" rows="1" maxlength="200" placeholder="チャットを入力..."></textarea>
                     <p id="lobby-chat-length-warning" class="hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
                     <button id="lobby-chat-send-btn" type="button">送信</button>
                 </div>
@@ -54,7 +54,12 @@
     </div>
 
     <div id="game-arena-screen" style="display: none;">
-        <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">☓部屋を閉じる</div>
+        <div class="arena-header-tools">
+            <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">☓部屋を閉じる</div>
+            <button id="rulebook-btn-arena" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
+                <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
+            </button>
+        </div>
 
         <h3 id="arena-room-title">出題者: -</h3>
 

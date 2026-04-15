@@ -13,7 +13,7 @@ const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const lobbyChatInputEl = document.getElementById("lobby-chat-input");
 const lobbyChatSendBtnEl = document.getElementById("lobby-chat-send-btn");
 const lobbyChatLengthWarningEl = document.getElementById("lobby-chat-length-warning");
-const rulebookBtnEl = document.getElementById("rulebook-btn");
+const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
 const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
@@ -22,6 +22,7 @@ let pendingArenaMode = null;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 let lastChatSentAt = 0;
+let lastRulebookTriggerEl = null;
 
 function removeWhitespaceTextNodes(rootEl) {
     if (!rootEl) return;
@@ -556,8 +557,11 @@ leaveGameArenaEl?.addEventListener("keydown", (event) => {
     }
 });
 
-function showRulebookModal() {
+function showRulebookModal(triggerEl = null) {
     if (!rulebookModalEl) return;
+    if (triggerEl instanceof HTMLElement) {
+        lastRulebookTriggerEl = triggerEl;
+    }
     rulebookModalEl.classList.remove("hidden");
     rulebookCloseBtnEl?.focus();
 }
@@ -565,15 +569,17 @@ function showRulebookModal() {
 function closeRulebookModal() {
     if (!rulebookModalEl) return;
     rulebookModalEl.classList.add("hidden");
-    rulebookBtnEl?.focus();
+    lastRulebookTriggerEl?.focus();
 }
 
 function bindRulebookHandlers() {
     removeWhitespaceTextNodes(rulebookContentEl);
 
-    if (rulebookBtnEl) {
-        rulebookBtnEl.addEventListener("click", showRulebookModal);
-    }
+    rulebookTriggerEls.forEach((buttonEl) => {
+        buttonEl.addEventListener("click", () => {
+            showRulebookModal(buttonEl);
+        });
+    });
 
     if (rulebookCloseBtnEl) {
         rulebookCloseBtnEl.addEventListener("click", closeRulebookModal);

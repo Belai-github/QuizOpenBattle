@@ -106,6 +106,13 @@ button:hover {
     flex: 1;
 }
 
+.arena-header-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
 .rulebook-btn {
     flex: 0 0 32px;
     width: 32px;
