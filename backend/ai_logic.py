@@ -120,12 +120,27 @@ async def generate_quiz_async(genre="一般常識", model_id: str | None = None,
         response = await client.aio.models.generate_content(
             model=selected_model_id,
             contents=prompt,
-            config={"temperature": QUIZ_GENERATION_TEMPERATURE},
+            config={
+                "temperature": QUIZ_GENERATION_TEMPERATURE,
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                        "answer": {"type": "string"},
+                    },
+                    "required": ["question", "answer"],
+                    # "additionalProperties": False,  # 未対応なので削除
+                },
+            },
         )
 
-        response_text = response.text or ""
-        raw_text = response_text.strip().replace("```json", "").replace("```", "")
-        quiz_data = json.loads(raw_text)
+        # 可能なら parsed を優先
+        if getattr(response, "parsed", None):
+            quiz_data = response.parsed
+        else:
+            response_text = response.text or ""
+            quiz_data = json.loads(response_text)
 
         return quiz_data
 
@@ -200,9 +215,12 @@ if __name__ == "__main__":
         t = time.time()
         quiz = await generate_quiz_async(genre, model_id, difficulty)
         dt = time.time() - t
+        quiz_dict = quiz if isinstance(quiz, dict) else {}
+        question = str(quiz_dict.get("question", ""))
+        answer = str(quiz_dict.get("answer", ""))
         print(f"生成にかかった時間: {dt:.2f}秒")
-        print(f"問題: {quiz['question']}")
-        print(f"答え: {quiz['answer']}")
+        print(f"問題: {question}")
+        print(f"答え: {answer}")
         print()
 
     async def alltest(genre: str = "一般常識", difficulty: int | str | None = 0):
@@ -210,8 +228,8 @@ if __name__ == "__main__":
             await test_quiz_generation(model_id=model, genre=genre, difficulty=difficulty)
 
     async def main():
-        genre = "アニメ・マンガ"
-        difficulty = 50
+        genre = "代数学"
+        difficulty = 10
         await test_quiz_generation(model_id="gemini-2.5-flash", genre=genre, difficulty=difficulty)
 
     asyncio.run(main())
