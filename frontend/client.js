@@ -61,6 +61,7 @@ let isKifuMode = false;
 let isArenaReplayMode = false;
 let currentArenaReplayRoomId = null;
 let arenaReplayLoadToken = 0;
+let arenaReplayPendingRequestKey = "";
 const handledOpenVoteIds = new Set();
 const handledAnswerVoteIds = new Set();
 const handledTurnEndVoteIds = new Set();
@@ -2273,6 +2274,7 @@ function clearReplayState() {
     clearReplayCurrentLogHighlights();
     isKifuMode = false;
     isArenaReplayMode = false;
+    arenaReplayPendingRequestKey = "";
     currentArenaReplayRoomId = null;
     currentKifuDetail = null;
     currentKifuSteps = [];
@@ -2291,12 +2293,19 @@ async function startFinishedArenaReplay(roomSnapshot) {
         return;
     }
 
+    const replayRequestKey = `${roomId}:${kifuId}`;
+    if (arenaReplayPendingRequestKey === replayRequestKey) {
+        diagLog("arena_replay_skip_inflight", { room_id: roomId, kifu_id: kifuId });
+        return;
+    }
+
     if (isArenaReplayMode && currentArenaReplayRoomId === roomId && currentKifuDetail?.kifu_id === kifuId) {
         return;
     }
 
     const loadToken = ++arenaReplayLoadToken;
     currentArenaReplayRoomId = roomId;
+    arenaReplayPendingRequestKey = replayRequestKey;
 
     try {
         const detail = await fetchKifuDetail(kifuId);
@@ -2317,6 +2326,10 @@ async function startFinishedArenaReplay(roomSnapshot) {
             isArenaReplayMode = false;
             currentArenaReplayRoomId = null;
             syncReplayControlsVisibility();
+        }
+    } finally {
+        if (arenaReplayPendingRequestKey === replayRequestKey) {
+            arenaReplayPendingRequestKey = "";
         }
     }
 }
