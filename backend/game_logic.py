@@ -7,6 +7,20 @@ QUESTION_MASK_CHAR = "■"
 QUESTION_TEXT_MAX_LENGTH = 100
 
 
+def _normalize_log_marker_id(raw_value):
+    if raw_value is None:
+        return None
+
+    marker = str(raw_value).strip()
+    if marker == "":
+        return None
+
+    if marker.lower() in {"none", "null", "undefined"}:
+        return None
+
+    return marker
+
+
 def _normalized_question_chars(text: str):
     normalized_text = unicodedata.normalize("NFC", str(text or ""))
     return [ch for ch in normalized_text if ch not in {"\n", "\r"}]
@@ -196,6 +210,8 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
     pre_game_global_chat_history = []
     room_state = room.get("game_state", "waiting")
     raw_history = room.get("arena_chat_history") or []
+    raw_count = 0
+    sorted_count = 0
     if isinstance(raw_history, list):
         readable_roles_by_type = {
             "team-left": {"team-left", "questioner", "spectator"},
@@ -203,10 +219,12 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             "game-global": {"team-left", "team-right", "questioner", "spectator"},
         }
 
+        raw_count = len(raw_history)
         sorted_history = sorted(
             [entry for entry in raw_history if isinstance(entry, dict)],
             key=lambda entry: (int(entry.get("timestamp", 0)), int(entry.get("seq", 0))),
         )
+        sorted_count = len(sorted_history)
 
         for entry in sorted_history:
             event_chat_type = str(entry.get("event_chat_type", "")).strip()
@@ -219,7 +237,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             if not readable_roles or chat_role not in readable_roles:
                 continue
 
-            if event_chat_type == "game-global" and room_state == "playing" and chat_role in {"team-left", "team-right"} and event_type == "chat":
+            if room_state == "playing" and ctx["role"] == "participant" and event_type == "chat":
                 continue
 
             arena_chat_history.append(
@@ -229,27 +247,12 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
                     "event_type": event_type,
                     "event_message": event_message,
                     "event_chat_type": event_chat_type,
-                    "log_marker_id": str(entry.get("log_marker_id", "")).strip() or None,
+                    "log_marker_id": _normalize_log_marker_id(entry.get("log_marker_id")),
                 }
             )
-
+    print(f"[DEBUG] build_current_room_for_client: raw_count={raw_count}, sorted_count={sorted_count}, final_arena_history_count={len(arena_chat_history)}, role={ctx['role']}, room_state={room_state}")
     if room_state == "playing" and ctx["role"] == "participant":
-        raw_pre_game_history = room.get("pre_game_global_chat_history") or []
-        if isinstance(raw_pre_game_history, list):
-            pre_game_global_chat_history = sorted(
-                [
-                    {
-                        "seq": int(entry.get("seq", 0)),
-                        "timestamp": int(entry.get("timestamp", 0)),
-                        "event_type": str(entry.get("event_type", "chat")),
-                        "event_message": str(entry.get("event_message", "")).strip(),
-                        "event_chat_type": "game-global",
-                    }
-                    for entry in raw_pre_game_history
-                    if isinstance(entry, dict) and str(entry.get("event_message", "")).strip() != ""
-                ],
-                key=lambda entry: (entry["timestamp"], entry["seq"]),
-            )
+        pre_game_global_chat_history = []
 
     return {
         "room_owner_id": owner_id,
