@@ -1614,9 +1614,9 @@ class QuizGameManager:
 
             print(f"プレイヤー切断: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
             await self.broadcast_state(
-                public_info=f"{nickname} が退出しました",
+                public_info=f"{nickname} が退室しました",
                 event_type="leave",
-                event_message=f"{nickname} が退室しました",
+                event_message=f"{nickname} が退場しました",
             )
 
             if closed_room is not None:
