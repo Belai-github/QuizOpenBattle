@@ -20,6 +20,7 @@
     <div id="waiting-room-screen" style="display: none;">
         <div class="waiting-room-header">
             <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
+            <button id="open-kifu-list-btn" type="button" class="kifu-nav-btn" aria-label="棋譜一覧">棋譜一覧</button>
             <button id="rulebook-btn" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
                 <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
             </button>
@@ -70,6 +71,13 @@
         <div class="arena-header-tools">
             <div class="arena-header-left-actions">
                 <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">✕ 部屋を閉じる</div>
+                <div id="kifu-replay-controls" class="kifu-replay-controls hidden" aria-live="polite">
+                    <button id="kifu-step-prev-btn" type="button" class="kifu-step-btn" aria-label="1手戻る">←</button>
+                    <span id="kifu-step-label">0 / 0</span>
+                    <button id="kifu-step-next-btn" type="button" class="kifu-step-btn" aria-label="1手進む">→</button>
+                    <button id="kifu-exit-viewer-btn" type="button" class="kifu-exit-btn"
+                        aria-label="棋譜一覧に戻る">一覧へ戻る</button>
+                </div>
             </div>
             <div class="arena-header-right-actions">
                 <button id="start-game-btn" class="start-game-btn hidden" type="button">ゲーム開始</button>
@@ -182,6 +190,14 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <div id="kifu-list-screen" style="display: none;">
+        <div class="kifu-list-header">
+            <h3>棋譜一覧</h3>
+            <button id="kifu-list-back-btn" type="button" class="kifu-exit-btn">待機画面へ戻る</button>
+        </div>
+        <div id="kifu-list" class="kifu-list"></div>
     </div>
 
     <dialog id="confirm-modal" class="modal" aria-labelledby="confirm-message">

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 import asyncio
 import base64
@@ -28,6 +28,15 @@ from backend.game_logic import (
     remove_client_from_all_rooms as remove_client_from_all_rooms_logic,
     resolve_chat_recipients,
     resolve_client_room_context,
+)
+from backend.kifu_storage import (
+    append_action,
+    begin_kifu_record,
+    finalize_kifu_record,
+    get_kifu_detail_for_client,
+    list_kifu_for_client,
+    resolve_latest_answer_result,
+    touch_spectator,
 )
 
 app = FastAPI()
@@ -158,6 +167,53 @@ class QuizGameManager:
         self.chat_last_message = {}
         self.lobby_chat_history = []
         self.lobby_chat_seq = 0
+        self.active_kifu_by_room_owner = {}
+
+    def _start_kifu_tracking(self, room_owner_id: str):
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            return
+
+        kifu_id = begin_kifu_record(room_owner_id, room, self.nicknames)
+        self.active_kifu_by_room_owner[room_owner_id] = kifu_id
+
+    def _append_kifu_action(self, room_owner_id: str, action_type: str, team: str, actor_id: str, payload: dict | None = None):
+        kifu_id = self.active_kifu_by_room_owner.get(room_owner_id)
+        if not kifu_id:
+            return
+
+        append_action(
+            kifu_id,
+            {
+                "action_type": action_type,
+                "team": str(team or ""),
+                "actor_id": str(actor_id or ""),
+                "actor_name": self.nicknames.get(actor_id, "ゲスト"),
+                "payload": payload if isinstance(payload, dict) else {},
+                "timestamp": int(time.time() * 1000),
+            },
+        )
+
+    def _touch_kifu_spectator_if_tracking(self, room_owner_id: str, client_id: str):
+        kifu_id = self.active_kifu_by_room_owner.get(room_owner_id)
+        if not kifu_id:
+            return
+
+        touch_spectator(kifu_id, client_id, self.nicknames.get(client_id, "ゲスト"))
+
+    def _resolve_kifu_latest_answer(self, room_owner_id: str, team: str, answer_text: str, is_correct: bool):
+        kifu_id = self.active_kifu_by_room_owner.get(room_owner_id)
+        if not kifu_id:
+            return
+
+        resolve_latest_answer_result(kifu_id, team, answer_text, is_correct)
+
+    def _finalize_kifu_if_tracking(self, room_owner_id: str, room: dict | None, finish_reason: str):
+        kifu_id = self.active_kifu_by_room_owner.pop(room_owner_id, None)
+        if not kifu_id:
+            return
+
+        finalize_kifu_record(kifu_id, room, finish_reason)
 
     def _next_room_event_id(self, room_owner_id: str):
         room = self.rooms.get(room_owner_id)
@@ -862,6 +918,7 @@ class QuizGameManager:
         )
         game_finished_message = self._format_game_finished_message(winner)
         await self._broadcast_game_finished_message(room_owner_id, room, game_finished_message)
+        self._finalize_kifu_if_tracking(room_owner_id, room, "forfeit")
 
     async def _finalize_participant_disconnect_after_grace(
         self,
@@ -1195,6 +1252,17 @@ class QuizGameManager:
                     "is_yakumono": is_yakumono,
                 },
             )
+            self._append_kifu_action(
+                owner_id,
+                "open",
+                team,
+                client_id,
+                {
+                    "char_index": int(char_index),
+                    "is_yakumono": bool(is_yakumono),
+                    "proposed_by_vote": False,
+                },
+            )
 
             next_turn_team = (room.get("game") or {}).get("current_turn_team")
             should_notify_turn_changed = (room.get("game") or {}).get("game_status") == "playing" and previous_turn_team != next_turn_team
@@ -1339,6 +1407,18 @@ class QuizGameManager:
                     "is_yakumono": is_yakumono,
                 },
             )
+            self._append_kifu_action(
+                owner_id,
+                "open",
+                team,
+                pending_vote.get("requester_id"),
+                {
+                    "char_index": int(char_index),
+                    "is_yakumono": bool(is_yakumono),
+                    "proposed_by_vote": True,
+                    "vote_id": vote_id,
+                },
+            )
 
             next_turn_team = (room.get("game") or {}).get("current_turn_team")
             should_notify_turn_changed = (room.get("game") or {}).get("game_status") == "playing" and previous_turn_team != next_turn_team
@@ -1459,6 +1539,17 @@ class QuizGameManager:
                 "answer_text": answer_text,
                 "answerer_id": requester_id,
             }
+            self._append_kifu_action(
+                owner_id,
+                "answer",
+                team,
+                requester_id,
+                {
+                    "answer_text": answer_text,
+                    "proposed_by_vote": True,
+                    "vote_id": vote_id,
+                },
+            )
 
             await self.broadcast_state(
                 public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
@@ -1588,6 +1679,17 @@ class QuizGameManager:
                 await self.send_private_info(client_id, result.get("error", "ターン終了に失敗しました。"))
                 return
 
+            self._append_kifu_action(
+                owner_id,
+                "turn_end",
+                team,
+                client_id,
+                {
+                    "next_turn_team": str(result.get("current_turn_team") or ""),
+                    "proposed_by_vote": False,
+                },
+            )
+
             next_team = result.get("current_turn_team")
             turn_changed_message = self._format_turn_changed_message(next_team)
             await self.broadcast_state(
@@ -1698,6 +1800,18 @@ class QuizGameManager:
                 )
                 return
 
+            self._append_kifu_action(
+                owner_id,
+                "turn_end",
+                team,
+                pending_vote.get("requester_id"),
+                {
+                    "next_turn_team": str(result.get("current_turn_team") or ""),
+                    "proposed_by_vote": True,
+                    "vote_id": vote_id,
+                },
+            )
+
             await self.broadcast_state(
                 public_info="",
                 event_type="turn_end_vote_resolved",
@@ -1782,6 +1896,7 @@ class QuizGameManager:
         # 強制退室通知は参加者・観戦者のみに送り、出題者本人には送らない。
         affected_client_ids = set(room["left_participants"]) | set(room["right_participants"]) | set(room["spectators"])
         self.rooms.pop(room_owner_id, None)
+        self._finalize_kifu_if_tracking(room_owner_id, room, "owner_cancelled")
         self._clear_room_reconnect_reservations(room_owner_id)
 
         for target_client_id in affected_client_ids:
@@ -1829,6 +1944,10 @@ class QuizGameManager:
         if room is None:
             return
 
+        joined_ctx = resolve_client_room_context(self.rooms, client_id)
+        if joined_ctx is not None and joined_ctx.get("room_owner_id") == room_owner_id and joined_ctx.get("role") == "spectator" and room.get("game_state") in {"playing", "finished"}:
+            self._touch_kifu_spectator_if_tracking(room_owner_id, client_id)
+
         nickname = self.nicknames.get(client_id, "ゲスト")
         await self.broadcast_state(
             public_info=f"{nickname} が部屋に入りました",
@@ -1851,6 +1970,7 @@ class QuizGameManager:
             room["finished_answer_logs_revealed"] = False
             room["pre_game_global_chat_history"] = []
             room["pre_game_global_chat_seq"] = 0
+            self._start_kifu_tracking(client_id)
 
         questioner_name = result["questioner_name"]
         await self.broadcast_state(
@@ -2013,6 +2133,16 @@ class QuizGameManager:
                 "answer_text": text,
                 "answerer_id": client_id,
             }
+            self._append_kifu_action(
+                owner_id,
+                "answer",
+                team,
+                client_id,
+                {
+                    "answer_text": text,
+                    "proposed_by_vote": False,
+                },
+            )
 
             await self.broadcast_state(
                 public_info=f"{team_label}がアンサーしました。出題者が正誤判定中です。",
@@ -2101,6 +2231,7 @@ class QuizGameManager:
             return
 
         team = pending.get("team")
+        answer_text = str(pending.get("answer_text", "")).strip()
         previous_turn_team = game.get("current_turn_team")
         game["pending_answer_judgement"] = None
         result = apply_submit_answer(room, team, is_correct)
@@ -2108,6 +2239,8 @@ class QuizGameManager:
         if not result.get("ok"):
             await self.send_private_info(client_id, result.get("error", "正誤判定に失敗しました。"))
             return
+
+        self._resolve_kifu_latest_answer(owner_id, team, answer_text, is_correct)
 
         left_ids = set(room.get("left_participants", set()))
         right_ids = set(room.get("right_participants", set()))
@@ -2187,6 +2320,7 @@ class QuizGameManager:
             winner = result.get("winner")
             game_finished_message = self._format_game_finished_message(winner)
             await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
+            self._finalize_kifu_if_tracking(owner_id, room, "finished")
 
     async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
         # 同一 client_id の二重接続は許可しない（別タブ重複やなりすまし抑止）。
@@ -2269,6 +2403,7 @@ class QuizGameManager:
                     )
 
             if closed_room is not None:
+                self._finalize_kifu_if_tracking(client_id, closed_room, "owner_disconnected")
                 self._clear_room_reconnect_reservations(client_id)
                 affected_client_ids = set(closed_room["left_participants"]) | set(closed_room["right_participants"]) | set(closed_room["spectators"])
                 for target_client_id in affected_client_ids:
@@ -2306,6 +2441,8 @@ class QuizGameManager:
 
         result = apply_exit_room(self.rooms, client_id)
         if result.get("owner_closed"):
+            closed_room_snapshot = ctx_before_exit.get("room") if isinstance(ctx_before_exit, dict) else None
+            self._finalize_kifu_if_tracking(client_id, closed_room_snapshot, "owner_closed")
             for target_client_id in result.get("affected_client_ids", set()):
                 await self.send_private_info(
                     target_client_id,
@@ -2567,6 +2704,32 @@ class QuizGameManager:
 
 manager = QuizGameManager()
 ws_auth_manager = WebSocketAuthManager()
+
+
+def _resolve_active_client_or_401(client_id: str) -> str:
+    cid = str(client_id or "").strip()
+    if not is_valid_client_id(cid):
+        raise HTTPException(status_code=400, detail="invalid_client_id")
+    if cid not in manager.active_connections:
+        raise HTTPException(status_code=401, detail="not_connected")
+    return cid
+
+
+@app.get("/api/kifu/list")
+async def kifu_list(client_id: str = Query(...)):
+    cid = _resolve_active_client_or_401(client_id)
+    return {"kifu": list_kifu_for_client(cid)}
+
+
+@app.get("/api/kifu/{kifu_id}")
+async def kifu_detail(kifu_id: str, client_id: str = Query(...)):
+    cid = _resolve_active_client_or_401(client_id)
+    detail = get_kifu_detail_for_client(kifu_id, cid)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="kifu_not_found")
+    if detail == {}:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return detail
 
 
 @app.post("/api/ws-ticket")

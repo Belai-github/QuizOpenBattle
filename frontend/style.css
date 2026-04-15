@@ -133,6 +133,120 @@ button:hover {
     flex: 1;
 }
 
+.kifu-nav-btn {
+    width: auto;
+    min-height: 32px;
+    margin-top: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    line-height: 1;
+    background: #1d4ed8;
+}
+
+.kifu-nav-btn:hover {
+    background: #1e40af;
+}
+
+#kifu-list-screen {
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 16px;
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    background: var(--panel);
+    box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
+}
+
+.kifu-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.kifu-list-header h3 {
+    margin: 0;
+}
+
+.kifu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.kifu-card {
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    background: #eff6ff;
+    padding: 10px;
+}
+
+.kifu-card-title {
+    font-weight: 700;
+    color: #1e3a8a;
+}
+
+.kifu-card-question {
+    margin-top: 4px;
+    color: #1f2937;
+    word-break: break-word;
+}
+
+.kifu-card-meta {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: #334155;
+}
+
+.kifu-open-btn,
+.kifu-exit-btn {
+    width: auto;
+    min-height: 32px;
+    margin-top: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    line-height: 1;
+    background: #0f766e;
+}
+
+.kifu-exit-btn {
+    background: #334155;
+}
+
+.kifu-empty {
+    color: #64748b;
+}
+
+.kifu-replay-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kifu-step-btn {
+    width: 36px;
+    min-height: 32px;
+    margin-top: 0;
+    border-radius: 8px;
+    padding: 0;
+    background: #0f172a;
+}
+
+#kifu-step-label {
+    min-width: 70px;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+body[data-app-mode="kifu"] .chat-compose {
+    display: none;
+}
+
 .arena-header-tools {
     display: flex;
     align-items: center;
