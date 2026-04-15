@@ -1042,6 +1042,12 @@ function updateChatBoxVisibility() {
                 return;
             }
 
+            if (roomState === "finished" && !isGlobalChat) {
+                chatBox.classList.remove("hidden");
+                setChatBoxEditable(chatBox, false);
+                return;
+            }
+
             if (roomState === "playing" && isGlobalChat) {
                 const isEditableGlobal = !isPlayerRole();
                 setChatBoxEditable(chatBox, isEditableGlobal);

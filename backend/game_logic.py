@@ -303,6 +303,11 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             "game-global": {"team-left", "team-right", "questioner", "spectator"},
         }
 
+        if room_state == "finished":
+            all_roles = {"team-left", "team-right", "questioner", "spectator"}
+            readable_roles_by_type["team-left"] = all_roles
+            readable_roles_by_type["team-right"] = all_roles
+
         raw_count = len(raw_history)
         sorted_history = sorted(
             [entry for entry in raw_history if isinstance(entry, dict)],
