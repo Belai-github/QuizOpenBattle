@@ -286,18 +286,26 @@ function canSubmitArenaAnswer() {
     if (!isInGameArena()) return false;
     if ((currentRoomGameState || "waiting") !== "playing") return false;
     if (isAnswerJudgementPending()) return false;
+    if (userRole !== "team-left" && userRole !== "team-right") return false;
+    return currentGameState?.current_turn_team === userRole;
+}
+
+function canViewArenaAnswerForm() {
+    if (!isInGameArena()) return false;
+    if ((currentRoomGameState || "waiting") !== "playing") return false;
     return userRole === "team-left" || userRole === "team-right";
 }
 
 function updateArenaAnswerFormVisibility() {
     if (!arenaAnswerBoxEl || !arenaAnswerInputEl || !arenaAnswerSubmitBtnEl) return;
 
+    const canView = canViewArenaAnswerForm();
     const canUse = canSubmitArenaAnswer();
-    arenaAnswerBoxEl.classList.toggle("hidden", !canUse);
+    arenaAnswerBoxEl.classList.toggle("hidden", !canView);
     arenaAnswerInputEl.disabled = !canUse;
     arenaAnswerSubmitBtnEl.disabled = !canUse;
 
-    if (!canUse) {
+    if (!canView) {
         arenaAnswerInputEl.value = "";
     }
 }

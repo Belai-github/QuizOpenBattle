@@ -870,6 +870,12 @@ body.modal-open #arena-question-text .arena-question-line {
     background: #b91c1c;
 }
 
+#arena-answer-submit-btn:disabled,
+#arena-answer-submit-btn:disabled:hover {
+    background: #94a3b8;
+    cursor: not-allowed;
+}
+
 .arena-question-line {
     display: flex;
     justify-content: flex-start;
