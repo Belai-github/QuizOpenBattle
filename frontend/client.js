@@ -42,6 +42,33 @@ const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-rig
 let lastRulebookTriggerEl = null;
 let viewportDebugEl = null;
 let previousRoomGameState = null;
+let suppressNextArenaCharClick = false;
+
+function setArenaCharClickGuard() {
+    suppressNextArenaCharClick = true;
+}
+
+function isAnyModalOpen() {
+    const judgementModal = document.getElementById("answer-judgement-modal");
+    if (confirmModal && !confirmModal.classList.contains("hidden")) return true;
+    if (alertModal && !alertModal.classList.contains("hidden")) return true;
+    if (rulebookModalEl && !rulebookModalEl.classList.contains("hidden")) return true;
+    if (judgementModal && !judgementModal.classList.contains("hidden")) return true;
+    return false;
+}
+
+function updateArenaInteractionLock() {
+    document.body.classList.toggle("modal-open", isAnyModalOpen());
+}
+
+function shouldSuppressArenaCharClick() {
+    if (isAnyModalOpen()) return true;
+    if (suppressNextArenaCharClick) {
+        suppressNextArenaCharClick = false;
+        return true;
+    }
+    return false;
+}
 
 function removeWhitespaceTextNodes(rootEl) {
     if (!rootEl) return;
@@ -516,12 +543,14 @@ function updateStartGameButtonVisibility(currentRoom) {
 }
 
 function closeAllModals() {
+    setArenaCharClickGuard();
     alertModal.classList.add("hidden");
     confirmModal.classList.add("hidden");
     const judgementModal = document.getElementById("answer-judgement-modal");
     if (judgementModal) {
         judgementModal.classList.add("hidden");
     }
+    updateArenaInteractionLock();
 }
 
 function showAlertModal(message) {
@@ -529,12 +558,16 @@ function showAlertModal(message) {
         alertMessageEl.textContent = message;
         alertModal.classList.remove("hidden");
         alertOkBtn.focus();
+        setArenaCharClickGuard();
+        updateArenaInteractionLock();
 
         const close = () => {
+            setArenaCharClickGuard();
             alertModal.classList.add("hidden");
             alertOkBtn.removeEventListener("click", onOk);
             alertModal.removeEventListener("click", onBackdropClick);
             document.removeEventListener("keydown", onEscape);
+            updateArenaInteractionLock();
             resolve();
         };
 
@@ -561,13 +594,17 @@ function showQuestionConfirmModal(questionText) {
         confirmMessageEl.textContent = `以下の問題文で出題しますか？\n\nQ. ${questionText}`;
         confirmModal.classList.remove("hidden");
         confirmOkBtn.focus();
+        setArenaCharClickGuard();
+        updateArenaInteractionLock();
 
         const close = (result) => {
+            setArenaCharClickGuard();
             confirmModal.classList.add("hidden");
             confirmOkBtn.removeEventListener("click", onOk);
             confirmCancelBtn.removeEventListener("click", onCancel);
             confirmModal.removeEventListener("click", onBackdropClick);
             document.removeEventListener("keydown", onEscape);
+            updateArenaInteractionLock();
             resolve(result);
         };
 
@@ -601,8 +638,11 @@ function showConfirmModal(message, options = {}) {
         confirmActionsEl.classList.toggle("single", hideCancel);
         confirmModal.classList.remove("hidden");
         confirmOkBtn.focus();
+        setArenaCharClickGuard();
+        updateArenaInteractionLock();
 
         const close = (result) => {
+            setArenaCharClickGuard();
             confirmModal.classList.add("hidden");
             confirmCancelBtn.style.display = "";
             confirmActionsEl.classList.remove("single");
@@ -612,6 +652,7 @@ function showConfirmModal(message, options = {}) {
             confirmCancelBtn.removeEventListener("click", onCancel);
             confirmModal.removeEventListener("click", onBackdropClick);
             document.removeEventListener("keydown", onEscape);
+            updateArenaInteractionLock();
             resolve(result);
         };
 
@@ -1577,6 +1618,12 @@ async function handleAnswerJudgementRequest(payload) {
 }
 
 document.addEventListener("click", (event) => {
+    if (event.target instanceof HTMLElement && event.target.closest(".modal")) {
+        return;
+    }
+    if (shouldSuppressArenaCharClick()) {
+        return;
+    }
     toggleArenaQuestionCharSelectionFromTarget(event.target);
 });
 
@@ -1690,12 +1737,15 @@ function showRulebookModal(triggerEl = null) {
         lastRulebookTriggerEl = triggerEl;
     }
     rulebookModalEl.classList.remove("hidden");
+    updateArenaInteractionLock();
     rulebookCloseBtnEl?.focus();
 }
 
 function closeRulebookModal() {
     if (!rulebookModalEl) return;
+    setArenaCharClickGuard();
     rulebookModalEl.classList.add("hidden");
+    updateArenaInteractionLock();
     lastRulebookTriggerEl?.focus();
 }
 

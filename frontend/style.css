@@ -598,6 +598,12 @@ button:hover {
     z-index: 1000;
 }
 
+body.modal-open #arena-question-text,
+body.modal-open #arena-question-text .arena-question-char,
+body.modal-open #arena-question-text .arena-question-line {
+    pointer-events: none;
+}
+
 .hidden {
     display: none;
 }
