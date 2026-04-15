@@ -331,8 +331,6 @@ class QuizGameManager:
     async def _finalize_answer_judgement(self, owner_id: str, room: dict, team: str, answer_text: str, is_correct: bool):
         game = room.get("game") or {}
         previous_turn_team = game.get("current_turn_team")
-        pending = game.get("pending_answer_judgement") if isinstance(game.get("pending_answer_judgement"), dict) else {}
-        answer_log_marker_id = str((pending or {}).get("answer_log_marker_id") or "").strip() or None
         game["pending_answer_judgement"] = None
         result = apply_submit_answer(room, team, is_correct)
 
