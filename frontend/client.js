@@ -42,10 +42,9 @@ const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-rig
 let lastRulebookTriggerEl = null;
 let viewportDebugEl = null;
 let previousRoomGameState = null;
-let suppressNextArenaCharClick = false;
 
 function setArenaCharClickGuard() {
-    suppressNextArenaCharClick = true;
+    // No-op: モーダル閉鎖後の1クリック破棄はUXを損なうため廃止。
 }
 
 function isAnyModalOpen() {
@@ -62,12 +61,7 @@ function updateArenaInteractionLock() {
 }
 
 function shouldSuppressArenaCharClick() {
-    if (isAnyModalOpen()) return true;
-    if (suppressNextArenaCharClick) {
-        suppressNextArenaCharClick = false;
-        return true;
-    }
-    return false;
+    return isAnyModalOpen();
 }
 
 function removeWhitespaceTextNodes(rootEl) {

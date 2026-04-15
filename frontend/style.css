@@ -750,12 +750,12 @@ body.modal-open #arena-question-text .arena-question-line {
 
 /* ターン時のボックスの光の効果 */
 .arena-player-box.is-current-turn.left {
-    box-shadow: 0 0 20px rgba(252, 165, 165, 0.6), inset 0 0 10px rgba(252, 165, 165, 0.3);
+    box-shadow: 0 0 40px rgba(252, 165, 165, 0.6), inset 0 0 10px rgba(252, 165, 165, 0.3);
     transform: scale(1.02);
 }
 
 .arena-player-box.is-current-turn.right {
-    box-shadow: 0 0 20px rgba(147, 197, 253, 0.6), inset 0 0 10px rgba(147, 197, 253, 0.3);
+    box-shadow: 0 0 40px rgba(147, 197, 253, 0.6), inset 0 0 10px rgba(147, 197, 253, 0.3);
     transform: scale(1.02);
 }
 
@@ -972,10 +972,10 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-question-char.is-mask-token.is-selectable:active::before {
-    color: #111827;
+    color: #111827 !important;
 }
 
-
+/* iPad/タッチ端末でも同様に強制 */
 @media (hover: none),
 (pointer: coarse) {
     .arena-question-char.is-selectable:hover {
@@ -985,10 +985,6 @@ body.modal-open #arena-question-text .arena-question-line {
 
     .arena-question-char.is-mask-token.is-selectable:hover {
         filter: none;
-    }
-
-    .arena-question-char.is-mask-token:hover::before {
-        color: #ffffff;
     }
 
     .arena-question-char.is-selectable:not(.is-mask-token):active {
@@ -1001,7 +997,7 @@ body.modal-open #arena-question-text .arena-question-line {
     }
 
     .arena-question-char.is-mask-token.is-selectable:active::before {
-        color: #111827;
+        color: #111827 !important;
     }
 }
 
@@ -1104,13 +1100,13 @@ body.modal-open #arena-question-text .arena-question-line {
     }
 
     #arena-board-layout {
-        grid-template-columns: 275px 275px;
+        grid-template-columns: 1fr 1fr;
         grid-template-areas:
             "question question"
             "left right";
         align-items: start;
-        justify-content: center;
-        gap: 12px;
+        justify-content: stretch;
+        gap: 6px;
     }
 
     #arena-player-left {
@@ -1125,12 +1121,13 @@ body.modal-open #arena-question-text .arena-question-line {
         grid-column: auto;
         grid-area: question;
         justify-self: center;
-        width: 550px;
-        max-width: 550px;
+        width: 100%;
+        max-width: 100%;
         min-width: 0;
         min-height: 180px;
         align-items: center;
         justify-content: center;
+        padding: 8px;
     }
 
     #arena-player-right {
@@ -1143,6 +1140,11 @@ body.modal-open #arena-question-text .arena-question-line {
     #arena-player-left .chat-box.read-only .chat-log,
     #arena-player-right .chat-box.read-only .chat-log {
         min-height: 230px;
+    }
+
+    #arena-player-left,
+    #arena-player-right {
+        padding: 8px;
     }
 
     #arena-question-text {
