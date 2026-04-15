@@ -69,6 +69,14 @@ const ARENA_VOTE_EVENT_TYPES = new Set([
     "turn_end_vote_request",
     "turn_end_vote_resolved",
 ]);
+const HIDDEN_ARENA_EVENT_TYPES = new Set([
+    "open_vote_request",
+    "open_vote_resolved",
+    "answer_vote_request",
+    "answer_vote_resolved",
+    "turn_end_vote_request",
+    "turn_end_vote_resolved",
+]);
 const ARENA_ALLOWED_EVENT_TYPES = new Set([
     "join",
     "leave",
@@ -673,6 +681,9 @@ function hydrateArenaChatHistoryIfNeeded(currentRoom) {
         const record = normalizeArenaEventRecord(entry);
         if (!Number.isFinite(seq) || seenSeqSet.has(seq) || record.eventMessage === "" || record.eventType === "") {
             skippedInvalidCount += 1;
+            return;
+        }
+        if (HIDDEN_ARENA_EVENT_TYPES.has(record.eventType)) {
             return;
         }
         if (!ARENA_CHAT_TYPES.includes(record.eventChatType)) {
@@ -2595,6 +2606,10 @@ function appendEventLog(
     });
 
     if (!ARENA_ALLOWED_EVENT_TYPES.has(record.eventType) || !record.eventMessage) {
+        return;
+    }
+
+    if (HIDDEN_ARENA_EVENT_TYPES.has(record.eventType)) {
         return;
     }
 

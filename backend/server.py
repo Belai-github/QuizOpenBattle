@@ -1111,9 +1111,9 @@ class QuizGameManager:
 
             is_yakumono = result.get("is_yakumono", False)
             await self.broadcast_state(
-                public_info=f"{char_index + 1}文字目がオープンされました。",
+                public_info="",
                 event_type="open_vote_resolved",
-                event_message=self._format_open_vote_resolution_message(team_label, char_index, True),
+                event_message="",
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
@@ -1124,6 +1124,20 @@ class QuizGameManager:
                     "log_marker_id": vote_id,
                 },
                 event_recipient_ids=open_log_recipient_ids,
+            )
+
+            await self.broadcast_state(
+                public_info=f"{char_index + 1}文字目がオープンされました。",
+                event_type="character_opened",
+                event_message=self._format_open_vote_resolution_message(team_label, char_index, True),
+                event_chat_type="game-global",
+                event_room_id=owner_id,
+                event_recipient_ids=open_log_recipient_ids,
+                event_payload={
+                    "team": team,
+                    "char_index": char_index,
+                    "is_yakumono": is_yakumono,
+                },
             )
 
             next_turn_team = (room.get("game") or {}).get("current_turn_team")
@@ -1158,9 +1172,9 @@ class QuizGameManager:
         request_public_info = ""
         request_event_message = ""
         await self.broadcast_state(
-            public_info=request_public_info,
+            public_info="",
             event_type="open_vote_request",
-            event_message=request_event_message,
+            event_message="",
             event_chat_type=team,
             event_room_id=owner_id,
             event_recipient_ids=open_log_recipient_ids,
@@ -1243,9 +1257,9 @@ class QuizGameManager:
 
             is_yakumono = result.get("is_yakumono", False)
             await self.broadcast_state(
-                public_info=f"{char_index + 1}文字目がオープンされました。",
+                public_info="",
                 event_type="open_vote_resolved",
-                event_message=self._format_open_vote_resolution_message(team_label, char_index, True),
+                event_message="",
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_payload={
@@ -1256,6 +1270,20 @@ class QuizGameManager:
                     "log_marker_id": vote_id,
                 },
                 event_recipient_ids=open_log_recipient_ids,
+            )
+
+            await self.broadcast_state(
+                public_info=f"{char_index + 1}文字目がオープンされました。",
+                event_type="character_opened",
+                event_message=self._format_open_vote_resolution_message(team_label, char_index, True),
+                event_chat_type="game-global",
+                event_room_id=owner_id,
+                event_recipient_ids=open_log_recipient_ids,
+                event_payload={
+                    "team": team,
+                    "char_index": char_index,
+                    "is_yakumono": is_yakumono,
+                },
             )
 
             next_turn_team = (room.get("game") or {}).get("current_turn_team")
@@ -1344,8 +1372,9 @@ class QuizGameManager:
             game = room.get("game") or {}
             if game.get("pending_answer_judgement") is not None:
                 await self.broadcast_state(
-                    public_info="アンサー投票は可決されましたが、判定待ちの解答があるため送信できませんでした。",
+                    public_info="",
                     event_type="answer_vote_resolved",
+                    event_message="",
                     event_chat_type=team,
                     event_room_id=owner_id,
                     event_recipient_ids=team_chat_recipients,
@@ -1392,9 +1421,9 @@ class QuizGameManager:
             )
 
             await self.broadcast_state(
-                public_info=f"{team_label}陣営のアンサー投票が可決されました。",
+                public_info="",
                 event_type="answer_vote_resolved",
-                event_message=self._format_answer_vote_resolution_message(team_label, answer_text, True, should_emit_vote_log),
+                event_message="",
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -1412,9 +1441,9 @@ class QuizGameManager:
             pending_vote["status"] = "rejected"
             room["pending_answer_vote"] = None
             await self.broadcast_state(
-                public_info=f"{team_label}陣営のアンサー投票は否決されました。",
+                public_info="",
                 event_type="answer_vote_resolved",
-                event_message=self._format_answer_vote_resolution_message(team_label, answer_text, False, should_emit_vote_log),
+                event_message="",
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -1508,9 +1537,9 @@ class QuizGameManager:
         team_label = self._team_label(team)
         requester_name = self.nicknames.get(client_id, "ゲスト")
         await self.broadcast_state(
-            public_info=f"{team_label}陣営でターンエンド投票を開始しました。",
+            public_info="",
             event_type="turn_end_vote_request",
-            event_message=self._format_turn_end_vote_request_message(requester_name, True),
+            event_message="",
             event_chat_type=team,
             event_room_id=owner_id,
             event_recipient_ids=voter_ids - {client_id},
@@ -1576,8 +1605,9 @@ class QuizGameManager:
             result = apply_end_turn(room, team)
             if not result.get("ok"):
                 await self.broadcast_state(
-                    public_info="ターンエンド投票は可決されましたが、ターン終了処理に失敗しました。",
+                    public_info="",
                     event_type="turn_end_vote_resolved",
+                    event_message="",
                     event_chat_type=team,
                     event_room_id=owner_id,
                     event_recipient_ids=team_chat_recipients,
@@ -1591,9 +1621,9 @@ class QuizGameManager:
                 return
 
             await self.broadcast_state(
-                public_info=f"{team_label}陣営のターンエンド投票が可決されました。",
+                public_info="",
                 event_type="turn_end_vote_resolved",
-                event_message=self._format_turn_end_vote_resolution_message(True),
+                event_message="",
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -1619,9 +1649,9 @@ class QuizGameManager:
             pending_vote["status"] = "rejected"
             room["pending_turn_end_vote"] = None
             await self.broadcast_state(
-                public_info=f"{team_label}陣営のターンエンド投票は否決されました。",
+                public_info="",
                 event_type="turn_end_vote_resolved",
-                event_message=self._format_turn_end_vote_resolution_message(False),
+                event_message="",
                 event_chat_type=team,
                 event_room_id=owner_id,
                 event_recipient_ids=team_chat_recipients,
@@ -1953,9 +1983,9 @@ class QuizGameManager:
         event_recipient_ids = voter_ids - {client_id}
 
         await self.broadcast_state(
-            public_info=f"{team_label}陣営でアンサー投票を開始しました。",
+            public_info="",
             event_type="answer_vote_request",
-            event_message=self._format_answer_vote_request_message(nickname, text, should_emit_vote_log),
+            event_message="",
             event_chat_type=team,
             event_room_id=owner_id,
             event_recipient_ids=event_recipient_ids,
