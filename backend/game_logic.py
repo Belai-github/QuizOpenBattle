@@ -48,6 +48,18 @@ def _mask_answer_text_for_viewer(message: str):
     return re.sub(r"が「[^」]*」と", "が", text)
 
 
+def _is_left_reveal_window(room_state: str, viewer_role: str, chat_role: str, game: dict | None):
+    if room_state != "playing":
+        return False
+    if viewer_role != "participant":
+        return False
+    if chat_role != "team-left":
+        return False
+    if not isinstance(game, dict):
+        return False
+    return bool(game.get("left_correct_waiting"))
+
+
 def _resolve_event_message_for_viewer(
     event_message: str,
     event_type: str,
@@ -56,6 +68,7 @@ def _resolve_event_message_for_viewer(
     chat_role: str,
     room_state: str,
     viewer_role: str,
+    game: dict | None,
 ):
     message = str(event_message or "").strip()
     if message == "":
@@ -69,6 +82,9 @@ def _resolve_event_message_for_viewer(
 
     payload = event_payload if isinstance(event_payload, dict) else {}
     source_team = str(payload.get("team") or event_chat_type or "").strip()
+    if _is_left_reveal_window(room_state, viewer_role, chat_role, game) and source_team == "team-right":
+        return message
+
     if source_team in {"team-left", "team-right"} and source_team != chat_role:
         return _mask_answer_text_for_viewer(message)
 
@@ -82,6 +98,7 @@ def _resolve_event_payload_for_viewer(
     chat_role: str,
     room_state: str,
     viewer_role: str,
+    game: dict | None,
 ):
     if not isinstance(event_payload, dict):
         return None
@@ -104,6 +121,9 @@ def _resolve_event_payload_for_viewer(
         return payload
 
     source_team = str(payload.get("team") or event_chat_type or "").strip()
+    if _is_left_reveal_window(room_state, viewer_role, chat_role, game) and source_team == "team-right":
+        return payload
+
     if chat_role in {"team-left", "team-right"} and source_team in {"team-left", "team-right"} and source_team != chat_role:
         payload.pop("answer_text", None)
 
@@ -289,7 +309,10 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
     raw_question_text = str(room.get("question_text", ""))
     normalized_chars = _normalized_question_chars(raw_question_text)
     normalized_text = "".join(normalized_chars)
-    question_text_for_client = normalized_text if chat_role == "questioner" else ""
+    room_state = room.get("game_state", "waiting")
+    current_game = room.get("game") if isinstance(room.get("game"), dict) else None
+    left_reveal_window = _is_left_reveal_window(room_state, ctx["role"], chat_role, current_game)
+    question_text_for_client = normalized_text if (chat_role == "questioner" or left_reveal_window) else ""
 
     # ゲーム状態をJSON シリアライズ可能な形式に変換
     game_state = room.get("game")
@@ -298,6 +321,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             "current_turn_team": game_state.get("current_turn_team"),
             "game_status": game_state.get("game_status"),
             "winner": game_state.get("winner"),
+            "left_correct_waiting": bool(game_state.get("left_correct_waiting")),
             "is_judging_answer": game_state.get("pending_answer_judgement") is not None,
             "team_left": game_state.get("team_left", {}),
             "team_right": game_state.get("team_right", {}),
@@ -305,11 +329,10 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             "opened_by_team": {str(k): v for k, v in game_state.get("opened_by_team", {}).items()},
         }
 
-    question_visible_text = _build_visible_question_text(normalized_chars, room.get("game"), chat_role)
+    question_visible_text = normalized_text if left_reveal_window else _build_visible_question_text(normalized_chars, current_game, chat_role)
 
     arena_chat_history = []
     pre_game_global_chat_history = []
-    room_state = room.get("game_state", "waiting")
     raw_history = room.get("arena_chat_history") or []
     raw_count = 0
     sorted_count = 0
@@ -344,6 +367,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
                 chat_role,
                 room_state,
                 ctx["role"],
+                current_game,
             )
             resolved_event_payload = _resolve_event_payload_for_viewer(
                 event_type,
@@ -352,6 +376,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
                 chat_role,
                 room_state,
                 ctx["role"],
+                current_game,
             )
             if event_message == "":
                 continue
@@ -365,7 +390,18 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
             if not can_read:
                 continue
 
-            if room_state == "playing" and ctx["role"] == "participant" and event_chat_type == "game-global" and event_type == "chat":
+            if (
+                room_state == "playing"
+                and ctx["role"] == "participant"
+                and event_chat_type == "game-global"
+                and event_type == "chat"
+                and not _is_left_reveal_window(
+                    room_state,
+                    ctx["role"],
+                    chat_role,
+                    current_game,
+                )
+            ):
                 continue
 
             arena_chat_history.append(
@@ -674,10 +710,18 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
     # 全体チャットは待機中・終了後は全員、対戦中は出題者/観戦者のみ送受信可能
     if chat_type == "game-global":
         if room_state == "playing":
-            if sender_chat_role not in {"questioner", "spectator"}:
-                return {"ok": False, "error": "対戦中の全体チャットは出題者/観戦者のみ利用できます。"}
+            game = room.get("game") if isinstance(room.get("game"), dict) else None
+            left_reveal_window = bool(game and game.get("left_correct_waiting"))
+            allowed_senders = {"questioner", "spectator"}
+            if left_reveal_window:
+                allowed_senders.add("team-left")
+
+            if sender_chat_role not in allowed_senders:
+                return {"ok": False, "error": "対戦中の全体チャットは出題者/観戦者のみ利用できます（先攻正解後の待機中は先攻も利用可）。"}
 
             event_recipient_ids = role_to_ids["questioner"] | role_to_ids["spectator"]
+            if left_reveal_window:
+                event_recipient_ids |= role_to_ids["team-left"]
             return {"ok": True, "event_recipient_ids": event_recipient_ids}
         elif room_state != "finished":
             return {"ok": False, "error": "全体チャットを利用できない状態です。"}
@@ -970,6 +1014,7 @@ def build_game_state_for_client(room: dict, client_id: str, viewer_team: str):
         "current_turn_team": game.get("current_turn_team"),
         "game_status": game.get("game_status"),
         "winner": game.get("winner"),
+        "left_correct_waiting": bool(game.get("left_correct_waiting")),
         "is_judging_answer": game.get("pending_answer_judgement") is not None,
         # チームごとの状態
         "team_left": {

@@ -232,7 +232,18 @@ function isGameGlobalLog(logEl) {
     return Boolean(logEl) && logEl.id === "game-chat-log-game-global";
 }
 
+function isTeamLeftRevealWindow() {
+    return isInGameArena()
+        && (currentRoomGameState || "waiting") === "playing"
+        && userRole === "team-left"
+        && Boolean(currentGameState?.left_correct_waiting);
+}
+
 function shouldLockGlobalLogFilter(logEl) {
+    if (isTeamLeftRevealWindow()) {
+        return false;
+    }
+
     return isGameGlobalLog(logEl)
         && isInGameArena()
         && (currentRoomGameState || "waiting") === "playing"
@@ -1141,7 +1152,7 @@ function updateChatBoxVisibility() {
             }
 
             if (roomState === "playing" && isGlobalChat) {
-                const isEditableGlobal = !isPlayerRole();
+                const isEditableGlobal = !isPlayerRole() || isTeamLeftRevealWindow();
                 setChatBoxEditable(chatBox, isEditableGlobal);
                 chatBox.classList.remove("hidden");
                 return;
@@ -1250,7 +1261,7 @@ function canSendChatType(chatType) {
             return true;
         }
         if (roomState === "playing") {
-            return userRole === "questioner" || userRole === "spectator";
+            return userRole === "questioner" || userRole === "spectator" || isTeamLeftRevealWindow();
         }
         return false;
     }
@@ -2104,6 +2115,10 @@ function canToggleQuestionViewMode() {
         return true;
     }
 
+    if (isTeamLeftRevealWindow()) {
+        return true;
+    }
+
     const roomState = currentRoomGameState || "waiting";
     const isFinished = isGameFinished();
 
@@ -2121,6 +2136,9 @@ function getQuestionViewModeCycleForCurrentUser() {
     }
 
     if (userRole === "questioner") {
+        return QUESTIONER_VIEW_MODE_CYCLE;
+    }
+    if (isTeamLeftRevealWindow()) {
         return QUESTIONER_VIEW_MODE_CYCLE;
     }
     // 対戦終了状態では参加者もQUESTIONER_VIEW_MODE_CYCLE を使う
@@ -2731,6 +2749,10 @@ function getEffectiveQuestionViewerRole() {
     }
     if (questionerViewMode === "team-right") {
         return "team-right";
+    }
+
+    if (questionerViewMode === "all" && isTeamLeftRevealWindow()) {
+        return "questioner";
     }
 
     // 全開示モードは出題者に加え、対戦終了後は全員が同じ表示を見られる。

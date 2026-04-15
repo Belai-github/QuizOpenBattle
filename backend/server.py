@@ -367,9 +367,6 @@ class QuizGameManager:
                     for target_id in left_ids:
                         private_map[target_id] = other_msg
 
-                for target_id in spectator_ids | questioner_ids:
-                    private_map[target_id] = "正誤判定が完了しました。"
-
         if private_map:
             await self.broadcast_state(
                 public_info="正誤判定が完了しました。",
@@ -712,6 +709,11 @@ class QuizGameManager:
 
         payload = event_payload if isinstance(event_payload, dict) else {}
         source_team = str(payload.get("team") or event_chat_type or "").strip()
+        game = current_room.get("game")
+        left_reveal_window = isinstance(game, dict) and bool(game.get("left_correct_waiting")) and viewer_role == "team-left"
+        if left_reveal_window and source_team == "team-right":
+            return message
+
         if source_team in {"team-left", "team-right"} and source_team != viewer_role:
             return self._mask_answer_text_for_viewer(message)
 
@@ -746,8 +748,13 @@ class QuizGameManager:
         viewer_type = str(current_room.get("role", "") or "")
         viewer_role = str(current_room.get("chat_role", "") or "")
         source_team = str(payload.get("team") or event_chat_type or "").strip()
+        game = current_room.get("game")
+        left_reveal_window = isinstance(game, dict) and bool(game.get("left_correct_waiting")) and viewer_role == "team-left"
 
         if viewer_type == "owner" or viewer_role == "questioner":
+            return payload
+
+        if viewer_type == "participant" and left_reveal_window and source_team == "team-right":
             return payload
 
         if viewer_type == "spectator" or viewer_role == "spectator":
