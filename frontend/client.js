@@ -156,6 +156,94 @@ const preGameGlobalHistorySeenSeqSetByRoom = new Map();
 const ARENA_HISTORY_DEBUG_STORAGE_KEY = "quiz_debug_arena_history";
 let lastLobbyHistorySignature = "";
 
+/* DEBUG_DIAG_START */
+const QUIZ_DIAG_ENABLED = (() => {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("diag") === "1") {
+            return true;
+        }
+        return localStorage.getItem("quiz_diag") === "1";
+    } catch {
+        return false;
+    }
+})();
+let quizDiagPanelEl = null;
+let quizDiagListenersBound = false;
+
+function quizWsReadyStateLabel() {
+    if (!ws) return "no-ws";
+    const labels = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
+    return labels[ws.readyState] || String(ws.readyState);
+}
+
+function ensureQuizDiagPanel() {
+    if (!QUIZ_DIAG_ENABLED) return null;
+    if (quizDiagPanelEl) return quizDiagPanelEl;
+
+    const panel = document.createElement("div");
+    panel.id = "quiz-diag-panel";
+    panel.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99999;max-height:36vh;overflow:auto;padding:8px;background:rgba(0,0,0,0.82);color:#7CFC00;font:12px/1.4 monospace;white-space:pre-wrap;word-break:break-word;";
+
+    const title = document.createElement("div");
+    title.style.cssText = "font-weight:700;color:#fff;margin-bottom:6px;";
+    title.textContent = "QUIZ DIAG (temporary)";
+    panel.appendChild(title);
+
+    document.body.appendChild(panel);
+    quizDiagPanelEl = panel;
+    return panel;
+}
+
+function diagLog(message, details = null) {
+    if (!QUIZ_DIAG_ENABLED) return;
+    const now = new Date();
+    const timestamp = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}.${String(now.getMilliseconds()).padStart(3, "0")}`;
+    const suffix = details && typeof details === "object" ? ` ${JSON.stringify(details)}` : "";
+    const line = `[${timestamp}] ${message}${suffix}`;
+
+    console.info("[quiz-diag]", line);
+
+    if (document.body) {
+        const panel = ensureQuizDiagPanel();
+        if (panel) {
+            const row = document.createElement("div");
+            row.textContent = line;
+            panel.appendChild(row);
+            while (panel.childElementCount > 120) {
+                panel.removeChild(panel.children[1]);
+            }
+            panel.scrollTop = panel.scrollHeight;
+        }
+    }
+}
+
+function bindDiagLifecycleListeners() {
+    if (!QUIZ_DIAG_ENABLED || quizDiagListenersBound) {
+        return;
+    }
+
+    quizDiagListenersBound = true;
+    document.addEventListener("visibilitychange", () => {
+        diagLog("visibilitychange", {
+            visibility: document.visibilityState,
+            ws: quizWsReadyStateLabel(),
+            online: navigator.onLine,
+        });
+    });
+
+    window.addEventListener("online", () => {
+        diagLog("network_online", { ws: quizWsReadyStateLabel() });
+    });
+
+    window.addEventListener("offline", () => {
+        diagLog("network_offline", { ws: quizWsReadyStateLabel() });
+    });
+}
+
+bindDiagLifecycleListeners();
+/* DEBUG_DIAG_END */
+
 function isArenaHistoryDebugEnabled() {
     const runtimeFlag = typeof window !== "undefined" && window.__QUIZ_DEBUG_ARENA_HISTORY__ === true;
     if (runtimeFlag) {
@@ -252,15 +340,31 @@ function populateAiModelSelect() {
 
 async function loadAiModelOptions() {
     if (aiModelsLoaded) {
+        diagLog("api_ai_models_cache_hit");
         return true;
     }
 
+    let response = null;
+    let responseBodyText = "";
     try {
-        const response = await fetch("/api/ai-models");
+        diagLog("api_ai_models_start", { ws: quizWsReadyStateLabel() });
+        response = await fetch("/api/ai-models", buildJsonApiFetchInit());
+        diagLog("api_ai_models_response", { status: response.status, ok: response.ok });
         if (!response.ok) {
             throw new Error(`failed_to_fetch_ai_models:${response.status}`);
         }
-        const payload = await response.json();
+
+        responseBodyText = await response.text();
+        if (responseBodyText.trim().startsWith("<!DOCTYPE html") || responseBodyText.trim().startsWith("<html")) {
+            throw new Error("failed_to_parse_ai_models_json:html_response_received");
+        }
+        let payload = null;
+        try {
+            payload = JSON.parse(responseBodyText);
+        } catch (parseError) {
+            const parseMessage = String(parseError?.message || parseError || "unknown").trim();
+            throw new Error(`failed_to_parse_ai_models_json:${parseMessage}`);
+        }
         const models = Array.isArray(payload?.models) ? payload.models : [];
 
         const normalizedOptions = models
@@ -288,12 +392,22 @@ async function loadAiModelOptions() {
             const allIds = new Set(normalizedOptions.map((item) => item.id));
             defaultAiModelId = allIds.has(defaultFromApi) ? defaultFromApi : normalizedOptions[0].id;
             aiModelsLoaded = true;
+            diagLog("api_ai_models_success", { model_count: normalizedOptions.length });
             return true;
         }
 
         throw new Error("empty_ai_model_options");
     } catch (error) {
         console.warn("AIモデル一覧の取得に失敗しました", error);
+        diagLog("api_ai_models_failed", {
+            error: String(error?.message || error || "unknown"),
+            name: String(error?.name || ""),
+            stack: String(error?.stack || ""),
+            status: Number(response?.status || 0) || null,
+            body_head: responseBodyText ? String(responseBodyText).slice(0, 300) : null,
+            ua: String(navigator?.userAgent || ""),
+            ws: quizWsReadyStateLabel(),
+        });
         aiModelsLoaded = false;
         return false;
     }
@@ -2331,9 +2445,37 @@ function getKifuApiClientId() {
     return String(myClientId || getOrCreatePersistentClientId() || "").trim();
 }
 
+function isNgrokHostname() {
+    const host = String(window.location.hostname || "").toLowerCase();
+    return host.endsWith(".ngrok-free.dev") || host.endsWith(".ngrok.app") || host === "ngrok.io";
+}
+
+function buildJsonApiFetchInit(baseInit = {}) {
+    const headers = new Headers(baseInit.headers || {});
+    if (!headers.has("Accept")) {
+        headers.set("Accept", "application/json");
+    }
+
+    // ngrok free tier occasionally returns an HTML warning page for browser traffic.
+    if (isNgrokHostname() && !headers.has("ngrok-skip-browser-warning")) {
+        headers.set("ngrok-skip-browser-warning", "1");
+    }
+
+    return {
+        ...baseInit,
+        headers,
+        cache: baseInit.cache || "no-store",
+    };
+}
+
 async function fetchKifuList() {
     const clientId = getKifuApiClientId();
-    const response = await fetch(`/api/kifu/list?client_id=${encodeURIComponent(clientId)}`);
+    diagLog("api_kifu_list_start", { client_id: clientId, ws: quizWsReadyStateLabel() });
+    const response = await fetch(
+        `/api/kifu/list?client_id=${encodeURIComponent(clientId)}`,
+        buildJsonApiFetchInit()
+    );
+    diagLog("api_kifu_list_response", { status: response.status, ok: response.ok, client_id: clientId });
     if (!response.ok) {
         throw new Error("kifu_list_fetch_failed");
     }
@@ -2343,7 +2485,12 @@ async function fetchKifuList() {
 
 async function fetchKifuDetail(kifuId) {
     const clientId = getKifuApiClientId();
-    const response = await fetch(`/api/kifu/${encodeURIComponent(kifuId)}?client_id=${encodeURIComponent(clientId)}`);
+    diagLog("api_kifu_detail_start", { kifu_id: kifuId, client_id: clientId, ws: quizWsReadyStateLabel() });
+    const response = await fetch(
+        `/api/kifu/${encodeURIComponent(kifuId)}?client_id=${encodeURIComponent(clientId)}`,
+        buildJsonApiFetchInit()
+    );
+    diagLog("api_kifu_detail_response", { status: response.status, ok: response.ok, kifu_id: kifuId, client_id: clientId });
     if (!response.ok) {
         throw new Error("kifu_detail_fetch_failed");
     }
@@ -4335,6 +4482,7 @@ function hydrateLobbyChatHistoryIfNeeded(history) {
 }
 
 async function fetchWebSocketTicket(clientId, nickname) {
+    diagLog("api_ws_ticket_start", { client_id: clientId });
     const response = await fetch("/api/ws-ticket", {
         method: "POST",
         headers: {
@@ -4345,6 +4493,7 @@ async function fetchWebSocketTicket(clientId, nickname) {
             nickname,
         }),
     });
+    diagLog("api_ws_ticket_response", { status: response.status, ok: response.ok, client_id: clientId });
 
     if (!response.ok) {
         let detail = "";
@@ -4443,9 +4592,11 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     document.getElementById("nickname").value = effectiveNickname;
 
     const wsUrl = buildWebSocketUrl(clientId, effectiveNickname, ticketPayload.ticket);
+    diagLog("ws_connect_start", { client_id: clientId });
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+        diagLog("ws_open", { client_id: clientId, ws: quizWsReadyStateLabel() });
         isConnecting = false;
         connectionTimeoutModalShown = false;
         localStorage.removeItem("quiz_auto_reconnect");
@@ -4456,6 +4607,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     };
 
     ws.onerror = () => {
+        diagLog("ws_error", { client_id: clientId, ws: quizWsReadyStateLabel() });
         isConnecting = false;
         setAiQuestionLoading(false);
         if (!ws || ws.readyState === WebSocket.OPEN) return;
@@ -4463,6 +4615,12 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     };
 
     ws.onclose = (event) => {
+        diagLog("ws_close", {
+            client_id: clientId,
+            code: Number(event?.code || 0),
+            reason: String(event?.reason || ""),
+            ws: quizWsReadyStateLabel(),
+        });
         isConnecting = false;
         setAiQuestionLoading(false);
         if (event.code === 1000) return;

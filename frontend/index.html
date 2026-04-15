@@ -301,7 +301,14 @@
         </div>
     </dialog>
 
-    <script src="client.js"></script>
+    <script>
+        const qp = new URLSearchParams(window.location.search);
+        const v = qp.get("t") || String(Date.now()); // tがなければ都度バスター
+        const s = document.createElement("script");
+        s.src = `client.js?v=${encodeURIComponent(v)}`;
+        document.body.appendChild(s);
+    </script>
+
 </body>
 
 </html>

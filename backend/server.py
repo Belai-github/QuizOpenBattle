@@ -49,6 +49,15 @@ app.mount("/game", StaticFiles(directory="frontend", html=True), name="frontend"
 
 CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 MAX_NICKNAME_LENGTH = 24
+QUIZ_DIAG_API_ENABLED = os.getenv("QUIZ_DIAG_API", "").strip() == "1"
+
+
+def diag_api_log(event: str, **fields):
+    if not QUIZ_DIAG_API_ENABLED:
+        return
+
+    safe_fields = {str(k): v for k, v in fields.items()}
+    print(f"[quiz-diag-api] {event} {json.dumps(safe_fields, ensure_ascii=False)}")
 
 
 def sanitize_nickname(raw_value: str | None) -> str:
@@ -3508,9 +3517,12 @@ ws_auth_manager = WebSocketAuthManager()
 def _resolve_active_client_or_401(client_id: str) -> str:
     cid = str(client_id or "").strip()
     if not is_valid_client_id(cid):
+        diag_api_log("auth_check", path="kifu", client_id=cid, valid_client_id=False, connected=False, status=400)
         raise HTTPException(status_code=400, detail="invalid_client_id")
     if cid not in manager.active_connections:
+        diag_api_log("auth_check", path="kifu", client_id=cid, valid_client_id=True, connected=False, status=401)
         raise HTTPException(status_code=401, detail="not_connected")
+    diag_api_log("auth_check", path="kifu", client_id=cid, valid_client_id=True, connected=True, status=200)
     return cid
 
 
@@ -3549,6 +3561,7 @@ async def issue_ws_ticket(request: WsTicketIssueRequest):
 
 @app.get("/api/ai-models")
 async def get_ai_models():
+    diag_api_log("ai_models", connected_count=len(manager.active_connections), status=200)
     return get_frontend_model_payload()
 
 
