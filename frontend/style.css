@@ -1334,6 +1334,7 @@ body.modal-open #arena-question-text .arena-question-line {
     align-items: center;
     gap: 12px;
     margin-bottom: 8px;
+    height: 30px;
 }
 
 .arena-action-points-display {
@@ -1825,6 +1826,9 @@ body.modal-open #arena-question-text .arena-question-line {
     background: #e5e7eb;
     padding: 10px;
     min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 #arena-global-chat-box {
@@ -1862,7 +1866,8 @@ body.modal-open #arena-question-text .arena-question-line {
 
 .arena-spectator-label {
     font-weight: 700;
-    margin-bottom: 6px;
+    height: 30px;
+    margin-bottom: 8px;
 }
 
 /* >= 768px: tablet base */
