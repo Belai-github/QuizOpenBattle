@@ -1934,21 +1934,22 @@ function renderKifuStep() {
             const actionType = String(action.action_type || "");
             const team = String(action.team || "");
             const actorName = String(action.actor_name || "ゲスト");
+            const subjectLabel = team === "team-left" ? "先攻" : team === "team-right" ? "後攻" : actorName;
             const payload = typeof action.payload === "object" && action.payload ? action.payload : {};
             if (actionType === "open") {
                 const index = Number(payload.char_index);
                 const label = Number.isFinite(index) ? `${index + 1}文字目` : "文字";
-                const message = `${actorName} が ${label} をオープンしました。`;
+                const message = `${subjectLabel}が${label}をオープンしました。`;
                 pushArenaRoomLog(replayRoomId, team || "game-global", "character_opened", message, action.timestamp || Date.now());
                 pushArenaRoomLog(replayRoomId, "game-global", "character_opened", message, action.timestamp || Date.now());
             } else if (actionType === "answer") {
                 const answerText = String(payload.answer_text || "");
                 const judgeText = payload.is_correct === true ? "正解" : payload.is_correct === false ? "誤答" : "判定待ち";
-                const message = `${actorName} が「${answerText}」とアンサーしました（${judgeText}）。`;
+                const message = `${subjectLabel}が「${answerText}」とアンサーしました（${judgeText}）。`;
                 pushArenaRoomLog(replayRoomId, team || "game-global", "answer_attempt", message, action.timestamp || Date.now());
                 pushArenaRoomLog(replayRoomId, "game-global", "answer_attempt", message, action.timestamp || Date.now());
             } else if (actionType === "turn_end") {
-                const message = `${actorName} がターンエンドしました。`;
+                const message = `${subjectLabel}がターンエンドしました。`;
                 pushArenaRoomLog(replayRoomId, team || "game-global", "turn_changed", message, action.timestamp || Date.now());
                 pushArenaRoomLog(replayRoomId, "game-global", "turn_changed", message, action.timestamp || Date.now());
             }

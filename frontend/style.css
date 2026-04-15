@@ -245,6 +245,7 @@ button:hover {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    margin-right: 2px;
 }
 
 .kifu-step-btn {
