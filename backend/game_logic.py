@@ -21,6 +21,20 @@ def _normalize_log_marker_id(raw_value):
     return marker
 
 
+def _normalize_event_id(raw_value):
+    if raw_value is None:
+        return None
+
+    event_id = str(raw_value).strip()
+    if event_id == "":
+        return None
+
+    if event_id.lower() in {"none", "null", "undefined"}:
+        return None
+
+    return event_id
+
+
 def _normalized_question_chars(text: str):
     normalized_text = unicodedata.normalize("NFC", str(text or ""))
     return [ch for ch in normalized_text if ch not in {"\n", "\r"}]
@@ -248,9 +262,13 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
                     "event_message": event_message,
                     "event_chat_type": event_chat_type,
                     "log_marker_id": _normalize_log_marker_id(entry.get("log_marker_id")),
+                    "event_id": _normalize_event_id(entry.get("event_id")),
+                    "event_kind": str(entry.get("event_kind", event_type)).strip() or event_type,
+                    "event_scope": str(entry.get("event_scope", event_chat_type)).strip() or event_chat_type,
+                    "event_revision": max(1, int(entry.get("event_revision", 1) or 1)),
+                    "event_version": max(1, int(entry.get("event_version", 1) or 1)),
                 }
             )
-    print(f"[DEBUG] build_current_room_for_client: raw_count={raw_count}, sorted_count={sorted_count}, final_arena_history_count={len(arena_chat_history)}, role={ctx['role']}, room_state={room_state}")
     if room_state == "playing" and ctx["role"] == "participant":
         pre_game_global_chat_history = []
 

@@ -61,6 +61,37 @@ const logScrollListenerBound = new WeakSet();
 const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
+const ARENA_VOTE_EVENT_TYPES = new Set([
+    "open_vote_request",
+    "open_vote_resolved",
+    "answer_vote_request",
+    "answer_vote_resolved",
+    "turn_end_vote_request",
+    "turn_end_vote_resolved",
+]);
+const ARENA_ALLOWED_EVENT_TYPES = new Set([
+    "join",
+    "leave",
+    "room_entry",
+    "room_exit",
+    "room_reconnected",
+    "game_start",
+    "game_finished",
+    "question",
+    "chat",
+    "room_shuffle",
+    "character_opened",
+    "answer_submitted",
+    "open_vote_request",
+    "open_vote_resolved",
+    "answer_attempt",
+    "answer_result",
+    "answer_vote_request",
+    "answer_vote_resolved",
+    "turn_end_vote_request",
+    "turn_end_vote_resolved",
+    "turn_changed",
+]);
 const arenaRoomLogStore = new Map();
 let currentArenaLogRoomId = null;
 const arenaChatHistorySeenSeqSetByRoom = new Map();
@@ -262,7 +293,16 @@ function getOrCreateArenaRoomLogState(roomOwnerId) {
     return state;
 }
 
-function pushArenaRoomLog(roomOwnerId, chatType, eventType, eventMessage, eventTimestamp = null, logMarkerId = null) {
+function pushArenaRoomLog(
+    roomOwnerId,
+    chatType,
+    eventType,
+    eventMessage,
+    eventTimestamp = null,
+    logMarkerId = null,
+    eventId = null,
+    eventRevision = 1,
+) {
     const state = getOrCreateArenaRoomLogState(roomOwnerId);
     if (!state || !ARENA_CHAT_TYPES.includes(chatType)) {
         return;
@@ -270,36 +310,97 @@ function pushArenaRoomLog(roomOwnerId, chatType, eventType, eventMessage, eventT
 
     const logs = state[chatType];
 
-    // If logMarkerId is provided and there's an existing log with the same marker, replace it
-    if (logMarkerId) {
-        const existingIndex = logs.findIndex(log => log.logMarkerId === logMarkerId);
+    if (eventId) {
+        const existingIndex = logs.findIndex((log) => log.eventId === eventId);
         if (existingIndex !== -1) {
-            logs[existingIndex] = { eventType, eventMessage, eventTimestamp, logMarkerId };
+            const currentRevision = Number(logs[existingIndex]?.eventRevision || 1);
+            const nextRevision = Math.max(1, Number(eventRevision || 1));
+            if (nextRevision >= currentRevision) {
+                logs[existingIndex] = { eventType, eventMessage, eventTimestamp, logMarkerId, eventId, eventRevision: nextRevision };
+            }
             return;
         }
     }
 
-    logs.push({ eventType, eventMessage, eventTimestamp, logMarkerId });
+    // If logMarkerId is provided and there's an existing log with the same marker, replace it
+    if (logMarkerId) {
+        const existingIndex = logs.findIndex(log => log.logMarkerId === logMarkerId);
+        if (existingIndex !== -1) {
+            logs[existingIndex] = {
+                eventType,
+                eventMessage,
+                eventTimestamp,
+                logMarkerId,
+                eventId: eventId || logs[existingIndex]?.eventId || null,
+                eventRevision: Math.max(1, Number(eventRevision || logs[existingIndex]?.eventRevision || 1)),
+            };
+            return;
+        }
+    }
+
+    logs.push({
+        eventType,
+        eventMessage,
+        eventTimestamp,
+        logMarkerId,
+        eventId,
+        eventRevision: Math.max(1, Number(eventRevision || 1)),
+    });
     while (logs.length > 50) {
         logs.shift();
     }
 }
 
-function upsertHydratedArenaLog(roomStateLogs, chatType, eventType, eventMessage, eventTimestamp, logMarkerId = null) {
+function upsertHydratedArenaLog(
+    roomStateLogs,
+    chatType,
+    eventType,
+    eventMessage,
+    eventTimestamp,
+    logMarkerId = null,
+    eventId = null,
+    eventRevision = 1,
+) {
     const logs = roomStateLogs[chatType];
     if (!Array.isArray(logs)) {
         return;
     }
 
-    if (logMarkerId) {
-        const existingIndex = logs.findIndex((log) => log.logMarkerId === logMarkerId);
+    if (eventId) {
+        const existingIndex = logs.findIndex((log) => log.eventId === eventId);
         if (existingIndex !== -1) {
-            logs[existingIndex] = { eventType, eventMessage, eventTimestamp, logMarkerId };
+            const currentRevision = Number(logs[existingIndex]?.eventRevision || 1);
+            const nextRevision = Math.max(1, Number(eventRevision || 1));
+            if (nextRevision >= currentRevision) {
+                logs[existingIndex] = { eventType, eventMessage, eventTimestamp, logMarkerId, eventId, eventRevision: nextRevision };
+            }
             return;
         }
     }
 
-    logs.push({ eventType, eventMessage, eventTimestamp, logMarkerId });
+    if (logMarkerId) {
+        const existingIndex = logs.findIndex((log) => log.logMarkerId === logMarkerId);
+        if (existingIndex !== -1) {
+            logs[existingIndex] = {
+                eventType,
+                eventMessage,
+                eventTimestamp,
+                logMarkerId,
+                eventId: eventId || logs[existingIndex]?.eventId || null,
+                eventRevision: Math.max(1, Number(eventRevision || logs[existingIndex]?.eventRevision || 1)),
+            };
+            return;
+        }
+    }
+
+    logs.push({
+        eventType,
+        eventMessage,
+        eventTimestamp,
+        logMarkerId,
+        eventId,
+        eventRevision: Math.max(1, Number(eventRevision || 1)),
+    });
     while (logs.length > 50) {
         logs.shift();
     }
@@ -317,6 +418,77 @@ function normalizeLogMarkerId(rawValue) {
     }
 
     return marker;
+}
+
+function normalizeEventId(rawValue) {
+    const eventId = String(rawValue || "").trim();
+    if (eventId === "") {
+        return null;
+    }
+
+    const lower = eventId.toLowerCase();
+    if (lower === "none" || lower === "null" || lower === "undefined") {
+        return null;
+    }
+
+    return eventId;
+}
+
+function normalizeArenaEventRecord(rawRecord) {
+    const eventType = String(rawRecord?.event_type || rawRecord?.event_kind || "").trim();
+    const eventChatType = String(rawRecord?.event_chat_type || rawRecord?.event_scope || "").trim();
+    const eventMessage = String(rawRecord?.event_message || rawRecord?.message || "").trim();
+    const eventTimestamp = Number(rawRecord?.timestamp || rawRecord?.event_timestamp || 0);
+    const eventId = normalizeEventId(rawRecord?.event_id || rawRecord?.event_payload?.event_id);
+    const eventRevision = Math.max(1, Number(rawRecord?.event_revision || rawRecord?.event_payload?.event_revision || 1));
+    const logMarkerId = normalizeLogMarkerId(rawRecord?.log_marker_id || rawRecord?.event_payload?.log_marker_id || rawRecord?.event_payload?.vote_id);
+
+    return {
+        eventType,
+        eventChatType,
+        eventMessage,
+        eventTimestamp,
+        eventId,
+        eventRevision,
+        logMarkerId,
+        roomId: String(rawRecord?.event_room_id || rawRecord?.room_owner_id || currentRoomSnapshot?.room_owner_id || "").trim(),
+    };
+}
+
+function shouldMirrorArenaEventToGlobal(record, viewerRole = userRole) {
+    if (!record || !record.eventChatType) {
+        return false;
+    }
+
+    const isTeamLog = record.eventChatType === "team-left" || record.eventChatType === "team-right";
+    return isTeamLog
+        && record.eventType !== "chat"
+        && (
+            ARENA_VOTE_EVENT_TYPES.has(record.eventType)
+            || (
+                (viewerRole === "team-left" || viewerRole === "team-right")
+                && record.eventChatType === viewerRole
+            )
+            || (
+                !isPlayerRole(viewerRole)
+                && record.eventChatType === "team-left"
+            )
+        );
+}
+
+function getArenaDisplayedMessageForViewer(record, viewerRole = userRole) {
+    if (!record) {
+        return "";
+    }
+
+    let displayMessage = record.eventMessage;
+    if ((record.eventType === "answer_vote_request" || record.eventType === "answer_vote_resolved" || record.eventType === "answer_attempt")
+        && isPlayerRole(viewerRole)
+        && record.eventChatType
+        && record.eventChatType !== viewerRole) {
+        displayMessage = displayMessage.replace(/が「[^」]*」と/, "が");
+    }
+    return displayMessage;
 }
 
 function clearArenaLogElements() {
@@ -374,8 +546,8 @@ function renderArenaLogsForRoom(roomOwnerId, options = {}) {
 
         const entries = state[chatType] || [];
         let addedCount = 0;
-        entries.forEach(({ eventType, eventMessage, eventTimestamp, logMarkerId }) => {
-            const item = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId);
+        entries.forEach(({ eventType, eventMessage, eventTimestamp, logMarkerId, eventId, eventRevision }) => {
+            const item = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId, eventId, eventRevision);
             if (item) {
                 logEl.appendChild(item);
                 applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
@@ -460,14 +632,6 @@ function hydrateArenaChatHistoryIfNeeded(currentRoom) {
         return Number(a?.seq || 0) - Number(b?.seq || 0);
     });
 
-    const voteEventTypes = new Set([
-        "open_vote_request",
-        "open_vote_resolved",
-        "answer_vote_request",
-        "answer_vote_resolved",
-        "turn_end_vote_request",
-        "turn_end_vote_resolved",
-    ]);
     let acceptedCount = 0;
     let skippedInvalidCount = 0;
     let skippedChatTypeCount = 0;
@@ -475,43 +639,40 @@ function hydrateArenaChatHistoryIfNeeded(currentRoom) {
 
     sortedHistory.forEach((entry) => {
         const seq = Number(entry?.seq || 0);
-        const eventChatType = String(entry?.event_chat_type || "").trim();
-        const eventType = String(entry?.event_type || "").trim();
-        let eventMessage = String(entry?.event_message || "").trim();
-        const logMarkerId = normalizeLogMarkerId(entry?.log_marker_id);
-        if (!Number.isFinite(seq) || seenSeqSet.has(seq) || eventMessage === "") {
+        const record = normalizeArenaEventRecord(entry);
+        if (!Number.isFinite(seq) || seenSeqSet.has(seq) || record.eventMessage === "" || record.eventType === "") {
             skippedInvalidCount += 1;
             return;
         }
-        if (!ARENA_CHAT_TYPES.includes(eventChatType)) {
+        if (!ARENA_CHAT_TYPES.includes(record.eventChatType)) {
             skippedChatTypeCount += 1;
             return;
         }
 
-        // Hide answer text for opponent players in answer vote logs
-        if ((eventType === "answer_vote_request" || eventType === "answer_vote_resolved" || eventType === "answer_attempt")
-            && isPlayerRole()
-            && eventChatType
-            && eventChatType !== userRole) {
-            eventMessage = eventMessage.replace(/が「[^」]*」と/, "が");
-        }
+        const eventMessage = getArenaDisplayedMessageForViewer(record);
+        upsertHydratedArenaLog(
+            roomStateLogs,
+            record.eventChatType,
+            record.eventType,
+            eventMessage,
+            record.eventTimestamp,
+            record.logMarkerId,
+            record.eventId,
+            record.eventRevision,
+        );
 
-        const eventTimestamp = Number(entry?.timestamp || 0);
-        upsertHydratedArenaLog(roomStateLogs, eventChatType, eventType, eventMessage, eventTimestamp, logMarkerId);
-
-        const isTeamLog = eventChatType === "team-left" || eventChatType === "team-right";
-        const isVoteEvent = voteEventTypes.has(eventType);
-        const shouldMirrorToGlobal = isTeamLog
-            && eventType !== "chat"
-            && (
-                isVoteEvent
-                || (
-                    (isPlayerRole() && eventChatType === userRole)
-                    || (!isPlayerRole() && eventChatType === "team-left")
-                )
-            );
+        const shouldMirrorToGlobal = shouldMirrorArenaEventToGlobal(record);
         if (shouldMirrorToGlobal) {
-            upsertHydratedArenaLog(roomStateLogs, "game-global", eventType, eventMessage, eventTimestamp, logMarkerId);
+            upsertHydratedArenaLog(
+                roomStateLogs,
+                "game-global",
+                record.eventType,
+                eventMessage,
+                record.eventTimestamp,
+                record.logMarkerId,
+                record.eventId,
+                record.eventRevision,
+            );
             mirroredCount += 1;
         }
 
@@ -2177,7 +2338,7 @@ function renderRooms(rooms) {
     });
 }
 
-function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logMarkerId = null) {
+function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logMarkerId = null, eventId = null, eventRevision = 1) {
     if (!eventMessage) {
         return null;
     }
@@ -2188,6 +2349,10 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
     if (logMarkerId) {
         item.dataset.logMarkerId = String(logMarkerId);
     }
+    if (eventId) {
+        item.dataset.eventId = String(eventId);
+    }
+    item.dataset.eventRevision = String(Math.max(1, Number(eventRevision || 1)));
 
     const messageEl = document.createElement("span");
     messageEl.className = "event-log-message";
@@ -2248,7 +2413,15 @@ function createEventLogItem(eventType, eventMessage, eventTimestamp = null, logM
     return item;
 }
 
-function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = null, logMarkerId = null) {
+function appendLogToContainer(
+    logEl,
+    eventType,
+    eventMessage,
+    eventTimestamp = null,
+    logMarkerId = null,
+    eventId = null,
+    eventRevision = 1,
+) {
     if (!logEl) {
         return;
     }
@@ -2257,11 +2430,16 @@ function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = n
     const wasNearBottom = isLogNearBottom(scrollContainer);
     const indicatorEl = ensureLogNewIndicator(scrollContainer);
 
-    // If logMarkerId is provided and there's an existing log with the same marker, replace it
-    if (logMarkerId) {
-        const existingItem = logEl.querySelector(`[data-log-marker-id="${CSS.escape(String(logMarkerId))}"]`);
+    if (eventId) {
+        const existingItem = logEl.querySelector(`[data-event-id="${CSS.escape(String(eventId))}"]`);
         if (existingItem) {
-            const newItem = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId);
+            const existingRevision = Math.max(1, Number(existingItem.dataset.eventRevision || 1));
+            const nextRevision = Math.max(1, Number(eventRevision || 1));
+            if (nextRevision < existingRevision) {
+                return;
+            }
+
+            const newItem = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId, eventId, nextRevision);
             if (newItem) {
                 existingItem.replaceWith(newItem);
                 if (logEl.classList.contains("chat-log")) {
@@ -2272,7 +2450,22 @@ function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = n
         }
     }
 
-    const item = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId);
+    // If logMarkerId is provided and there's an existing log with the same marker, replace it
+    if (logMarkerId) {
+        const existingItem = logEl.querySelector(`[data-log-marker-id="${CSS.escape(String(logMarkerId))}"]`);
+        if (existingItem) {
+            const newItem = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId, eventId, eventRevision);
+            if (newItem) {
+                existingItem.replaceWith(newItem);
+                if (logEl.classList.contains("chat-log")) {
+                    applyChatLogFilterToItem(newItem, getChatLogFilterState(logEl));
+                }
+            }
+            return;
+        }
+    }
+
+    const item = createEventLogItem(eventType, eventMessage, eventTimestamp, logMarkerId, eventId, eventRevision);
     if (!item) {
         return;
     }
@@ -2302,99 +2495,94 @@ function appendLogToContainer(logEl, eventType, eventMessage, eventTimestamp = n
     }
 }
 
-function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoomId = null, logMarkerId = null) {
-    const voteEventTypes = new Set([
-        "open_vote_request",
-        "open_vote_resolved",
-        "answer_vote_request",
-        "answer_vote_resolved",
-        "turn_end_vote_request",
-        "turn_end_vote_resolved",
-    ]);
-    const allowedTypes = new Set([
-        "join",
-        "leave",
-        "room_entry",
-        "room_exit",
-        "room_reconnected",
-        "game_start",
-        "game_finished",
-        "question",
-        "chat",
-        "room_shuffle",
-        "character_opened",
-        "answer_submitted",
-        "open_vote_request",
-        "open_vote_resolved",
-        "answer_attempt",
-        "answer_result",
-        "answer_vote_request",
-        "answer_vote_resolved",
-        "turn_end_vote_request",
-        "turn_end_vote_resolved",
-        "turn_changed",
-    ]);
-    if (!allowedTypes.has(eventType) || !eventMessage) {
+function appendEventLog(
+    eventType,
+    eventMessage,
+    eventChatType = null,
+    eventRoomId = null,
+    logMarkerId = null,
+    eventId = null,
+    eventRevision = 1,
+) {
+    const record = normalizeArenaEventRecord({
+        event_type: eventType,
+        event_chat_type: eventChatType,
+        event_message: eventMessage,
+        event_room_id: eventRoomId,
+        event_id: eventId,
+        event_revision: eventRevision,
+        log_marker_id: logMarkerId,
+    });
+
+    if (!ARENA_ALLOWED_EVENT_TYPES.has(record.eventType) || !record.eventMessage) {
         return;
     }
 
+    const displayMessage = getArenaDisplayedMessageForViewer(record);
+
     // チャット種別が指定されているイベントは、対応するゲーム内ログに流す。
-    if (eventChatType && eventChatType !== "lobby") {
-        const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
-        const isTeamLog = eventChatType === "team-left" || eventChatType === "team-right";
-        const isVoteEvent = voteEventTypes.has(eventType);
-        // teamチャット本文は進行ログへミラーしない。
-        // 非chatログは、プレイヤーには自チーム分のみ、出題者/観戦者には片側(team-left)のみミラーして重複を防ぐ。
-        const shouldMirrorToGlobal = isTeamLog
-            && eventType !== "chat"
-            && (
-                isVoteEvent
-                || (
-                    (isPlayerRole() && eventChatType === userRole)
-                    || (!isPlayerRole() && eventChatType === "team-left")
-                )
-            );
+    if (record.eventChatType && record.eventChatType !== "lobby") {
+        const resolvedRoomId = record.roomId;
+        const shouldMirrorToGlobal = shouldMirrorArenaEventToGlobal(record);
         if (resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, eventChatType, eventType, eventMessage, null, logMarkerId);
+            pushArenaRoomLog(
+                resolvedRoomId,
+                record.eventChatType,
+                record.eventType,
+                record.eventMessage,
+                null,
+                record.logMarkerId,
+                record.eventId,
+                record.eventRevision,
+            );
             if (shouldMirrorToGlobal) {
-                pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage, null, logMarkerId);
+                pushArenaRoomLog(
+                    resolvedRoomId,
+                    "game-global",
+                    record.eventType,
+                    displayMessage,
+                    null,
+                    record.logMarkerId,
+                    record.eventId,
+                    record.eventRevision,
+                );
             }
         }
 
         if (resolvedRoomId !== "" && currentArenaLogRoomId !== resolvedRoomId) {
             debugArenaHistory("appendEventLog skipped due to room mismatch", {
-                eventType,
-                eventChatType,
+                eventType: record.eventType,
+                eventChatType: record.eventChatType,
                 resolvedRoomId,
                 currentArenaLogRoomId,
             });
             return;
         }
 
-        const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
-        appendLogToContainer(roomLogEl, eventType, eventMessage, null, logMarkerId);
+        const roomLogEl = document.getElementById(`game-chat-log-${record.eventChatType}`);
+        appendLogToContainer(roomLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision);
         if (shouldMirrorToGlobal) {
             const globalLogEl = document.getElementById("game-chat-log-game-global");
-            appendLogToContainer(globalLogEl, eventType, eventMessage, null, logMarkerId);
+            appendLogToContainer(globalLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision);
         }
         return;
     }
 
     // アリーナ滞在中は部屋の入退室ログを全体チャットログにも表示する。
-    if ((eventType === "room_entry" || eventType === "room_exit") && isInGameArena()) {
-        const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
+    if ((record.eventType === "room_entry" || record.eventType === "room_exit") && isInGameArena()) {
+        const resolvedRoomId = record.roomId;
         if (resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage, null, logMarkerId);
+            pushArenaRoomLog(resolvedRoomId, "game-global", record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision);
         }
 
         if (resolvedRoomId === "" || currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
             const globalLogEl = document.getElementById("game-chat-log-game-global");
-            appendLogToContainer(globalLogEl, eventType, eventMessage, null, logMarkerId);
+            appendLogToContainer(globalLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision);
         }
         return;
     }
 
-    if (eventType === "room_entry" || eventType === "room_exit") {
+    if (record.eventType === "room_entry" || record.eventType === "room_exit") {
         return;
     }
 
@@ -2416,20 +2604,20 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
         "turn_end_vote_resolved",
         "turn_changed",
     ]);
-    if (arenaOnlyTypes.has(eventType)) {
-        const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
+    if (arenaOnlyTypes.has(record.eventType)) {
+        const resolvedRoomId = record.roomId;
         if (isInGameArena() && resolvedRoomId !== "") {
-            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage, null, logMarkerId);
+            pushArenaRoomLog(resolvedRoomId, "game-global", record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision);
             if (currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
                 const globalLogEl = document.getElementById("game-chat-log-game-global");
-                appendLogToContainer(globalLogEl, eventType, eventMessage, null, logMarkerId);
+                appendLogToContainer(globalLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision);
             }
         }
         return;
     }
 
     const waitingLogEl = document.getElementById("event-log");
-    appendLogToContainer(waitingLogEl, eventType, eventMessage, null, logMarkerId);
+    appendLogToContainer(waitingLogEl, record.eventType, displayMessage, null, record.logMarkerId, record.eventId, record.eventRevision);
 }
 
 async function fetchWebSocketTicket(clientId, nickname) {
@@ -2577,6 +2765,14 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         const eventMessageForLog = String(data.event_message || data.public_info || "").trim();
+        const incomingEventId = normalizeEventId(data.event_id || data.event_payload?.event_id);
+        const incomingEventRevision = Math.max(1, Number(data.event_revision || data.event_payload?.event_revision || 1));
+        const incomingEventRecord = normalizeArenaEventRecord({
+            ...data,
+            event_message: eventMessageForLog,
+            event_id: incomingEventId,
+            event_revision: incomingEventRevision,
+        });
         const wasInArena = isInGameArena();
         currentRoomSnapshot = data.current_room ?? null;
         userRole = data.current_room?.chat_role ?? null;
@@ -2646,27 +2842,27 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             void handleAnswerJudgementRequest(data.event_payload);
         }
 
-        // Hide answer text for opponent players in answer vote logs
-        let displayMessage = eventMessageForLog;
-        if ((data.event_type === "answer_vote_request" || data.event_type === "answer_vote_resolved" || data.event_type === "answer_attempt")
-            && isPlayerRole()
-            && data.event_chat_type
-            && data.event_chat_type !== userRole) {
-            // Replace "が「...」と" with "が" to hide answer content from opponent
-            displayMessage = eventMessageForLog.replace(/が「[^」]*」と/, "が");
-        }
+        const displayMessage = getArenaDisplayedMessageForViewer(incomingEventRecord);
 
         // 入室時の履歴再描画を除き、受信イベントは増分で追記する。
         if (!isEnteringArena) {
             // Determine log marker ID
-            let logMarkerId = null;
-            if ((data.event_type === "answer_vote_request" || data.event_type === "answer_vote_resolved"
-                || data.event_type === "open_vote_request" || data.event_type === "open_vote_resolved"
-                || data.event_type === "turn_end_vote_request" || data.event_type === "turn_end_vote_resolved")
+            let logMarkerId = incomingEventRecord.logMarkerId;
+            if ((incomingEventRecord.eventType === "answer_vote_request" || incomingEventRecord.eventType === "answer_vote_resolved"
+                || incomingEventRecord.eventType === "open_vote_request" || incomingEventRecord.eventType === "open_vote_resolved"
+                || incomingEventRecord.eventType === "turn_end_vote_request" || incomingEventRecord.eventType === "turn_end_vote_resolved")
                 && data.event_payload?.vote_id) {
-                logMarkerId = data.event_payload.vote_id;
+                logMarkerId = normalizeLogMarkerId(data.event_payload.vote_id);
             }
-            appendEventLog(data.event_type, displayMessage, data.event_chat_type, data.event_room_id, logMarkerId);
+            appendEventLog(
+                incomingEventRecord.eventType,
+                displayMessage,
+                incomingEventRecord.eventChatType,
+                incomingEventRecord.roomId,
+                logMarkerId,
+                incomingEventId,
+                incomingEventRevision,
+            );
         }
         renderRooms(data.rooms);
         renderParticipants(data.participants);

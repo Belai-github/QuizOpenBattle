@@ -157,6 +157,57 @@ class QuizGameManager:
         self.chat_message_history = {}
         self.chat_last_message = {}
 
+    def _next_room_event_id(self, room_owner_id: str):
+        room = self.rooms.get(room_owner_id)
+        if room is None:
+            return str(uuid.uuid4())
+
+        seq = int(room.get("arena_event_id_seq", 0)) + 1
+        room["arena_event_id_seq"] = seq
+        return f"{room_owner_id}:evt:{seq}"
+
+    def _derive_event_identity(
+        self,
+        event_room_id: str | None,
+        event_type: str | None,
+        event_chat_type: str | None,
+        event_payload: dict | None,
+    ):
+        payload = event_payload if isinstance(event_payload, dict) else {}
+        event_kind = str(event_type or "").strip()
+        event_scope = str(event_chat_type or "").strip() or "game-global"
+
+        payload_event_id = str(payload.get("event_id") or "").strip()
+        vote_id = str(payload.get("vote_id") or "").strip()
+        log_marker_id = str(payload.get("log_marker_id") or "").strip()
+
+        if payload_event_id != "":
+            event_id = payload_event_id
+        elif vote_id != "":
+            event_id = f"vote:{vote_id}"
+        elif log_marker_id != "":
+            event_id = f"marker:{log_marker_id}"
+        elif event_room_id:
+            event_id = self._next_room_event_id(event_room_id)
+        else:
+            event_id = str(uuid.uuid4())
+
+        payload_revision = payload.get("event_revision")
+        if isinstance(payload_revision, int) and payload_revision > 0:
+            event_revision = payload_revision
+        elif vote_id != "":
+            event_revision = 2 if event_kind.endswith("_resolved") else 1
+        else:
+            event_revision = 1
+
+        return {
+            "event_id": event_id,
+            "event_kind": event_kind,
+            "event_scope": event_scope,
+            "event_revision": event_revision,
+            "event_version": 1,
+        }
+
     def build_participants(self):
         participants = []
         for client_id, nickname in self.nicknames.items():
@@ -214,6 +265,12 @@ class QuizGameManager:
             "room_reconnected",
         }
         history_message = str(event_message or public_info or "").strip()
+        event_identity = self._derive_event_identity(
+            event_room_id=event_room_id,
+            event_type=event_type,
+            event_chat_type=event_chat_type,
+            event_payload=event_payload,
+        )
         log_marker_id = None
         if isinstance(event_payload, dict):
             payload_marker = event_payload.get("log_marker_id") or event_payload.get("vote_id")
@@ -223,11 +280,35 @@ class QuizGameManager:
 
         if event_room_id and history_message:
             if event_chat_type in {"team-left", "team-right", "game-global"}:
-                self._append_arena_chat_history(event_room_id, event_type or "", history_message, event_chat_type, log_marker_id)
+                self._append_arena_chat_history(
+                    event_room_id,
+                    event_type or "",
+                    history_message,
+                    event_chat_type,
+                    log_marker_id,
+                    event_identity=event_identity,
+                    event_payload=event_payload,
+                )
             elif event_type in {"room_entry", "room_exit"}:
-                self._append_arena_chat_history(event_room_id, event_type, history_message, "game-global", log_marker_id)
+                self._append_arena_chat_history(
+                    event_room_id,
+                    event_type,
+                    history_message,
+                    "game-global",
+                    log_marker_id,
+                    event_identity=event_identity,
+                    event_payload=event_payload,
+                )
             elif event_type in arena_progress_event_types:
-                self._append_arena_chat_history(event_room_id, event_type or "", history_message, "game-global", log_marker_id)
+                self._append_arena_chat_history(
+                    event_room_id,
+                    event_type or "",
+                    history_message,
+                    "game-global",
+                    log_marker_id,
+                    event_identity=event_identity,
+                    event_payload=event_payload,
+                )
 
         participants = self.build_participants()
         for client_id, ws in self.active_connections.items():
@@ -254,6 +335,11 @@ class QuizGameManager:
                 "event_room_id": event_room_id,
                 "target_screen": target_screen,
                 "event_payload": event_payload if is_event_recipient else None,
+                "event_id": event_identity["event_id"] if is_event_recipient else None,
+                "event_kind": event_identity["event_kind"] if is_event_recipient else None,
+                "event_scope": event_identity["event_scope"] if is_event_recipient else None,
+                "event_revision": event_identity["event_revision"] if is_event_recipient else None,
+                "event_version": event_identity["event_version"] if is_event_recipient else None,
             }
             await ws.send_text(json.dumps(response))
 
@@ -332,6 +418,8 @@ class QuizGameManager:
         event_message: str,
         event_chat_type: str,
         log_marker_id: str | None = None,
+        event_identity: dict | None = None,
+        event_payload: dict | None = None,
     ):
         room = self.rooms.get(room_owner_id)
         if room is None:
@@ -359,6 +447,12 @@ class QuizGameManager:
                 "event_message": message,
                 "event_chat_type": event_chat_type,
                 "log_marker_id": str(log_marker_id or "").strip() or None,
+                "event_id": str((event_identity or {}).get("event_id") or "").strip() or None,
+                "event_kind": str((event_identity or {}).get("event_kind") or event_type or "").strip() or None,
+                "event_scope": str((event_identity or {}).get("event_scope") or event_chat_type or "").strip() or None,
+                "event_revision": int((event_identity or {}).get("event_revision") or 1),
+                "event_version": int((event_identity or {}).get("event_version") or 1),
+                "event_payload": event_payload if isinstance(event_payload, dict) else None,
             }
         )
 
@@ -1285,6 +1379,7 @@ class QuizGameManager:
         if room is not None:
             room["arena_chat_history"] = []
             room["arena_chat_seq"] = 0
+            room["arena_event_id_seq"] = 0
             room["pre_game_global_chat_history"] = []
             room["pre_game_global_chat_seq"] = 0
 
@@ -1835,7 +1930,7 @@ class QuizGameManager:
             public_info="行動が受理されました",
             private_map=private_map,
             event_type="question",
-            event_message=f"{actor_name} が 出題をしました",
+            event_message=f"{actor_name} が出題をしました",
             event_room_id=player_id,
         )
 
