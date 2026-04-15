@@ -340,6 +340,21 @@ class QuizGameManager:
         # 出題者自身も部屋作成直後にゲーム会場へ遷移させる。
         await self.send_private_info(player_id, "", target_screen="game_arena")
 
+    async def process_chat_message(self, client_id: str, payload: dict):
+        message = str(payload.get("message", "")).strip()
+        if message == "":
+            return
+
+        # 長文スパム対策としてロビー投稿文字数を制限する。
+        message = message[:200]
+        nickname = self.nicknames.get(client_id, "ゲスト")
+
+        await self.broadcast_state(
+            public_info=f"{nickname} がチャットを送信しました",
+            event_type="chat",
+            event_message=f"{nickname}: {message}",
+        )
+
     async def process_client_payload(self, client_id: str, payload: dict):
         payload_type = payload.get("type")
 
@@ -349,6 +364,10 @@ class QuizGameManager:
 
         if payload_type == "question_submission":
             await self.process_question(client_id, payload)
+            return
+
+        if payload_type == "chat_message":
+            await self.process_chat_message(client_id, payload)
             return
 
         if payload_type == "room_entry":

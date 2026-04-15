@@ -10,6 +10,8 @@ const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
+const lobbyChatInputEl = document.getElementById("lobby-chat-input");
+const lobbyChatSendBtnEl = document.getElementById("lobby-chat-send-btn");
 
 let pendingArenaMode = null;
 
@@ -242,7 +244,7 @@ function renderRooms(rooms) {
 
         const questionerEl = document.createElement("div");
         questionerEl.className = "room-card-questioner";
-        questionerEl.textContent = `${room.questioner_name} の部屋`;
+        questionerEl.textContent = `${room.questioner_name} の出題部屋`;
 
         const metaEl = document.createElement("div");
         metaEl.className = "room-card-meta";
@@ -277,7 +279,7 @@ function renderRooms(rooms) {
 }
 
 function appendEventLog(eventType, eventMessage) {
-    const allowedTypes = new Set(["join", "leave", "question"]);
+    const allowedTypes = new Set(["join", "leave", "question", "chat"]);
     if (!allowedTypes.has(eventType) || !eventMessage) {
         return;
     }
@@ -422,6 +424,45 @@ function requestRoomExit() {
     updateArenaLeaveLabel("guest");
     showWaitingRoomScreen();
 }
+
+function sendLobbyChatMessage() {
+    if (!lobbyChatInputEl) return;
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        void showAlertModal("サーバー接続後にチャットを送信できます");
+        return;
+    }
+
+    const message = lobbyChatInputEl.value.trim();
+    if (message === "") return;
+
+    ws.send(
+        JSON.stringify({
+            type: "chat_message",
+            message,
+            timestamp: Date.now()
+        })
+    );
+    lobbyChatInputEl.value = "";
+}
+
+function bindLobbyChatHandlers() {
+    if (lobbyChatSendBtnEl) {
+        lobbyChatSendBtnEl.addEventListener("click", () => {
+            sendLobbyChatMessage();
+        });
+    }
+
+    if (lobbyChatInputEl) {
+        lobbyChatInputEl.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+            event.preventDefault();
+            sendLobbyChatMessage();
+        });
+    }
+}
+
+bindLobbyChatHandlers();
 
 leaveGameArenaEl?.addEventListener("click", requestRoomExit);
 leaveGameArenaEl?.addEventListener("keydown", (event) => {

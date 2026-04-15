@@ -105,6 +105,11 @@ button:hover {
     gap: 12px;
 }
 
+#waiting-panels>div {
+    display: flex;
+    flex-direction: column;
+}
+
 #event-log-box {
     margin-top: 8px;
     height: 220px;
@@ -115,9 +120,23 @@ button:hover {
     padding: 10px 12px;
 }
 
+#lobby-chat-box {
+    margin-top: 8px;
+}
+
+#lobby-chat-input {
+    margin-top: 0;
+    min-height: 84px;
+}
+
+#lobby-chat-send-btn {
+    margin-top: 8px;
+}
+
 #room-list-box {
     margin-top: 8px;
-    height: 220px;
+    min-height: 220px;
+    flex: 1 1 auto;
     overflow-y: auto;
     background: #fff7ed;
     border: 1px solid #fdba74;
