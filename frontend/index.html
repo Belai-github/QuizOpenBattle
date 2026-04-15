@@ -46,8 +46,10 @@
 
                 <div class="question-input-row">
                     <span class="question-prefix">Q.</span>
-                    <textarea id="question-box" rows="3" placeholder="問題を入力..."></textarea>
+                    <textarea id="question-box" rows="3" maxlength="100" placeholder="問題を入力..."></textarea>
                 </div>
+                <p id="question-length-warning" class="chat-length-warning hidden" aria-live="polite">
+                    ⚠️入力できる文字数は100文字までです</p>
                 <button id="submit-question-btn">出題</button>
             </div>
         </div>
@@ -112,10 +114,12 @@
                         <button id="arena-turn-end-btn" type="button" aria-label="ターンエンド">ターンエンド</button>
                     </div>
                     <div class="arena-answer-compose">
-                        <input id="arena-answer-input" type="text" maxlength="120" placeholder="解答を入力..."
+                        <input id="arena-answer-input" type="text" maxlength="100" placeholder="解答を入力..."
                             aria-label="解答入力">
                         <button id="arena-answer-submit-btn" type="button" aria-label="解答送信">解答</button>
                     </div>
+                    <p id="arena-answer-length-warning" class="chat-length-warning hidden" aria-live="polite">
+                        ⚠️入力できる文字数は100文字までです</p>
                 </div>
             </div>
 

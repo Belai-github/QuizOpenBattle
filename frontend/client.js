@@ -9,12 +9,15 @@ const confirmActionsEl = confirmModal.querySelector(".modal-actions");
 const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
+const questionInputEl = document.getElementById("question-box");
+const questionLengthWarningEl = document.getElementById("question-length-warning");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const startGameBtnEl = document.getElementById("start-game-btn");
 const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
 const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-visibility-btn");
 const arenaAnswerBoxEl = document.getElementById("arena-answer-box");
 const arenaAnswerInputEl = document.getElementById("arena-answer-input");
+const arenaAnswerLengthWarningEl = document.getElementById("arena-answer-length-warning");
 const arenaAnswerSubmitBtnEl = document.getElementById("arena-answer-submit-btn");
 const arenaTurnEndBtnEl = document.getElementById("arena-turn-end-btn");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
@@ -32,6 +35,8 @@ const handledAnswerVoteIds = new Set();
 const handledTurnEndVoteIds = new Set();
 let openVoteRequestPending = false;
 let turnEndRequestPending = false;
+const QUESTION_MAX_LENGTH = 100;
+const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
 const ARENA_MASK_CHAR = "■";
@@ -87,6 +92,22 @@ function isLikelyConnectionTimeout(closeEvent) {
 
     // 1006: 異常切断, 1011: サーバー側エラーで切断されるケース
     return closeEvent.code === 1006 || closeEvent.code === 1011;
+}
+
+function getFriendlyConnectionErrorMessage(closeEvent) {
+    if (!closeEvent) {
+        return null;
+    }
+
+    const reason = String(closeEvent.reason || "").toLowerCase();
+    if (reason.includes("duplicate session")) {
+        return "このクライアントIDは既に別タブで接続中です。\n\n先に既存タブを閉じるか、既存タブを再読み込みしてください。";
+    }
+    if (reason.includes("unauthorized")) {
+        return "接続認証に失敗しました。\n\nページを再読み込みして再接続してください。";
+    }
+
+    return null;
 }
 
 function setArenaCharClickGuard() {
@@ -403,6 +424,8 @@ function updateArenaAnswerFormVisibility() {
     if (!canView) {
         arenaAnswerInputEl.value = "";
     }
+
+    updateArenaAnswerLengthWarning();
 }
 
 async function submitTurnEndAttempt() {
@@ -469,6 +492,11 @@ async function submitArenaAnswer() {
         return;
     }
 
+    if (answerText.length > ANSWER_MAX_LENGTH) {
+        await showAlertModal(`解答は${ANSWER_MAX_LENGTH}文字以内で入力してください`);
+        return;
+    }
+
     const teamParticipantCount = getCurrentTeamParticipantCount();
     const isProposalMode = teamParticipantCount > 1;
     const confirmMessage = isProposalMode
@@ -496,16 +524,29 @@ async function submitArenaAnswer() {
     );
 
     arenaAnswerInputEl.value = "";
+    updateArenaAnswerLengthWarning();
 }
 
 function updateChatLengthWarning(inputEl) {
     if (!inputEl) return;
 
     const warningEl = inputEl.closest(".chat-box")?.querySelector(".chat-length-warning");
-    if (!warningEl) return;
+    updateLengthWarning(inputEl, warningEl, CHAT_MAX_LENGTH);
+}
 
-    const reachedLimit = inputEl.value.length >= CHAT_MAX_LENGTH;
+function updateLengthWarning(inputEl, warningEl, maxLength) {
+    if (!inputEl || !warningEl) return;
+
+    const reachedLimit = inputEl.value.length >= maxLength;
     warningEl.classList.toggle("hidden", !reachedLimit);
+}
+
+function updateQuestionLengthWarning() {
+    updateLengthWarning(questionInputEl, questionLengthWarningEl, QUESTION_MAX_LENGTH);
+}
+
+function updateArenaAnswerLengthWarning() {
+    updateLengthWarning(arenaAnswerInputEl, arenaAnswerLengthWarningEl, ANSWER_MAX_LENGTH);
 }
 
 function updateArenaLeaveLabel(mode) {
@@ -978,6 +1019,11 @@ function splitIntoGraphemes(text) {
 function getNormalizedArenaQuestionChars() {
     const graphemes = splitIntoGraphemes(String(currentArenaQuestionRawText || ""));
     return graphemes.filter((ch) => ch !== "\n" && ch !== "\r");
+}
+
+function countNormalizedQuestionChars(text) {
+    const graphemes = splitIntoGraphemes(String(text || ""));
+    return graphemes.filter((ch) => ch !== "\n" && ch !== "\r").length;
 }
 
 function isDefaultPunctuationChar(ch) {
@@ -1578,12 +1624,54 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
     appendLogToContainer(waitingLogEl, eventType, eventMessage);
 }
 
-function buildWebSocketUrl(clientId, nickname) {
+async function fetchWebSocketTicket(clientId, nickname) {
+    const response = await fetch("/api/ws-ticket", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            client_id: clientId,
+            nickname,
+        }),
+    });
+
+    if (!response.ok) {
+        let detail = "";
+        try {
+            const errorPayload = await response.json();
+            detail = String(errorPayload?.detail || "").trim();
+        } catch {
+            detail = "";
+        }
+
+        const error = new Error(`ws_ticket_request_failed:${response.status}`);
+        error.status = response.status;
+        error.detail = detail;
+        throw error;
+    }
+
+    const payload = await response.json();
+    const ticket = String(payload.ticket || "").trim();
+    const sanitizedNickname = String(payload.nickname || nickname || "").trim() || "ゲスト";
+
+    if (ticket === "") {
+        throw new Error("ws_ticket_missing");
+    }
+
+    return {
+        ticket,
+        nickname: sanitizedNickname,
+    };
+}
+
+function buildWebSocketUrl(clientId, nickname, wsTicket) {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = new URL(window.location.origin);
     wsUrl.protocol = wsProtocol;
     wsUrl.pathname = `/ws/${encodeURIComponent(clientId)}`;
     wsUrl.searchParams.set("nickname", nickname);
+    wsUrl.searchParams.set("ws_ticket", wsTicket);
     return wsUrl.toString();
 }
 
@@ -1621,13 +1709,30 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         await showAlertModal("ニックネームを入力してください");
         return;
     }
-    localStorage.setItem("quiz_nickname", nicknameInput);
 
     isConnecting = true;
     const clientId = getOrCreatePersistentClientId();
     myClientId = clientId;
 
-    const wsUrl = buildWebSocketUrl(clientId, nicknameInput);
+    let ticketPayload;
+    try {
+        ticketPayload = await fetchWebSocketTicket(clientId, nicknameInput);
+    } catch (error) {
+        console.error("WebSocket認証チケットの取得に失敗:", error);
+        isConnecting = false;
+        if (error?.status === 409 || error?.detail === "already_connected") {
+            await showAlertModal("同じクライアントがすでに接続中です。\n\n別タブを閉じてから参加してください。");
+        } else {
+            await showAlertModal("接続認証の取得に失敗しました。時間をおいて再試行してください。");
+        }
+        return;
+    }
+
+    const effectiveNickname = ticketPayload.nickname;
+    localStorage.setItem("quiz_nickname", effectiveNickname);
+    document.getElementById("nickname").value = effectiveNickname;
+
+    const wsUrl = buildWebSocketUrl(clientId, effectiveNickname, ticketPayload.ticket);
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -1637,7 +1742,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         console.log("サーバーに接続しました");
         document.getElementById("login-screen").style.display = "none";
         showWaitingRoomScreen();
-        document.getElementById("my-name").textContent = nicknameInput;
+        document.getElementById("my-name").textContent = effectiveNickname;
     };
 
     ws.onerror = () => {
@@ -1649,6 +1754,14 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     ws.onclose = (event) => {
         isConnecting = false;
         if (event.code === 1000) return;
+
+        const friendlyMessage = getFriendlyConnectionErrorMessage(event);
+        if (friendlyMessage) {
+            closeAllModals();
+            void showAlertModal(friendlyMessage);
+            return;
+        }
+
         if (!isLikelyConnectionTimeout(event)) return;
         void showConnectionTimeoutReloadModal();
     };
@@ -1712,11 +1825,17 @@ document.getElementById("nickname").addEventListener("keydown", (event) => {
 
 async function submitQuestion() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!questionInputEl) return;
 
-    const questionInput = document.getElementById("question-box");
-    const questionText = questionInput.value.trim();
+    const questionText = questionInputEl.value.trim();
     if (questionText === "") {
         await showAlertModal("問題を入力してください");
+        return;
+    }
+
+    const normalizedQuestionLength = countNormalizedQuestionChars(questionText);
+    if (normalizedQuestionLength > QUESTION_MAX_LENGTH) {
+        await showAlertModal(`問題文は${QUESTION_MAX_LENGTH}文字以内で入力してください`);
         return;
     }
 
@@ -1733,17 +1852,22 @@ async function submitQuestion() {
 
     pendingArenaMode = "owner";
     ws.send(JSON.stringify(questionPayload));
-    questionInput.value = "";
+    questionInputEl.value = "";
+    updateQuestionLengthWarning();
 }
 
 document.getElementById("submit-question-btn").addEventListener("click", () => {
     submitQuestion();
 });
 
-document.getElementById("question-box").addEventListener("keydown", (event) => {
+questionInputEl?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     submitQuestion();
+});
+
+questionInputEl?.addEventListener("input", () => {
+    updateQuestionLengthWarning();
 });
 
 async function requestRoomExit() {
@@ -2161,6 +2285,10 @@ arenaAnswerInputEl?.addEventListener("keydown", (event) => {
     void submitArenaAnswer();
 });
 
+arenaAnswerInputEl?.addEventListener("input", () => {
+    updateArenaAnswerLengthWarning();
+});
+
 window.addEventListener("resize", () => {
     syncArenaPlayerBoxHeights();
     if (isInGameArena()) {
@@ -2224,5 +2352,7 @@ function bindRulebookHandlers() {
 }
 
 bindRulebookHandlers();
+updateQuestionLengthWarning();
+updateArenaAnswerLengthWarning();
 updateViewportDebugOverlay();
 

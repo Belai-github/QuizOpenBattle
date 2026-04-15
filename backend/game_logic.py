@@ -4,6 +4,7 @@ import unicodedata
 
 
 QUESTION_MASK_CHAR = "■"
+QUESTION_TEXT_MAX_LENGTH = 100
 
 
 def _normalized_question_chars(text: str):
@@ -378,6 +379,12 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
     question_text = str(payload.get("question_text", payload.get("content", ""))).strip()
     if question_text == "":
         question_text = "（空欄）"
+
+    if len(_normalized_question_chars(question_text)) > QUESTION_TEXT_MAX_LENGTH:
+        return {
+            "ok": False,
+            "error": f"問題文は{QUESTION_TEXT_MAX_LENGTH}文字以内で入力してください。",
+        }
 
     rooms[player_id] = {
         "owner_id": player_id,
