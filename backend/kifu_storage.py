@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Any
 
-KIFU_DIR = os.path.join(os.path.dirname(__file__), "kifu")
+KIFU_DIR = os.path.join(os.path.dirname(__file__), "data", "kifu")
 SCHEMA_VERSION = 1
 
 
