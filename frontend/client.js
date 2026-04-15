@@ -69,11 +69,12 @@ const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
-const DEFAULT_AI_MODEL_ID = "gemini-3.1-flash-lite-preview";
+const DEFAULT_AI_MODEL_ID = "gemini-2.5-flash";
 const AI_MODEL_OPTIONS = [
     ["gemini-2.5-flash-lite", "gemini-2.5-flash-lite (生成時間目安:約2秒)"],
-    ["gemini-2.5-flash", "gemini-2.5-flash (生成時間目安:約5秒)"],
-    ["gemini-2.5-pro", "gemini-2.5-pro (生成時間目安:約20秒)"],
+    ["gemini-2.5-flash", "gemini-2.5-flash (生成時間目安:約10秒)"],
+    ["gemini-2.5-pro", "gemini-2.5-pro (生成時間目安:約30秒)"],
+    ["gemini-3-flash-preview", "gemini-3-flash-preview (生成時間目安:約60秒)"],
     ["gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite-preview (生成時間:約2秒)"],
 ];
 const DEFAULT_AI_DIFFICULTY = 3;

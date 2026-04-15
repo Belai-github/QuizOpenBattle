@@ -21,9 +21,10 @@ AVAILABLE_MODEL_IDS = (
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
+    "gemini-3-flash-preview",
     "gemini-3.1-flash-lite-preview",
 )
-DEFAULT_MODEL_ID = "gemini-3.1-flash-lite-preview"
+DEFAULT_MODEL_ID = "gemini-2.5-flash"
 QUIZ_GENERATION_TEMPERATURE = 1.9
 ANSWER_JUDGEMENT_TEMPERATURE = 0.0
 DEFAULT_QUIZ_DIFFICULTY = 0
@@ -206,8 +207,8 @@ if __name__ == "__main__":
         for model in AVAILABLE_MODEL_IDS:
             await test_quiz_generation(model_id=model)
 
-    model_id = "gemini-3.1-flash-lite-preview"
+    model_id = "gemini-2.5-flash"
     genre = "一般教養"
     difficulty = 4
-    # asyncio.run(alltest())
-    asyncio.run(test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty))
+    asyncio.run(alltest())
+    # asyncio.run(test_quiz_generation(model_id=model_id, genre=genre, difficulty=difficulty))
