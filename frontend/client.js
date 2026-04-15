@@ -1460,10 +1460,13 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
         "room_shuffle",
         "open_vote_request",
         "open_vote_resolved",
+        "answer_attempt",
+        "answer_result",
         "answer_vote_request",
         "answer_vote_resolved",
         "turn_end_vote_request",
         "turn_end_vote_resolved",
+        "turn_changed",
     ]);
     if (!allowedTypes.has(eventType) || !eventMessage) {
         return;
@@ -1481,10 +1484,13 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
         "room_shuffle",
         "open_vote_request",
         "open_vote_resolved",
+        "answer_attempt",
+        "answer_result",
         "answer_vote_request",
         "answer_vote_resolved",
         "turn_end_vote_request",
         "turn_end_vote_resolved",
+        "turn_changed",
     ]);
     if (arenaOnlyTypes.has(eventType)) {
         return;

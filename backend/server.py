@@ -120,6 +120,31 @@ class QuizGameManager:
             return set(room["right_participants"])
         return set()
 
+    async def _broadcast_team_log_message(self, owner_id: str, room: dict, event_type: str, message: str):
+        for chat_type, default_ids in (
+            ("team-left", set(room.get("left_participants", set()))),
+            ("team-right", set(room.get("right_participants", set()))),
+        ):
+            recipient_ids = default_ids
+            chat_result = resolve_chat_recipients(owner_id, room, "questioner", chat_type)
+            if chat_result.get("ok"):
+                recipient_ids = chat_result["event_recipient_ids"]
+
+            if not recipient_ids:
+                continue
+
+            await self.broadcast_state(
+                public_info="",
+                event_type=event_type,
+                event_message=message,
+                event_chat_type=chat_type,
+                event_room_id=owner_id,
+                event_recipient_ids=recipient_ids,
+            )
+
+    async def _broadcast_turn_changed_logs(self, owner_id: str, room: dict, message: str):
+        await self._broadcast_team_log_message(owner_id, room, "turn_changed", message)
+
     async def request_open_vote(self, client_id: str, char_index):
         ctx = resolve_client_room_context(self.rooms, client_id)
         if ctx is None:
@@ -262,6 +287,7 @@ class QuizGameManager:
 
         if approvals >= required:
             pending_vote["status"] = "approved"
+            previous_turn_team = (room.get("game") or {}).get("current_turn_team")
             result = apply_open_character(room, team, char_index)
             room["pending_open_vote"] = None
 
@@ -296,6 +322,18 @@ class QuizGameManager:
                 },
                 event_recipient_ids=team_chat_recipients,
             )
+
+            next_turn_team = (room.get("game") or {}).get("current_turn_team")
+            should_notify_turn_changed = (room.get("game") or {}).get("game_status") == "playing" and previous_turn_team != next_turn_team
+            if should_notify_turn_changed:
+                next_label = "先攻" if next_turn_team == "team-left" else "後攻"
+                turn_changed_message = f"ターン終了。{next_label}のターンになりました。"
+                await self.broadcast_state(
+                    public_info=turn_changed_message,
+                    event_type="turn_changed",
+                    event_room_id=owner_id,
+                )
+                await self._broadcast_turn_changed_logs(owner_id, room, turn_changed_message)
             return
 
         max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
@@ -395,6 +433,12 @@ class QuizGameManager:
                 public_info=f"{team_label}が解答を提出しました。出題者が正誤判定中です。",
                 event_type="answer_attempt",
                 event_room_id=owner_id,
+            )
+            await self._broadcast_team_log_message(
+                owner_id,
+                room,
+                "answer_attempt",
+                f"{team_label}が解答を提出しました。",
             )
 
             await self.broadcast_state(
@@ -502,6 +546,11 @@ class QuizGameManager:
                 public_info=f"ターン終了。{next_label}のターンになりました。",
                 event_type="turn_changed",
                 event_room_id=owner_id,
+            )
+            await self._broadcast_turn_changed_logs(
+                owner_id,
+                room,
+                f"ターン終了。{next_label}のターンになりました。",
             )
             await self.send_private_info(client_id, "ターンエンドしました。")
             return
@@ -621,6 +670,11 @@ class QuizGameManager:
                 public_info=f"ターン終了。{next_label}のターンになりました。",
                 event_type="turn_changed",
                 event_room_id=owner_id,
+            )
+            await self._broadcast_turn_changed_logs(
+                owner_id,
+                room,
+                f"ターン終了。{next_label}のターンになりました。",
             )
             return
 
@@ -923,6 +977,12 @@ class QuizGameManager:
                 event_type="answer_attempt",
                 event_room_id=owner_id,
             )
+            await self._broadcast_team_log_message(
+                owner_id,
+                room,
+                "answer_attempt",
+                f"{team_label}が解答を提出しました。",
+            )
 
             await self.broadcast_state(
                 public_info="",
@@ -997,6 +1057,7 @@ class QuizGameManager:
             return
 
         team = pending.get("team")
+        previous_turn_team = game.get("current_turn_team")
         game["pending_answer_judgement"] = None
         result = apply_submit_answer(room, team, is_correct)
 
@@ -1056,6 +1117,27 @@ class QuizGameManager:
             event_type="private_notice",
             event_room_id=owner_id,
         )
+
+        team_label = "先攻" if team == "team-left" else "後攻"
+        result_label = "正解" if is_correct else "誤答"
+        await self._broadcast_team_log_message(
+            owner_id,
+            room,
+            "answer_result",
+            f"{team_label}の解答は{result_label}でした。",
+        )
+
+        next_turn_team = (room.get("game") or {}).get("current_turn_team")
+        should_notify_turn_changed = result.get("game_status") == "playing" and previous_turn_team != next_turn_team
+        if should_notify_turn_changed:
+            next_label = "先攻" if next_turn_team == "team-left" else "後攻"
+            turn_changed_message = f"ターン終了。{next_label}のターンになりました。"
+            await self.broadcast_state(
+                public_info=turn_changed_message,
+                event_type="turn_changed",
+                event_room_id=owner_id,
+            )
+            await self._broadcast_turn_changed_logs(owner_id, room, turn_changed_message)
 
         # Only send game_finished event if not already handled by private_notice
         if result.get("game_status") == "finished":
