@@ -3212,7 +3212,7 @@ function sendChatMessage(chatBoxEl) {
 function bindChatHandlers() {
     // イベント委譲：全チャットボックスの送信ボタン
     document.addEventListener("click", (event) => {
-        const sendBtn = event.target.closest?.(".chat-send-btn");
+        const sendBtn = event.target.closest?.(".chat-send-btn, .lobby-chat-send-btn, .arena-chat-send-btn");
         if (!sendBtn) {
             return;
         }
