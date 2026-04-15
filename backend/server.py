@@ -1550,7 +1550,7 @@ class QuizGameManager:
             public_info=f"{nickname} が参加しました",
             private_map={client_id: "QuizOpenBattleへようこそ"},
             event_type="join",
-            event_message=f"{nickname} が入室しました",
+            event_message=f"{nickname} が入場しました",
         )
 
         if restored_room_owner_id:

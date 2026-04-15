@@ -1442,3 +1442,11 @@ body[data-room-role="spectator"] #arena-answer-box {
     user-select: none;
     opacity: 0.75;
 }
+
+body:has(#login-screen:not([style*="none"])) {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
