@@ -822,6 +822,16 @@ body.modal-open #arena-question-text .arena-question-line {
     padding: 12px;
 }
 
+#arena-progress-announcement {
+    margin: 0;
+    width: 100%;
+    text-align: center;
+    color: #dc2626;
+    font-weight: 700;
+    font-size: 0.95rem;
+    line-height: 1.35;
+}
+
 #arena-question-text {
     margin: 0;
     display: inline-flex;

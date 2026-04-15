@@ -479,6 +479,43 @@ function updateArenaLeaveLabel(mode) {
     leaveGameArenaEl.setAttribute("aria-label", "退室");
 }
 
+function getTeamLabel(team) {
+    return team === "team-right" ? "後攻" : "先攻";
+}
+
+function getArenaProgressAnnouncementText() {
+    const roomState = currentRoomGameState || "waiting";
+
+    if (roomState === "finished" || currentGameState?.game_status === "finished") {
+        const winner = String(currentGameState?.winner || "");
+        if (winner === "team-left") {
+            return "対戦結果：先攻の勝利";
+        }
+        if (winner === "team-right") {
+            return "対戦結果：後攻の勝利";
+        }
+        return "対戦結果：引き分け";
+    }
+
+    if (roomState !== "playing") {
+        return "出題者による開始を待っています...";
+    }
+
+    const currentTurnLabel = getTeamLabel(currentGameState?.current_turn_team);
+    if (currentGameState?.is_judging_answer) {
+        return `${currentTurnLabel}の解答の正誤判定中です...`;
+    }
+
+    return `${currentTurnLabel}のターンです`;
+}
+
+function updateArenaProgressAnnouncement() {
+    const announcementEl = document.getElementById("arena-progress-announcement");
+    if (!announcementEl) return;
+
+    announcementEl.textContent = getArenaProgressAnnouncementText();
+}
+
 function updateGameStateUI() {
     // waiting -> playing へ遷移したタイミングで、出題前の選択状態を確実に破棄する
     if (previousRoomGameState !== "playing" && currentRoomGameState === "playing") {
@@ -507,6 +544,7 @@ function updateGameStateUI() {
         const rightBox = document.getElementById("arena-player-right");
         if (leftBox) leftBox.classList.remove("is-current-turn");
         if (rightBox) rightBox.classList.remove("is-current-turn");
+        updateArenaProgressAnnouncement();
         return;
     }
 
@@ -540,6 +578,8 @@ function updateGameStateUI() {
     if (rightBox) {
         rightBox.classList.toggle("is-current-turn", currentTurn === "team-right");
     }
+
+    updateArenaProgressAnnouncement();
 }
 
 function showWaitingRoomScreen() {
@@ -1224,6 +1264,7 @@ function renderArena(currentRoom) {
         renderNameList(leftListEl, []);
         renderNameList(rightListEl, []);
         renderNameList(spectatorListEl, []);
+        updateArenaProgressAnnouncement();
         return;
     }
 
@@ -1258,6 +1299,7 @@ function renderArena(currentRoom) {
     renderNameList(leftListEl, leftPlayers);
     renderNameList(rightListEl, rightPlayers);
     renderNameList(spectatorListEl, currentRoom.spectators || []);
+    updateArenaProgressAnnouncement();
 }
 
 function requestRoomEntry(roomOwnerId, role) {
