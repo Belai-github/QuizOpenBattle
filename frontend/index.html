@@ -28,8 +28,10 @@
         <hr>
         <div id="waiting-panels">
             <div class="waiting-left-panel">
-                <div id="event-log-box">
-                    <div id="event-log"></div>
+                <div class="log-scroll-shell">
+                    <div id="event-log-box">
+                        <div id="event-log"></div>
+                    </div>
                 </div>
                 <div class="chat-box" data-chat-room="lobby" data-chat-type="lobby">
                     <textarea class="chat-input" rows="1" maxlength="200" placeholder="チャットを入力..."></textarea>
@@ -103,7 +105,9 @@
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-left"
                     data-visibility="team-left,questioner,spectator">
                     <div class="arena-chat-title">先攻チャット</div>
-                    <div id="game-chat-log-team-left" class="chat-log"></div>
+                    <div class="log-scroll-shell">
+                        <div id="game-chat-log-team-left" class="chat-log"></div>
+                    </div>
                     <div class="chat-compose">
                         <textarea class="chat-input" rows="1" maxlength="200" placeholder="先攻チャット..."></textarea>
                         <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
@@ -144,7 +148,9 @@
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-right"
                     data-visibility="team-right,questioner,spectator">
                     <div class="arena-chat-title">後攻チャット</div>
-                    <div id="game-chat-log-team-right" class="chat-log"></div>
+                    <div class="log-scroll-shell">
+                        <div id="game-chat-log-team-right" class="chat-log"></div>
+                    </div>
                     <div class="chat-compose">
                         <textarea class="chat-input" rows="1" maxlength="200" placeholder="後攻チャット..."></textarea>
                         <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
@@ -161,7 +167,9 @@
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="spectator"
                     data-visibility="spectator,questioner">
                     <div class="arena-chat-title">観戦者チャット</div>
-                    <div id="game-chat-log-spectator" class="chat-log"></div>
+                    <div class="log-scroll-shell">
+                        <div id="game-chat-log-spectator" class="chat-log"></div>
+                    </div>
                     <div class="chat-compose">
                         <textarea class="chat-input" rows="1" maxlength="200" placeholder="観戦者チャット..."></textarea>
                         <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
@@ -172,7 +180,9 @@
 
             <div id="arena-global-chat-box" class="chat-box hidden" data-chat-room="game" data-chat-type="game-global">
                 <div class="arena-chat-title">全体チャット</div>
-                <div id="game-chat-log-game-global" class="chat-log"></div>
+                <div class="log-scroll-shell">
+                    <div id="game-chat-log-game-global" class="chat-log"></div>
+                </div>
                 <div class="chat-compose">
                     <textarea class="chat-input" rows="1" maxlength="200" placeholder="全員向けチャット..."></textarea>
                     <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>

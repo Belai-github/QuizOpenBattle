@@ -347,12 +347,18 @@ button:hover {
 #event-log-box {
     margin-top: 8px;
     height: 280px;
-    position: relative;
     overflow-y: auto;
+    overflow-x: hidden;
     background: #ffedd5;
     border: 1px solid #fdba74;
     border-radius: 10px;
     padding: 10px 12px;
+}
+
+.log-scroll-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
 }
 
 #lobby-chat-box {
@@ -380,12 +386,13 @@ button:hover {
 .chat-log {
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 8px;
     flex: 1 1 auto;
     min-height: 140px;
     position: relative;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: #ffedd5;
     border: 1px solid #fdba74;
     border-radius: 10px;
@@ -401,8 +408,16 @@ button:hover {
     color: #9a3412;
 }
 
+.event-log-item.is-chat-event {
+    align-items: flex-start;
+}
+
+.event-log-item.is-chat-event .event-log-time {
+    align-self: flex-end;
+}
+
 .new-log-indicator {
-    position: sticky;
+    position: absolute;
     left: 50%;
     bottom: 10px;
     transform: translateX(-50%);
@@ -419,17 +434,31 @@ button:hover {
     line-height: 1;
     box-shadow: 0 4px 10px rgba(220, 38, 38, 0.28);
     cursor: pointer;
+    animation: new-log-pop-up 180ms ease-out;
 }
 
 .new-log-indicator:hover {
     background: #b91c1c;
 }
 
+@keyframes new-log-pop-up {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(8px) scale(0.94);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
+    }
+}
+
 .chat-input {
     margin-top: 0;
-    min-height: 84px;
+    min-height: 48px;
     max-height: 140px;
-    overflow: auto;
+    overflow-y: hidden;
+    overflow-x: hidden;
     resize: none;
     padding-right: 48px;
 }
@@ -562,9 +591,9 @@ button:hover {
 #event-log {
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 8px;
-    min-height: 100%;
+    min-height: 0;
 }
 
 .event-log-item {
@@ -780,7 +809,8 @@ body.modal-open #arena-question-text .arena-question-line {
     min-height: 180px;
     max-height: 240px;
     flex: 1 1 auto;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 #game-chat-log-team-left {
@@ -818,6 +848,8 @@ body.modal-open #arena-question-text .arena-question-line {
 #arena-global-chat-box .chat-log {
     flex: 1 1 auto;
     min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 #arena-lower-layout {
@@ -829,6 +861,17 @@ body.modal-open #arena-question-text .arena-question-line {
 #game-chat-log-game-global {
     background: #fef3c7;
     border-color: #f59e0b;
+}
+
+#game-chat-log-team-left,
+#game-chat-log-team-right,
+#game-chat-log-spectator,
+#game-chat-log-game-global {
+    height: 240px;
+    min-height: 240px;
+    max-height: 240px;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .arena-player-box {
@@ -1266,6 +1309,11 @@ body[data-room-role="spectator"] #arena-answer-box {
         align-items: stretch;
     }
 
+    .waiting-left-panel,
+    .waiting-right-panel {
+        min-height: 0;
+    }
+
     .waiting-left-panel .chat-box {
         overflow: visible;
     }
@@ -1283,8 +1331,19 @@ body[data-room-role="spectator"] #arena-answer-box {
         white-space: nowrap;
     }
 
+    .waiting-left-panel .log-scroll-shell {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+
     .waiting-left-panel #event-log-box {
         flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        max-height: 100%;
     }
 
     .waiting-right-panel #room-list-box {
@@ -1422,10 +1481,15 @@ body[data-room-role="spectator"] #arena-answer-box {
         align-self: end;
     }
 
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .chat-log {
+    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .log-scroll-shell {
         grid-column: 2;
         grid-row: 2;
-        min-height: 220px;
+    }
+
+    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .chat-log {
+        height: 240px;
+        min-height: 240px;
+        max-height: 240px;
     }
 
     #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .chat-compose {

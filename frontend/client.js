@@ -58,6 +58,90 @@ let isConnecting = false;
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
+const ARENA_CHAT_TYPES = ["team-left", "team-right", "spectator", "game-global"];
+const arenaRoomLogStore = new Map();
+let currentArenaLogRoomId = null;
+
+function getOrCreateArenaRoomLogState(roomOwnerId) {
+    const roomId = String(roomOwnerId || "").trim();
+    if (roomId === "") return null;
+
+    let state = arenaRoomLogStore.get(roomId);
+    if (!state) {
+        state = {
+            "team-left": [],
+            "team-right": [],
+            spectator: [],
+            "game-global": [],
+        };
+        arenaRoomLogStore.set(roomId, state);
+    }
+    return state;
+}
+
+function pushArenaRoomLog(roomOwnerId, chatType, eventType, eventMessage) {
+    const state = getOrCreateArenaRoomLogState(roomOwnerId);
+    if (!state || !ARENA_CHAT_TYPES.includes(chatType)) {
+        return;
+    }
+
+    const logs = state[chatType];
+    logs.push({ eventType, eventMessage });
+    while (logs.length > 50) {
+        logs.shift();
+    }
+}
+
+function clearArenaLogElements() {
+    ARENA_CHAT_TYPES.forEach((chatType) => {
+        const logEl = document.getElementById(`game-chat-log-${chatType}`);
+        if (!logEl) return;
+        logEl.innerHTML = "";
+
+        const scrollContainer = resolveLogScrollContainer(logEl);
+        const indicatorEl = ensureLogNewIndicator(scrollContainer);
+        if (indicatorEl) {
+            indicatorEl.classList.add("hidden");
+        }
+    });
+}
+
+function renderArenaLogsForRoom(roomOwnerId) {
+    const roomId = String(roomOwnerId || "").trim();
+    currentArenaLogRoomId = roomId || null;
+
+    clearArenaLogElements();
+    if (roomId === "") {
+        return;
+    }
+
+    const state = getOrCreateArenaRoomLogState(roomId);
+    if (!state) {
+        return;
+    }
+
+    ARENA_CHAT_TYPES.forEach((chatType) => {
+        const logEl = document.getElementById(`game-chat-log-${chatType}`);
+        if (!logEl) return;
+
+        const entries = state[chatType] || [];
+        entries.forEach(({ eventType, eventMessage }) => {
+            const item = createEventLogItem(eventType, eventMessage);
+            if (item) {
+                logEl.appendChild(item);
+            }
+        });
+
+        const scrollContainer = resolveLogScrollContainer(logEl);
+        if (scrollContainer) {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+            const indicatorEl = ensureLogNewIndicator(scrollContainer);
+            if (indicatorEl) {
+                indicatorEl.classList.add("hidden");
+            }
+        }
+    });
+}
 
 function resolveLogScrollContainer(logEl) {
     if (!logEl) return null;
@@ -89,7 +173,11 @@ function ensureLogNewIndicator(scrollContainer) {
             indicatorEl.classList.add("hidden");
         });
 
-        scrollContainer.appendChild(indicatorEl);
+        const hostCandidate = scrollContainer.parentElement;
+        const host = hostCandidate && hostCandidate.classList.contains("log-scroll-shell")
+            ? hostCandidate
+            : scrollContainer;
+        host.appendChild(indicatorEl);
         logNewIndicatorMap.set(scrollContainer, indicatorEl);
     }
 
@@ -586,6 +674,18 @@ function updateChatLengthWarning(inputEl) {
 
     const warningEl = inputEl.closest(".chat-box")?.querySelector(".chat-length-warning");
     updateLengthWarning(inputEl, warningEl, CHAT_MAX_LENGTH);
+}
+
+function autoResizeChatInput(inputEl) {
+    if (!inputEl || !inputEl.classList.contains("chat-input")) return;
+
+    const computedStyle = window.getComputedStyle(inputEl);
+    const maxHeight = parseFloat(computedStyle.maxHeight) || 140;
+
+    inputEl.style.height = "auto";
+    const nextHeight = Math.min(inputEl.scrollHeight, maxHeight);
+    inputEl.style.height = `${nextHeight}px`;
+    inputEl.style.overflowY = inputEl.scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
 function updateLengthWarning(inputEl, warningEl, maxLength) {
@@ -1604,6 +1704,7 @@ function createEventLogItem(eventType, eventMessage) {
     };
 
     if (eventType === "chat") {
+        item.classList.add("is-chat-event");
         const separatorMatch = eventMessage.match(/^([^:：]+[:：]\s*)([\s\S]*)$/);
         if (separatorMatch) {
             messageEl.classList.add("chat");
@@ -1672,7 +1773,7 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
     }
 }
 
-function appendEventLog(eventType, eventMessage, eventChatType = null) {
+function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoomId = null) {
     const allowedTypes = new Set([
         "join",
         "leave",
@@ -1695,6 +1796,15 @@ function appendEventLog(eventType, eventMessage, eventChatType = null) {
 
     // チャット種別が指定されているイベントは、対応するゲーム内ログに流す。
     if (eventChatType && eventChatType !== "lobby") {
+        const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
+        if (resolvedRoomId !== "") {
+            pushArenaRoomLog(resolvedRoomId, eventChatType, eventType, eventMessage);
+        }
+
+        if (resolvedRoomId !== "" && currentArenaLogRoomId !== resolvedRoomId) {
+            return;
+        }
+
         const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
         appendLogToContainer(roomLogEl, eventType, eventMessage);
         return;
@@ -1869,6 +1979,11 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         userRole = data.current_room?.chat_role ?? null;
         currentRoomGameState = data.current_room?.game_state ?? null;
         currentGameState = data.current_room?.game ?? null;
+        const activeRoomId = String(data.current_room?.room_owner_id || "").trim() || null;
+
+        if (activeRoomId !== currentArenaLogRoomId) {
+            renderArenaLogsForRoom(activeRoomId);
+        }
 
         document.body.dataset.chatRole = String(userRole || "");
         document.body.dataset.roomRole = String(data.current_room?.role || "");
@@ -1903,7 +2018,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             void handleAnswerJudgementRequest(data.event_payload);
         }
 
-        appendEventLog(data.event_type, data.event_message, data.event_chat_type);
+        appendEventLog(data.event_type, data.event_message, data.event_chat_type, data.event_room_id);
         renderRooms(data.rooms);
         renderParticipants(data.participants);
         renderArena(data.current_room);
@@ -2032,25 +2147,43 @@ function sendChatMessage(chatBoxEl) {
             timestamp: Date.now()
         })
     );
+
+    // 送信直後は該当ログ欄を下端へ寄せる。
+    const targetLogId = chatType === "lobby" ? "event-log" : `game-chat-log-${chatType}`;
+    const targetLogEl = document.getElementById(targetLogId);
+    const scrollContainer = resolveLogScrollContainer(targetLogEl);
+    if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        const indicatorEl = ensureLogNewIndicator(scrollContainer);
+        if (indicatorEl) {
+            indicatorEl.classList.add("hidden");
+        }
+    }
+
     lastChatSentAt[chatType] = now;
     inputEl.value = "";
+    autoResizeChatInput(inputEl);
     updateChatLengthWarning(inputEl);
 }
 
 function bindChatHandlers() {
     // イベント委譲：全チャットボックスの送信ボタン
     document.addEventListener("click", (event) => {
-        if (event.target.classList.contains("chat-send-btn")) {
-            const chatBox = event.target.closest(".chat-box");
-            if (chatBox) {
-                sendChatMessage(chatBox);
-            }
+        const sendBtn = event.target.closest?.(".chat-send-btn");
+        if (!sendBtn) {
+            return;
+        }
+
+        const chatBox = sendBtn.closest(".chat-box");
+        if (chatBox) {
+            sendChatMessage(chatBox);
         }
     });
 
     // イベント委譲：全チャットボックスの入力欄
     document.addEventListener("input", (event) => {
         if (event.target.classList.contains("chat-input")) {
+            autoResizeChatInput(event.target);
             updateChatLengthWarning(event.target);
         }
     });
@@ -2070,6 +2203,10 @@ function bindChatHandlers() {
 }
 
 bindChatHandlers();
+
+document.querySelectorAll(".chat-input").forEach((inputEl) => {
+    autoResizeChatInput(inputEl);
+});
 
 function toggleArenaQuestionCharSelectionFromTarget(targetEl) {
     const charEl = targetEl?.closest?.(".arena-question-char");
