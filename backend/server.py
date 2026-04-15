@@ -1154,6 +1154,14 @@ class QuizGameManager:
             event_room_id=client_id,
         )
 
+        await self.broadcast_state(
+            public_info="",
+            event_type="game_start",
+            event_message="ゲームが開始されました。ゲーム中は進行ログに投稿されたチャットをプレイヤーは閲覧できません。",
+            event_chat_type="game-global",
+            event_room_id=client_id,
+        )
+
     async def shuffle_participants(self, client_id: str):
         result = apply_shuffle_participants(self.rooms, client_id)
         if not result.get("ok"):

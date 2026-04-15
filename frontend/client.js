@@ -58,9 +58,164 @@ let isConnecting = false;
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
-const ARENA_CHAT_TYPES = ["team-left", "team-right", "spectator", "game-global"];
+const chatLogFilterStateById = new Map();
+const chatLogFilterControlById = new Map();
+const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
 const arenaRoomLogStore = new Map();
 let currentArenaLogRoomId = null;
+
+function isPlayerRole(role = userRole) {
+    return role === "team-left" || role === "team-right";
+}
+
+function isGameGlobalLog(logEl) {
+    return Boolean(logEl) && logEl.id === "game-chat-log-game-global";
+}
+
+function shouldLockGlobalLogFilter(logEl) {
+    return isGameGlobalLog(logEl)
+        && isInGameArena()
+        && (currentRoomGameState || "waiting") === "playing"
+        && isPlayerRole();
+}
+
+function enforceChatLogFilterLockIfNeeded(logEl) {
+    const filterState = getChatLogFilterState(logEl);
+    if (shouldLockGlobalLogFilter(logEl)) {
+        filterState.showChat = false;
+        filterState.showLog = true;
+    }
+    return filterState;
+}
+
+function getChatLogFilterState(logEl) {
+    const key = String(logEl?.id || "").trim();
+    if (key === "") {
+        return { showChat: true, showLog: true };
+    }
+
+    let state = chatLogFilterStateById.get(key);
+    if (!state) {
+        state = { showChat: true, showLog: true };
+        chatLogFilterStateById.set(key, state);
+    }
+    return state;
+}
+
+function isChatEventItem(itemEl) {
+    return itemEl.classList.contains("is-chat-event") || itemEl.dataset.eventType === "chat";
+}
+
+function applyChatLogFilterToItem(itemEl, filterState) {
+    if (!itemEl || !filterState) return;
+
+    const isChat = isChatEventItem(itemEl);
+    const shouldHide = (isChat && !filterState.showChat)
+        || (!isChat && !filterState.showLog);
+    itemEl.classList.toggle("filtered-out", shouldHide);
+}
+
+function applyChatLogFilters(logEl) {
+    if (!logEl) return;
+
+    const filterState = enforceChatLogFilterLockIfNeeded(logEl);
+    logEl.querySelectorAll(".event-log-item").forEach((itemEl) => {
+        applyChatLogFilterToItem(itemEl, filterState);
+    });
+}
+
+function updateChatLogFilterButtonLabel(buttonEl, prefix, enabled) {
+    if (!buttonEl) return;
+    buttonEl.textContent = `${prefix}:${enabled ? "ON" : "OFF"}`;
+    buttonEl.setAttribute("aria-pressed", enabled ? "true" : "false");
+}
+
+function attachChatLogFilterControls(chatBoxEl) {
+    if (!chatBoxEl) return;
+
+    const titleEl = chatBoxEl.querySelector(".arena-chat-title");
+    const logEl = chatBoxEl.querySelector(".chat-log");
+    if (!titleEl || !logEl) return;
+    if (titleEl.querySelector(".chat-log-filter-tools")) return;
+
+    const titleText = titleEl.textContent.trim();
+    titleEl.textContent = "";
+
+    const textEl = document.createElement("span");
+    textEl.className = "arena-chat-title-text";
+    textEl.textContent = titleText;
+
+    const toolsEl = document.createElement("div");
+    toolsEl.className = "chat-log-filter-tools";
+
+    const chatFilterBtn = document.createElement("button");
+    chatFilterBtn.type = "button";
+    chatFilterBtn.className = "chat-log-filter-btn";
+    chatFilterBtn.setAttribute("aria-label", "チャット表示切り替え");
+
+    const logFilterBtn = document.createElement("button");
+    logFilterBtn.type = "button";
+    logFilterBtn.className = "chat-log-filter-btn";
+    logFilterBtn.setAttribute("aria-label", "ログ表示切り替え");
+
+    const renderButtons = () => {
+        const state = enforceChatLogFilterLockIfNeeded(logEl);
+        const isLocked = shouldLockGlobalLogFilter(logEl);
+        updateChatLogFilterButtonLabel(chatFilterBtn, "Chat", state.showChat);
+        updateChatLogFilterButtonLabel(logFilterBtn, "Log", state.showLog);
+        chatFilterBtn.disabled = isLocked;
+        logFilterBtn.disabled = isLocked;
+        chatFilterBtn.setAttribute("aria-disabled", String(isLocked));
+        logFilterBtn.setAttribute("aria-disabled", String(isLocked));
+    };
+
+    chatFilterBtn.addEventListener("click", () => {
+        if (shouldLockGlobalLogFilter(logEl)) {
+            return;
+        }
+        const state = getChatLogFilterState(logEl);
+        state.showChat = !state.showChat;
+        applyChatLogFilters(logEl);
+        renderButtons();
+    });
+
+    logFilterBtn.addEventListener("click", () => {
+        if (shouldLockGlobalLogFilter(logEl)) {
+            return;
+        }
+        const state = getChatLogFilterState(logEl);
+        state.showLog = !state.showLog;
+        applyChatLogFilters(logEl);
+        renderButtons();
+    });
+
+    toolsEl.appendChild(chatFilterBtn);
+    toolsEl.appendChild(logFilterBtn);
+    titleEl.appendChild(textEl);
+    titleEl.appendChild(toolsEl);
+
+    chatLogFilterControlById.set(logEl.id, {
+        logEl,
+        renderButtons,
+    });
+
+    renderButtons();
+    applyChatLogFilters(logEl);
+}
+
+function initChatLogFilterControls() {
+    document.querySelectorAll('.chat-box[data-chat-room="game"]').forEach((chatBoxEl) => {
+        attachChatLogFilterControls(chatBoxEl);
+    });
+}
+
+function refreshChatLogFilterControls() {
+    chatLogFilterControlById.forEach(({ logEl, renderButtons }) => {
+        enforceChatLogFilterLockIfNeeded(logEl);
+        applyChatLogFilters(logEl);
+        renderButtons();
+    });
+}
 
 function getOrCreateArenaRoomLogState(roomOwnerId) {
     const roomId = String(roomOwnerId || "").trim();
@@ -71,7 +226,6 @@ function getOrCreateArenaRoomLogState(roomOwnerId) {
         state = {
             "team-left": [],
             "team-right": [],
-            spectator: [],
             "game-global": [],
         };
         arenaRoomLogStore.set(roomId, state);
@@ -129,6 +283,7 @@ function renderArenaLogsForRoom(roomOwnerId) {
             const item = createEventLogItem(eventType, eventMessage);
             if (item) {
                 logEl.appendChild(item);
+                applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
             }
         });
 
@@ -346,8 +501,9 @@ function updateChatBoxVisibility() {
             }
 
             if (roomState === "playing" && isGlobalChat) {
-                setChatBoxEditable(chatBox, false);
-                chatBox.classList.add("hidden");
+                const isEditableGlobal = !isPlayerRole();
+                setChatBoxEditable(chatBox, isEditableGlobal);
+                chatBox.classList.remove("hidden");
                 return;
             }
         }
@@ -367,6 +523,7 @@ function updateChatBoxVisibility() {
         }
     });
 
+    refreshChatLogFilterControls();
     syncArenaPlayerBoxHeights();
 }
 
@@ -444,14 +601,19 @@ function canSendChatType(chatType) {
 
     // 準備中・終了後はアリーナ内の全体チャットのみ全員が送信できる。
     const roomState = currentRoomGameState || "waiting";
-    if (chatType === "game-global" && (roomState === "waiting" || roomState === "finished")) {
-        return true;
+    if (chatType === "game-global") {
+        if (roomState === "waiting" || roomState === "finished") {
+            return true;
+        }
+        if (roomState === "playing") {
+            return userRole === "questioner" || userRole === "spectator";
+        }
+        return false;
     }
 
     const sendableRolesByType = {
         "team-left": new Set(["team-left", "questioner"]),
         "team-right": new Set(["team-right", "questioner"]),
-        spectator: new Set(["spectator", "questioner"]),
     };
 
     const allowedRoles = sendableRolesByType[chatType];
@@ -1696,6 +1858,7 @@ function createEventLogItem(eventType, eventMessage) {
 
     const item = document.createElement("div");
     item.className = "event-log-item";
+    item.dataset.eventType = String(eventType || "");
 
     const messageEl = document.createElement("span");
     messageEl.className = "event-log-message";
@@ -1722,7 +1885,13 @@ function createEventLogItem(eventType, eventMessage) {
         } else {
             messageEl.textContent = eventMessage;
         }
-    } else if (eventType === "join" || eventType === "leave" || eventType === "question") {
+    } else if (
+        eventType === "join"
+        || eventType === "leave"
+        || eventType === "question"
+        || eventType === "room_entry"
+        || eventType === "room_exit"
+    ) {
         const systemMatch = eventMessage.match(/^(.+?)(\s*が[\s\S]*)$/);
         if (systemMatch) {
             messageEl.classList.add("system");
@@ -1762,6 +1931,9 @@ function appendLogToContainer(logEl, eventType, eventMessage) {
     }
 
     logEl.appendChild(item);
+    if (logEl.classList.contains("chat-log")) {
+        applyChatLogFilterToItem(item, getChatLogFilterState(logEl));
+    }
     while (logEl.children.length > 50) {
         logEl.removeChild(logEl.firstChild);
     }
@@ -1787,6 +1959,9 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
     const allowedTypes = new Set([
         "join",
         "leave",
+        "room_entry",
+        "room_exit",
+        "game_start",
         "question",
         "chat",
         "room_shuffle",
@@ -1807,8 +1982,14 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
     // チャット種別が指定されているイベントは、対応するゲーム内ログに流す。
     if (eventChatType && eventChatType !== "lobby") {
         const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
+        const isTeamLog = eventChatType === "team-left" || eventChatType === "team-right";
+        // teamログのうち、chat以外は片側(team-left)のみミラーして重複表示を防ぐ。
+        const shouldMirrorToGlobal = isTeamLog && (eventType === "chat" || eventChatType === "team-left");
         if (resolvedRoomId !== "") {
             pushArenaRoomLog(resolvedRoomId, eventChatType, eventType, eventMessage);
+            if (shouldMirrorToGlobal) {
+                pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage);
+            }
         }
 
         if (resolvedRoomId !== "" && currentArenaLogRoomId !== resolvedRoomId) {
@@ -1817,7 +1998,24 @@ function appendEventLog(eventType, eventMessage, eventChatType = null, eventRoom
 
         const roomLogEl = document.getElementById(`game-chat-log-${eventChatType}`);
         appendLogToContainer(roomLogEl, eventType, eventMessage);
+        if (shouldMirrorToGlobal) {
+            const globalLogEl = document.getElementById("game-chat-log-game-global");
+            appendLogToContainer(globalLogEl, eventType, eventMessage);
+        }
         return;
+    }
+
+    // アリーナ滞在中は部屋の入退室ログを全体チャットログにも表示する。
+    if ((eventType === "room_entry" || eventType === "room_exit") && isInGameArena()) {
+        const resolvedRoomId = String(eventRoomId || currentRoomSnapshot?.room_owner_id || "").trim();
+        if (resolvedRoomId !== "") {
+            pushArenaRoomLog(resolvedRoomId, "game-global", eventType, eventMessage);
+        }
+
+        if (resolvedRoomId === "" || currentArenaLogRoomId === null || currentArenaLogRoomId === resolvedRoomId) {
+            const globalLogEl = document.getElementById("game-chat-log-game-global");
+            appendLogToContainer(globalLogEl, eventType, eventMessage);
+        }
     }
 
     // アリーナ内で発生するゲーム進行ログは待機所ログへは送らない。
@@ -2213,6 +2411,7 @@ function bindChatHandlers() {
 }
 
 bindChatHandlers();
+initChatLogFilterControls();
 
 document.querySelectorAll(".chat-input").forEach((inputEl) => {
     autoResizeChatInput(inputEl);

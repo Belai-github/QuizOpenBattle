@@ -421,10 +421,13 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
             event_recipient_ids |= ids
         return {"ok": True, "event_recipient_ids": event_recipient_ids}
 
-    # 全体チャットは待機中・終了後のみ利用可能
+    # 全体チャットは待機中・終了後は全員、対戦中は出題者/観戦者のみ利用可能
     if chat_type == "game-global":
-        if room_state != "finished":
-            return {"ok": False, "error": "対戦中は全体チャットを利用できません。"}
+        if room_state == "playing":
+            if sender_chat_role not in {"questioner", "spectator"}:
+                return {"ok": False, "error": "対戦中の全体チャットは出題者/観戦者のみ利用できます。"}
+        elif room_state != "finished":
+            return {"ok": False, "error": "全体チャットを利用できない状態です。"}
 
         event_recipient_ids = set()
         for ids in role_to_ids.values():
@@ -434,12 +437,10 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
     sendable_roles_by_type = {
         "team-left": {"team-left", "questioner"},
         "team-right": {"team-right", "questioner"},
-        "spectator": {"spectator", "questioner"},
     }
     readable_roles_by_type = {
         "team-left": {"team-left", "questioner", "spectator"},
         "team-right": {"team-right", "questioner", "spectator"},
-        "spectator": {"spectator", "questioner"},
     }
 
     if chat_type not in sendable_roles_by_type:

@@ -378,9 +378,65 @@ button:hover {
 }
 
 .arena-chat-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     font-weight: 700;
     font-size: 0.88rem;
     margin-bottom: 4px;
+}
+
+.arena-chat-title-text {
+    min-width: 0;
+}
+
+.chat-log-filter-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.chat-log-filter-btn {
+    width: auto;
+    min-height: 24px;
+    margin-top: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #334155;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.chat-log-filter-btn[aria-pressed="true"] {
+    background: #0f766e;
+    border-color: #0f766e;
+    color: #ffffff;
+}
+
+.chat-log-filter-btn:hover {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: #334155;
+}
+
+.chat-log-filter-btn[aria-pressed="true"]:hover {
+    background: #0f766e;
+    border-color: #0f766e;
+    color: #ffffff;
+}
+
+.chat-log-filter-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.event-log-item.filtered-out {
+    display: none;
 }
 
 .chat-log {
@@ -825,12 +881,6 @@ body.modal-open #arena-question-text .arena-question-line {
     border-color: #93c5fd;
 }
 
-#game-chat-log-spectator {
-    min-height: 240px;
-    background: #e5e7eb;
-    border-color: #cbd5e1;
-}
-
 #arena-global-chat-box {
     margin-top: 12px;
     background: #fff7cc;
@@ -873,8 +923,7 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 #game-chat-log-team-left,
-#game-chat-log-team-right,
-#game-chat-log-spectator {
+#game-chat-log-team-right {
     height: 240px;
     min-height: 240px;
     max-height: 240px;
@@ -1261,62 +1310,34 @@ body[data-room-role="spectator"] #arena-answer-box {
     min-height: 120px;
 }
 
-#arena-spectator-box .chat-box {
-    margin-top: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-height: 0;
-}
-
-#arena-spectator-box .chat-box.hidden {
-    display: none;
-}
-
-#arena-spectator-box .chat-box .log-scroll-shell {
-    flex: 0 0 240px;
-    min-height: 240px;
-    max-height: 240px;
-}
-
-#arena-spectator-box .chat-box .chat-compose {
-    margin-top: auto;
-}
-
 #arena-global-chat-box {
     gap: 8px;
 }
 
 /* 狭いチャット欄でも本文が1文字ずつ縦崩れしないようにする */
-.arena-player-box .chat-log .event-log-item,
-#arena-spectator-box .chat-log .event-log-item {
+.arena-player-box .chat-log .event-log-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: 6px;
 }
 
-.arena-player-box .chat-log .event-log-message,
-#arena-spectator-box .chat-log .event-log-message {
+.arena-player-box .chat-log .event-log-message {
     min-width: 0;
 }
 
-.arena-player-box .chat-log .event-log-message.chat,
-#arena-spectator-box .chat-log .event-log-message.chat {
+.arena-player-box .chat-log .event-log-message.chat {
     display: block;
 }
 
 .arena-player-box .chat-log .event-log-chat-name,
-#arena-spectator-box .chat-log .event-log-chat-name,
-.arena-player-box .chat-log .event-log-chat-body,
-#arena-spectator-box .chat-log .event-log-chat-body {
+.arena-player-box .chat-log .event-log-chat-body {
     display: inline;
     white-space: pre-wrap;
     word-break: break-word;
 }
 
-.arena-player-box .chat-log .event-log-time,
-#arena-spectator-box .chat-log .event-log-time {
+.arena-player-box .chat-log .event-log-time {
     margin-left: 0;
     white-space: nowrap;
     align-self: end;
@@ -1491,58 +1512,6 @@ body[data-room-role="spectator"] #arena-answer-box {
         overflow-y: auto;
         padding-right: 4px;
     }
-
-    #arena-spectator-box .chat-box {
-        grid-column: 1;
-        min-width: 0;
-        margin-top: 0;
-    }
-
-    /* 対戦開始後などで全体チャットが消えたら、観戦者ボックスを横2カラムに拡張する */
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box {
-        grid-column: 1 / -1;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        grid-template-rows: auto minmax(220px, auto) auto;
-    }
-
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .arena-spectator-label {
-        grid-column: 1;
-        grid-row: 1;
-    }
-
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-list {
-        grid-column: 1;
-        grid-row: 2;
-        align-self: start;
-    }
-
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) {
-        display: contents;
-    }
-
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .arena-chat-title {
-        grid-column: 2;
-        grid-row: 1;
-        margin-bottom: 0;
-        align-self: end;
-    }
-
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .log-scroll-shell {
-        grid-column: 2;
-        grid-row: 2;
-    }
-
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .chat-log {
-        height: 240px;
-        min-height: 240px;
-        max-height: 240px;
-    }
-
-    #arena-lower-layout:has(#arena-global-chat-box.hidden) #arena-spectator-box .chat-box:not(.hidden) .chat-compose {
-        grid-column: 2;
-        grid-row: 3;
-        margin-top: 0;
-    }
 }
 
 /* 992px - 1199px: compact desktop */
@@ -1552,7 +1521,7 @@ body[data-room-role="spectator"] #arena-answer-box {
     }
 
     #arena-board-layout {
-        grid-template-columns: 190px minmax(0, 1fr) 190px;
+        grid-template-columns: 300px minmax(0, 1fr) 300px;
         grid-template-areas: "left question right";
         justify-content: center;
         gap: 10px;
