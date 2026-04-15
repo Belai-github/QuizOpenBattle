@@ -91,11 +91,16 @@ class QuizGameManager:
                     }
                 )
 
+            raw_question_text = str(room.get("question_text", ""))
+            # 問題文の生テキストは出題者のみに配信し、他ロールには長さ情報のみ渡す。
+            question_text_for_client = raw_question_text if chat_role == "questioner" else ""
+
             return {
                 "room_owner_id": owner_id,
                 "questioner_id": owner_id,
                 "questioner_name": room["questioner_name"],
-                "question_text": room["question_text"],
+                "question_text": question_text_for_client,
+                "question_length": len(raw_question_text),
                 "game_state": room.get("game_state", "waiting"),
                 "role": role,
                 "chat_role": chat_role,

@@ -174,6 +174,22 @@ button:hover {
     object-fit: contain;
 }
 
+.question-visibility-btn {
+    width: auto;
+    min-height: 32px;
+    margin-top: 0;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    line-height: 1;
+    background: #1d4ed8;
+}
+
+.question-visibility-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+}
+
 .rulebook-btn {
     flex: 0 0 32px;
     width: 32px;
@@ -721,17 +737,20 @@ button:hover {
     background: #ffffff;
     min-height: 160px;
     display: flex;
-    align-items: flex-start;
-    justify-content: flex-start;
+    align-items: center;
+    justify-content: center;
     padding: 12px;
 }
 
 #arena-question-text {
     margin: 0;
+    display: inline-block;
+    max-width: 100%;
     font-size: clamp(1.8rem, 4vw, 2.5rem);
     line-height: 1.35;
     font-weight: 700;
     text-align: left;
+    white-space: pre-wrap;
     word-break: break-word;
 }
 
@@ -835,7 +854,8 @@ button:hover {
 
     #arena-question-board {
         min-height: 180px;
-        align-items: flex-start;
+        align-items: center;
+        justify-content: center;
     }
 
     #arena-player-left .chat-box.read-only .chat-log,

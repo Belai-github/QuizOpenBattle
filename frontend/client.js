@@ -12,6 +12,7 @@ const alertOkBtn = document.getElementById("alert-ok-btn");
 const leaveGameArenaEl = document.getElementById("leave-game-arena");
 const startGameBtnEl = document.getElementById("start-game-btn");
 const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
+const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-visibility-btn");
 const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
@@ -22,6 +23,10 @@ let userRole = null; // "questioner", "team-left", "team-right", "spectator", nu
 let currentRoomGameState = null; // "waiting" | "playing" | null
 const CHAT_MAX_LENGTH = 200;
 const CHAT_MIN_INTERVAL_MS = 800;
+const ARENA_MASK_CHAR = "■";
+const ARENA_MIN_CHARS_PER_LINE = 4;
+let currentArenaQuestionRawText = "";
+let questionerShowRawQuestionText = false;
 const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
 let lastRulebookTriggerEl = null;
 
@@ -232,13 +237,33 @@ function showWaitingRoomScreen() {
     document.getElementById("waiting-room-screen").style.display = "block";
     document.getElementById("game-arena-screen").style.display = "none";
     updateStartGameButtonVisibility(null);
+    updateQuestionVisibilityButton();
     updateChatBoxVisibility();
 }
 
 function showGameArenaScreen() {
     document.getElementById("waiting-room-screen").style.display = "none";
     document.getElementById("game-arena-screen").style.display = "block";
+    updateQuestionVisibilityButton();
     updateChatBoxVisibility();
+}
+
+function updateQuestionVisibilityButton() {
+    if (!toggleQuestionVisibilityBtnEl) return;
+
+    const canToggle = isInGameArena() && userRole === "questioner";
+    toggleQuestionVisibilityBtnEl.classList.toggle("hidden", !canToggle);
+    toggleQuestionVisibilityBtnEl.disabled = !canToggle;
+
+    if (!canToggle) {
+        toggleQuestionVisibilityBtnEl.textContent = "問題文表示";
+        toggleQuestionVisibilityBtnEl.title = "伏せ字と問題文表示を切り替え";
+        return;
+    }
+
+    const isRawVisible = questionerShowRawQuestionText;
+    toggleQuestionVisibilityBtnEl.textContent = isRawVisible ? "伏せ字表示" : "問題文表示";
+    toggleQuestionVisibilityBtnEl.title = isRawVisible ? "伏せ字表示に切り替え" : "問題文表示に切り替え";
 }
 
 function updateStartGameButtonVisibility(currentRoom) {
@@ -426,6 +451,114 @@ function renderNameList(listEl, names) {
     });
 }
 
+function splitIntoGraphemes(text) {
+    if (typeof text !== "string" || text.length === 0) return [];
+
+    // 絵文字や結合文字を1文字として扱う。
+    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+        const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
+        return Array.from(segmenter.segment(text), (seg) => seg.segment);
+    }
+
+    return Array.from(text);
+}
+
+function getArenaCharsPerLine() {
+    const boardEl = document.getElementById("arena-question-board");
+    const questionEl = document.getElementById("arena-question-text");
+    if (!boardEl || !questionEl) {
+        return 10;
+    }
+
+    const boardStyle = window.getComputedStyle(boardEl);
+    const questionStyle = window.getComputedStyle(questionEl);
+    const horizontalPadding = parseFloat(boardStyle.paddingLeft || "0") + parseFloat(boardStyle.paddingRight || "0");
+    const availableWidth = Math.max(boardEl.clientWidth - horizontalPadding, 40);
+
+    const font = `${questionStyle.fontWeight} ${questionStyle.fontSize} ${questionStyle.fontFamily}`;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+        return 10;
+    }
+
+    ctx.font = font;
+    const maskWidth = Math.max(ctx.measureText(ARENA_MASK_CHAR).width, 1);
+    return Math.max(Math.floor(availableWidth / maskWidth), ARENA_MIN_CHARS_PER_LINE);
+}
+
+function buildMaskedQuestionText(questionText, charsPerLine) {
+    const graphemes = splitIntoGraphemes(String(questionText || ""));
+    const normalized = graphemes.filter((ch) => ch !== "\n" && ch !== "\r");
+    if (normalized.length === 0) {
+        return "問題文を準備中...";
+    }
+
+    const lineLimit = Number.isFinite(charsPerLine) ? Math.max(Math.floor(charsPerLine), ARENA_MIN_CHARS_PER_LINE) : 10;
+
+    let lineLength = 0;
+    let output = "";
+
+    normalized.forEach(() => {
+        output += ARENA_MASK_CHAR;
+        lineLength += 1;
+
+        if (lineLength >= lineLimit) {
+            output += "\n";
+            lineLength = 0;
+        }
+    });
+
+    return output.replace(/\n+$/g, "");
+}
+
+function buildPlainQuestionText(questionText, charsPerLine) {
+    const graphemes = splitIntoGraphemes(String(questionText || ""));
+    const normalized = graphemes.filter((ch) => ch !== "\n" && ch !== "\r");
+    if (normalized.length === 0) {
+        return "問題文を準備中...";
+    }
+
+    const lineLimit = Number.isFinite(charsPerLine) ? Math.max(Math.floor(charsPerLine), ARENA_MIN_CHARS_PER_LINE) : 10;
+
+    let lineLength = 0;
+    let output = "";
+
+    normalized.forEach((ch) => {
+        output += ch;
+        lineLength += 1;
+
+        if (lineLength >= lineLimit) {
+            output += "\n";
+            lineLength = 0;
+        }
+    });
+
+    return output.replace(/\n+$/g, "");
+}
+
+function renderMaskedArenaQuestionText() {
+    const questionEl = document.getElementById("arena-question-text");
+    if (!questionEl) return;
+
+    const charsPerLine = getArenaCharsPerLine();
+    questionEl.textContent = buildMaskedQuestionText(currentArenaQuestionRawText, charsPerLine);
+}
+
+function renderArenaQuestionText() {
+    const questionEl = document.getElementById("arena-question-text");
+    if (!questionEl) return;
+
+    const charsPerLine = getArenaCharsPerLine();
+    const canShowRaw = userRole === "questioner" && questionerShowRawQuestionText;
+    if (canShowRaw) {
+        questionEl.textContent = buildPlainQuestionText(currentArenaQuestionRawText, charsPerLine);
+        return;
+    }
+
+    questionEl.textContent = buildMaskedQuestionText(currentArenaQuestionRawText, charsPerLine);
+}
+
 function renderArena(currentRoom) {
     const titleEl = document.getElementById("arena-room-title");
     const questionEl = document.getElementById("arena-question-text");
@@ -435,7 +568,10 @@ function renderArena(currentRoom) {
 
     if (!currentRoom) {
         titleEl.textContent = "出題者: -";
+        currentArenaQuestionRawText = "";
+        questionerShowRawQuestionText = false;
         questionEl.textContent = "問題文を準備中...";
+        updateQuestionVisibilityButton();
         renderNameList(leftListEl, []);
         renderNameList(rightListEl, []);
         renderNameList(spectatorListEl, []);
@@ -447,7 +583,20 @@ function renderArena(currentRoom) {
         ? `${currentRoom.questioner_name} (You)`
         : currentRoom.questioner_name;
     titleEl.textContent = `出題者: ${questionerLabel}`;
-    questionEl.textContent = currentRoom.question_text || "問題文を準備中...";
+
+    const serverQuestionText = String(currentRoom.question_text || "");
+    const serverQuestionLength = Number(currentRoom.question_length || 0);
+    if (serverQuestionText) {
+        currentArenaQuestionRawText = serverQuestionText;
+    } else if (Number.isFinite(serverQuestionLength) && serverQuestionLength > 0) {
+        // 非出題者には問題文本文を配信しないため、長さ情報だけで伏せ字表示を作る。
+        currentArenaQuestionRawText = ARENA_MASK_CHAR.repeat(Math.floor(serverQuestionLength));
+    } else {
+        currentArenaQuestionRawText = "";
+    }
+
+    renderArenaQuestionText();
+    updateQuestionVisibilityButton();
 
     const leftPlayers = Array.isArray(currentRoom.left_participants) ? currentRoom.left_participants : [];
     const rightPlayers = Array.isArray(currentRoom.right_participants) ? currentRoom.right_participants : [];
@@ -872,8 +1021,21 @@ shuffleParticipantsBtnEl?.addEventListener("click", async () => {
     );
 });
 
+toggleQuestionVisibilityBtnEl?.addEventListener("click", () => {
+    if (!isInGameArena() || userRole !== "questioner") {
+        return;
+    }
+
+    questionerShowRawQuestionText = !questionerShowRawQuestionText;
+    updateQuestionVisibilityButton();
+    renderArenaQuestionText();
+});
+
 window.addEventListener("resize", () => {
     syncArenaPlayerBoxHeights();
+    if (isInGameArena()) {
+        renderArenaQuestionText();
+    }
 });
 
 leaveGameArenaEl?.addEventListener("click", requestRoomExit);
