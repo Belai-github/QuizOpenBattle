@@ -3266,12 +3266,15 @@ async function handleOpenVoteRequest(payload) {
 
 async function handleAnswerVoteRequest(payload) {
     const voteId = String(payload?.vote_id || "");
+    const payloadTeam = String(payload?.team || "");
     const teamLabel = String(payload?.team_label || "");
     const answererName = String(payload?.answerer_name || "参加者");
     const answerText = String(payload?.answer_text || "");
     const totalVoters = Number(payload?.total_voters || 0);
 
     if (!voteId) return;
+    if (isPlayerRole(userRole) && payloadTeam && payloadTeam !== userRole) return;
+    if (!answerText) return;
     if (handledAnswerVoteIds.has(voteId)) return;
     handledAnswerVoteIds.add(voteId);
 

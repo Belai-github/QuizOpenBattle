@@ -343,6 +343,16 @@ class QuizGameManager:
                 if is_event_recipient
                 else None
             )
+            response_event_payload = (
+                self._resolve_event_payload_for_client(
+                    current_room,
+                    event_type,
+                    event_chat_type,
+                    event_payload,
+                )
+                if is_event_recipient
+                else None
+            )
             response_event_chat_type = event_chat_type if is_event_recipient else None
 
             response = {
@@ -356,7 +366,7 @@ class QuizGameManager:
                 "event_chat_type": response_event_chat_type,
                 "event_room_id": event_room_id,
                 "target_screen": target_screen,
-                "event_payload": event_payload if is_event_recipient else None,
+                "event_payload": response_event_payload,
                 "event_view": (
                     {
                         "display_message": response_event_message,
@@ -489,6 +499,48 @@ class QuizGameManager:
             return self._mask_answer_text_for_viewer(message)
 
         return message
+
+    def _resolve_event_payload_for_client(
+        self,
+        current_room: dict | None,
+        event_type: str | None,
+        event_chat_type: str | None,
+        event_payload: dict | None,
+    ):
+        if not isinstance(event_payload, dict):
+            return event_payload
+
+        payload = dict(event_payload)
+        event_kind = str(event_type or "").strip()
+        if event_kind not in {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}:
+            return payload
+
+        # 終了時の再公開は既存仕様を維持する。
+        if str(payload.get("reveal_phase") or "").strip() == "finished":
+            return payload
+
+        if not isinstance(current_room, dict):
+            return payload
+
+        room_state = str(current_room.get("game_state", "waiting") or "waiting")
+        if room_state != "playing":
+            return payload
+
+        viewer_type = str(current_room.get("role", "") or "")
+        viewer_role = str(current_room.get("chat_role", "") or "")
+        source_team = str(payload.get("team") or event_chat_type or "").strip()
+
+        if viewer_type == "owner" or viewer_role == "questioner":
+            return payload
+
+        if viewer_type == "spectator" or viewer_role == "spectator":
+            payload.pop("answer_text", None)
+            return payload
+
+        if viewer_type == "participant" and viewer_role in {"team-left", "team-right"} and source_team in {"team-left", "team-right"} and source_team != viewer_role:
+            payload.pop("answer_text", None)
+
+        return payload
 
     async def _rebroadcast_finished_answer_logs(self, room_owner_id: str):
         room = self.rooms.get(room_owner_id)

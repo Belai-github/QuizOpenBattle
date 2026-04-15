@@ -70,6 +70,41 @@ def _resolve_event_message_for_viewer(
     return message
 
 
+def _resolve_event_payload_for_viewer(
+    event_type: str,
+    event_chat_type: str,
+    event_payload: dict | None,
+    chat_role: str,
+    room_state: str,
+    viewer_role: str,
+):
+    if not isinstance(event_payload, dict):
+        return None
+
+    payload = dict(event_payload)
+    if event_type not in {"answer_attempt", "answer_vote_request", "answer_vote_resolved"}:
+        return payload
+
+    if str(payload.get("reveal_phase") or "").strip() == "finished":
+        return payload
+
+    if room_state != "playing":
+        return payload
+
+    if viewer_role == "owner" or chat_role == "questioner":
+        return payload
+
+    if viewer_role == "spectator" or chat_role == "spectator":
+        payload.pop("answer_text", None)
+        return payload
+
+    source_team = str(payload.get("team") or event_chat_type or "").strip()
+    if chat_role in {"team-left", "team-right"} and source_team in {"team-left", "team-right"} and source_team != chat_role:
+        payload.pop("answer_text", None)
+
+    return payload
+
+
 def _normalized_question_chars(text: str):
     normalized_text = unicodedata.normalize("NFC", str(text or ""))
     return [ch for ch in normalized_text if ch not in {"\n", "\r"}]
@@ -278,11 +313,20 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         for entry in sorted_history:
             event_chat_type = str(entry.get("event_chat_type", "")).strip()
             event_type = str(entry.get("event_type", "")).strip()
+            event_payload = entry.get("event_payload") if isinstance(entry.get("event_payload"), dict) else None
             event_message = _resolve_event_message_for_viewer(
                 str(entry.get("event_message", "")).strip(),
                 event_type,
                 event_chat_type,
-                entry.get("event_payload") if isinstance(entry.get("event_payload"), dict) else None,
+                event_payload,
+                chat_role,
+                room_state,
+                ctx["role"],
+            )
+            resolved_event_payload = _resolve_event_payload_for_viewer(
+                event_type,
+                event_chat_type,
+                event_payload,
                 chat_role,
                 room_state,
                 ctx["role"],
@@ -315,6 +359,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
                     "event_scope": str(entry.get("event_scope", event_chat_type)).strip() or event_chat_type,
                     "event_revision": max(1, int(entry.get("event_revision", 1) or 1)),
                     "event_version": max(1, int(entry.get("event_version", 1) or 1)),
+                    "event_payload": resolved_event_payload,
                 }
             )
     if room_state == "playing" and ctx["role"] == "participant":
