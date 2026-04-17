@@ -12,18 +12,46 @@
 <body>
     <h1>QuizOpenBattle</h1>
 
-    <div id="login-screen">
-        <div class="auth-status-card">
-            <p id="auth-status-text">パスキーでアカウントを作成、またはログインしてください。</p>
+    <div id="login-screen" data-auth-state="guest">
+        <div class="login-hero-card">
+            <p class="login-eyebrow">Passkey Account</p>
+            <h2 class="login-title">アカウントを作成してゲームに参加</h2>
+            <p id="auth-support-note" class="login-subtitle">はじめての人はアカウント名を決めて作成、2回目以降はパスキーでログインしてください。</p>
+        </div>
+
+        <div id="auth-signed-out-panel" class="auth-choice-layout">
+            <section class="auth-flow-card">
+                <div class="auth-step-badge">1. はじめて利用する</div>
+                <h3>アカウント作成</h3>
+                <p class="auth-flow-text">この端末で使うアカウント名を決めて、パスキーを登録します。</p>
+                <label for="nickname" class="auth-label">アカウント名</label>
+                <input type="text" id="nickname" placeholder="アカウント名を入力">
+                <p id="auth-create-help" class="auth-inline-note">作成後は同じパスキーでログインできます。</p>
+                <button id="register-btn" type="button">この名前でアカウント作成</button>
+            </section>
+
+            <section class="auth-flow-card auth-flow-card-login">
+                <div class="auth-step-badge">2. すでに登録済み</div>
+                <h3>ログイン</h3>
+                <p class="auth-flow-text">登録済みのパスキーを使って、この端末のアカウントへ戻ります。</p>
+                <button id="login-passkey-btn" type="button" class="secondary-action-btn">パスキーでログイン</button>
+            </section>
+        </div>
+
+        <div id="auth-signed-in-panel" class="auth-status-card hidden">
+            <div class="auth-signed-in-header">
+                <div>
+                    <p class="auth-signed-in-label">ログイン中</p>
+                    <p id="auth-status-text">パスキーでアカウントを作成、またはログインしてください。</p>
+                </div>
+                <div id="auth-account-chip" class="auth-account-chip"></div>
+            </div>
             <p id="auth-stats-text" class="auth-stats-text hidden"></p>
+            <div class="auth-join-actions">
+                <button id="join-btn" disabled>ゲームに参加</button>
+                <button id="logout-btn" type="button" class="text-action-btn hidden">ログアウト</button>
+            </div>
         </div>
-        <input type="text" id="nickname" placeholder="アカウント名">
-        <div class="login-auth-actions">
-            <button id="register-btn" type="button">アカウント作成</button>
-            <button id="login-passkey-btn" type="button" class="secondary-action-btn">パスキーでログイン</button>
-        </div>
-        <button id="join-btn" disabled>ゲームに参加</button>
-        <button id="logout-btn" type="button" class="text-action-btn hidden">ログアウト</button>
     </div>
 
     <div id="waiting-room-screen" style="display: none;">

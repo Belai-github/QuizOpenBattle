@@ -38,9 +38,13 @@ def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_ma
     async def get_me(request: Request):
         user = account_auth_manager.get_authenticated_user(request)
         if user is None:
-            return {"authenticated": False}
+            return {
+                "authenticated": False,
+                "webauthn_ready": account_auth_manager.is_webauthn_available(),
+            }
         return {
             "authenticated": True,
+            "webauthn_ready": account_auth_manager.is_webauthn_available(),
             "user": {
                 "user_id": user.user_id,
                 "display_name": user.display_name,

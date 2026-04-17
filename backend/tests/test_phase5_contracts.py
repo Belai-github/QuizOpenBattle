@@ -21,6 +21,7 @@ from backend.storage.reconnect import (
     set_room_pending_disconnect,
     try_restore_participant_reconnect,
 )
+from backend.storage import kifu_storage
 from backend.schemas import (
     JudgeAnswerMessage,
     LegacyQuestionSubmissionMessage,
@@ -253,6 +254,73 @@ class TestAccountStoreContracts(unittest.TestCase):
             right_after = store.get_user(right["user_id"])
             self.assertEqual(left_after["stats"]["wins"], 1)  # type: ignore[index]
             self.assertEqual(right_after["stats"]["losses"], 1)  # type: ignore[index]
+
+    def test_can_link_client_id_blocks_other_users(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            owner = store.create_user(
+                display_name="Owner",
+                user_handle_b64="b3duZXI",
+                credential_id="cred-owner",
+                public_key_b64="pub-owner",
+                sign_count=0,
+            )
+            other = store.create_user(
+                display_name="Other",
+                user_handle_b64="b3RoZXI",
+                credential_id="cred-other",
+                public_key_b64="pub-other",
+                sign_count=0,
+            )
+            store.link_client_id(owner["user_id"], "Client_12345")
+
+            self.assertTrue(store.can_link_client_id(owner["user_id"], "Client_12345"))
+            self.assertFalse(store.can_link_client_id(other["user_id"], "Client_12345"))
+
+    def test_expired_session_is_not_returned(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            user = store.create_user(
+                display_name="Alice",
+                user_handle_b64="YWxpY2U",
+                credential_id="cred-alice",
+                public_key_b64="pub-alice",
+                sign_count=0,
+            )
+            session_id = store.create_session(user["user_id"], "Client_12345")
+
+            with store._lock:  # type: ignore[attr-defined]
+                store._state["sessions"][session_id]["expires_at"] = 1  # type: ignore[attr-defined]
+                store._persist_locked()  # type: ignore[attr-defined]
+
+            self.assertIsNone(store.get_session(session_id, touch=False))
+
+
+class TestKifuIdentityContracts(unittest.TestCase):
+    def test_list_kifu_for_identity_accepts_legacy_client_links(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            original_dir = kifu_storage.KIFU_DIR
+            kifu_storage.KIFU_DIR = tmp_dir
+            try:
+                room = {
+                    "question_text": "テスト問題",
+                    "left_participants": {"legacy-client"},
+                    "right_participants": set(),
+                    "spectators": set(),
+                    "game": {"winner": "team-left", "game_status": "finished", "team_left": {}, "team_right": {}, "opened_char_indexes": set()},
+                }
+                nicknames = {"owner-client": "出題者", "legacy-client": "参加者"}
+                client_user_ids = {"owner-client": "user-owner"}
+                kifu_id = kifu_storage.begin_kifu_record("owner-client", room, nicknames, client_user_ids)
+                kifu_storage.finalize_kifu_record(kifu_id, room, "finished")
+
+                rows = kifu_storage.list_kifu_for_identity("user-participant", {"legacy-client"})
+                self.assertEqual(len(rows), 1)
+                detail = kifu_storage.get_kifu_detail_for_identity(kifu_id, "user-participant", {"legacy-client"})
+                self.assertIsNotNone(detail)
+                self.assertEqual(detail["your_role"], "participant")  # type: ignore[index]
+            finally:
+                kifu_storage.KIFU_DIR = original_dir
 
 
 if __name__ == "__main__":

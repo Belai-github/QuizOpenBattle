@@ -1,6 +1,8 @@
 let ws;
 let myClientId = null;
 let currentAccount = null;
+let isAuthBusy = false;
+let isServerWebAuthnReady = true;
 
 const confirmModal = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
@@ -65,6 +67,12 @@ const authStatsTextEl = document.getElementById("auth-stats-text");
 const registerBtnEl = document.getElementById("register-btn");
 const loginPasskeyBtnEl = document.getElementById("login-passkey-btn");
 const logoutBtnEl = document.getElementById("logout-btn");
+const loginScreenEl = document.getElementById("login-screen");
+const authSignedOutPanelEl = document.getElementById("auth-signed-out-panel");
+const authSignedInPanelEl = document.getElementById("auth-signed-in-panel");
+const authSupportNoteEl = document.getElementById("auth-support-note");
+const authCreateHelpEl = document.getElementById("auth-create-help");
+const authAccountChipEl = document.getElementById("auth-account-chip");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
@@ -1478,33 +1486,74 @@ function formatAccountStats(stats) {
 
 function updateAuthUi() {
     const nicknameInputEl = document.getElementById("nickname");
-    if (!nicknameInputEl || !authStatusTextEl || !authStatsTextEl || !registerBtnEl || !loginPasskeyBtnEl || !logoutBtnEl) {
+    if (
+        !nicknameInputEl
+        || !authStatusTextEl
+        || !authStatsTextEl
+        || !registerBtnEl
+        || !loginPasskeyBtnEl
+        || !logoutBtnEl
+        || !loginScreenEl
+        || !authSignedOutPanelEl
+        || !authSignedInPanelEl
+        || !authSupportNoteEl
+        || !authCreateHelpEl
+        || !authAccountChipEl
+    ) {
         return;
     }
 
     if (currentAccount) {
-        authStatusTextEl.textContent = `${currentAccount.display_name} としてログイン済みです。パスキー認証後にゲームへ参加できます。`;
+        loginScreenEl.dataset.authState = "authenticated";
+        authSignedOutPanelEl.classList.add("hidden");
+        authSignedInPanelEl.classList.remove("hidden");
+        authStatusTextEl.textContent = `${currentAccount.display_name} でログイン済みです。下のボタンからゲームへ参加できます。`;
+        if (!isServerWebAuthnReady) {
+            authStatusTextEl.textContent = "サーバー側で passkey 認証が無効です。依存導入後に再試行してください。";
+        }
         authStatsTextEl.textContent = formatAccountStats(currentAccount.stats);
         authStatsTextEl.classList.remove("hidden");
         nicknameInputEl.value = currentAccount.display_name;
         nicknameInputEl.disabled = true;
+        authAccountChipEl.textContent = currentAccount.display_name;
         registerBtnEl.disabled = true;
         loginPasskeyBtnEl.disabled = true;
         logoutBtnEl.classList.remove("hidden");
-        document.getElementById("join-btn").disabled = false;
+        logoutBtnEl.disabled = isAuthBusy;
+        document.getElementById("join-btn").disabled = isAuthBusy;
+        authSupportNoteEl.textContent = "ログイン状態はこのブラウザに保持されます。別タブの同時参加はできません。";
+        authCreateHelpEl.textContent = "このブラウザの過去の棋譜は、紐付いた client_id を通じて引き継がれます。";
         document.getElementById("my-name").textContent = currentAccount.display_name;
         return;
     }
 
-    authStatusTextEl.textContent = "パスキーでアカウントを作成、またはログインしてください。";
+    loginScreenEl.dataset.authState = "guest";
+    authSignedOutPanelEl.classList.remove("hidden");
+    authSignedInPanelEl.classList.add("hidden");
+    authStatusTextEl.textContent = isServerWebAuthnReady
+        ? "まだログインしていません。"
+        : "サーバー側で passkey 認証が利用できません。";
     authStatsTextEl.textContent = "";
     authStatsTextEl.classList.add("hidden");
-    nicknameInputEl.disabled = false;
-    registerBtnEl.disabled = !isWebAuthnSupported();
-    loginPasskeyBtnEl.disabled = !isWebAuthnSupported();
+    nicknameInputEl.disabled = isAuthBusy;
+    registerBtnEl.disabled = isAuthBusy || !isWebAuthnSupported() || !isServerWebAuthnReady;
+    loginPasskeyBtnEl.disabled = isAuthBusy || !isWebAuthnSupported() || !isServerWebAuthnReady;
     logoutBtnEl.classList.add("hidden");
+    logoutBtnEl.disabled = true;
+    authAccountChipEl.textContent = "";
+    authSupportNoteEl.textContent = isServerWebAuthnReady
+        ? "はじめての人は左から作成、登録済みの人は右からログインしてください。ログイン後にゲーム参加ボタンが有効になります。"
+        : "サーバーで passkey 認証ライブラリが読み込めていません。セットアップ完了後にボタンが有効になります。";
+    authCreateHelpEl.textContent = isServerWebAuthnReady
+        ? "アカウント名は最初に決めます。作成後は同じパスキーでログインできます。"
+        : "いまは passkey 登録を開始できません。サーバー設定を確認してください。";
     document.getElementById("join-btn").disabled = true;
     document.getElementById("my-name").textContent = "";
+}
+
+function setAuthBusy(nextValue) {
+    isAuthBusy = Boolean(nextValue);
+    updateAuthUi();
 }
 
 async function fetchJsonOrThrow(path, init = {}) {
@@ -1528,6 +1577,7 @@ async function fetchJsonOrThrow(path, init = {}) {
 
 async function refreshAuthState() {
     const payload = await fetchJsonOrThrow("/api/me");
+    isServerWebAuthnReady = payload?.webauthn_ready !== false;
     currentAccount = payload?.authenticated ? payload.user || null : null;
     updateAuthUi();
     return currentAccount;
@@ -1578,6 +1628,7 @@ function getAuthErrorMessage(error, fallbackMessage) {
 }
 
 async function runPasskeyRegistration() {
+    if (isAuthBusy) return;
     if (!isWebAuthnSupported()) {
         await showAlertModal("このブラウザは passkey に対応していません。");
         return;
@@ -1590,6 +1641,7 @@ async function runPasskeyRegistration() {
     }
 
     const clientId = getOrCreatePersistentClientId();
+    setAuthBusy(true);
     try {
         const startPayload = await fetchJsonOrThrow("/api/auth/register/start", {
             method: "POST",
@@ -1623,19 +1675,24 @@ async function runPasskeyRegistration() {
         await showAlertModal("アカウントを作成しました。ゲームに参加できます。");
     } catch (error) {
         if (isPasskeyAbortError(error)) {
+            setAuthBusy(false);
             return;
         }
         await showAlertModal(getAuthErrorMessage(error, "アカウント作成に失敗しました。時間をおいて再試行してください。"));
+    } finally {
+        setAuthBusy(false);
     }
 }
 
 async function runPasskeyLogin() {
+    if (isAuthBusy) return;
     if (!isWebAuthnSupported()) {
         await showAlertModal("このブラウザは passkey に対応していません。");
         return;
     }
 
     const clientId = getOrCreatePersistentClientId();
+    setAuthBusy(true);
     try {
         const startPayload = await fetchJsonOrThrow("/api/auth/login/start", {
             method: "POST",
@@ -1663,13 +1720,17 @@ async function runPasskeyLogin() {
         await showAlertModal("ログインしました。ゲームに参加できます。");
     } catch (error) {
         if (isPasskeyAbortError(error)) {
+            setAuthBusy(false);
             return;
         }
         await showAlertModal(getAuthErrorMessage(error, "ログインに失敗しました。登録済み passkey で再試行してください。"));
+    } finally {
+        setAuthBusy(false);
     }
 }
 
 async function logoutCurrentAccount() {
+    if (isAuthBusy) return;
     const shouldProceed = ws && ws.readyState === WebSocket.OPEN
         ? await showConfirmModal("接続中のゲームから離脱してログアウトしますか？", {
             okLabel: "ログアウト",
@@ -1678,6 +1739,7 @@ async function logoutCurrentAccount() {
         : true;
     if (!shouldProceed) return;
 
+    setAuthBusy(true);
     try {
         await fetchJsonOrThrow("/api/auth/logout", {
             method: "POST",
@@ -3165,7 +3227,9 @@ async function fetchKifuList() {
     const response = await fetch("/api/kifu/list", buildJsonApiFetchInit());
     diagLog("api_kifu_list_response", { status: response.status, ok: response.ok });
     if (!response.ok) {
-        throw new Error("kifu_list_fetch_failed");
+        const error = new Error("kifu_list_fetch_failed");
+        error.status = response.status;
+        throw error;
     }
     const data = await response.json();
     return Array.isArray(data?.kifu) ? data.kifu : [];
@@ -3176,7 +3240,9 @@ async function fetchKifuDetail(kifuId) {
     const response = await fetch(`/api/kifu/${encodeURIComponent(kifuId)}`, buildJsonApiFetchInit());
     diagLog("api_kifu_detail_response", { status: response.status, ok: response.ok, kifu_id: kifuId });
     if (!response.ok) {
-        throw new Error("kifu_detail_fetch_failed");
+        const error = new Error("kifu_detail_fetch_failed");
+        error.status = response.status;
+        throw error;
     }
     return response.json();
 }
@@ -3220,7 +3286,13 @@ function renderKifuListRows(rows) {
             try {
                 const detail = await fetchKifuDetail(row.kifu_id);
                 enterKifuViewer(detail);
-            } catch {
+            } catch (error) {
+                if (error?.status === 401) {
+                    currentAccount = null;
+                    void refreshAuthState().catch(() => {});
+                    void showAlertModal("ログイン状態が失われました。再度 passkey でログインしてください。");
+                    return;
+                }
                 void showAlertModal("棋譜の読み込みに失敗しました。");
             }
         });
@@ -5777,6 +5849,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         }
 
         if (data.event_type === "game_finished") {
+            if (currentAccount) {
+                void refreshAuthState().catch(() => {});
+            }
             closeAllModals();
             void showAlertModal(buildGameFinishedAlertMessage(data));
         } else if (data.event_type === "forced_exit_notice" && data.private_info) {
@@ -6683,7 +6758,13 @@ openKifuListBtnEl?.addEventListener("click", async () => {
         currentKifuList = await fetchKifuList();
         renderKifuListRows(currentKifuList);
         showKifuListScreen();
-    } catch {
+    } catch (error) {
+        if (error?.status === 401) {
+            currentAccount = null;
+            void refreshAuthState().catch(() => {});
+            void showAlertModal("ログイン状態が失われました。再度 passkey でログインしてください。");
+            return;
+        }
         void showAlertModal("棋譜一覧の読み込みに失敗しました。");
     }
 });

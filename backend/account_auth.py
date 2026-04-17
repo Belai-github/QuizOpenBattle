@@ -9,19 +9,43 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, Mapping, Protocol
 
-try:
-    from fastapi import HTTPException, Request, Response
-except ImportError:  # pragma: no cover - test shell may not have app deps installed
-    class HTTPException(Exception):
-        def __init__(self, status_code: int, detail: str):
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
+if TYPE_CHECKING:
+    from fastapi import HTTPException
+else:
+    try:
+        from fastapi import HTTPException
+    except ImportError:  # pragma: no cover - test shell may not have app deps installed
+        class HTTPException(Exception):
+            def __init__(self, status_code: int, detail: str):
+                super().__init__(detail)
+                self.status_code = status_code
+                self.detail = detail
 
-    Request = Any  # type: ignore
-    Response = Any  # type: ignore
+
+if not TYPE_CHECKING:
+    try:
+        HTTPException
+    except NameError:  # pragma: no cover - defensive fallback
+        class HTTPException(Exception):
+            def __init__(self, status_code: int, detail: str):
+                super().__init__(detail)
+                self.status_code = status_code
+                self.detail = detail
+
+
+class RequestLike(Protocol):
+    headers: Mapping[str, str]
+    cookies: Mapping[str, str]
+    base_url: Any
+    url: Any
+
+
+class ResponseLike(Protocol):
+    def set_cookie(self, *args: Any, **kwargs: Any) -> None: ...
+
+    def delete_cookie(self, *args: Any, **kwargs: Any) -> None: ...
 
 from backend.auth import MAX_NICKNAME_LENGTH, is_valid_client_id
 
@@ -162,7 +186,7 @@ class AccountStore:
             for user in self._state["users"].values():
                 if not isinstance(user, dict):
                     continue
-                if normalize_account_name_key(user.get("display_name")) == target_key:
+                if normalize_account_name_key(str(user.get("display_name") or "")) == target_key:
                     return dict(user)
             return None
 
@@ -175,6 +199,16 @@ class AccountStore:
             if isinstance(user_id, str) and user_id != "":
                 return user_id
             return None
+
+    def can_link_client_id(self, user_id: str, client_id: str) -> bool:
+        cid = str(client_id or "").strip()
+        if not is_valid_client_id(cid):
+            return False
+        with self._lock:
+            owner_id = self._state["client_links"].get(cid)
+            if not isinstance(owner_id, str) or owner_id == "":
+                return True
+            return owner_id == str(user_id or "")
 
     def get_linked_client_ids(self, user_id: str) -> list[str]:
         with self._lock:
@@ -405,6 +439,13 @@ class AccountAuthManager:
         self.pending_registration_ceremonies: dict[str, dict[str, Any]] = {}
         self.pending_authentication_ceremonies: dict[str, dict[str, Any]] = {}
 
+    def is_webauthn_available(self) -> bool:
+        try:
+            import webauthn  # type: ignore # noqa: F401
+        except ImportError:
+            return False
+        return True
+
     def _require_webauthn(self):
         try:
             import webauthn  # type: ignore
@@ -418,7 +459,7 @@ class AccountAuthManager:
 
         return webauthn, AuthenticatorSelectionCriteria, ResidentKeyRequirement, UserVerificationRequirement
 
-    def _resolve_origin(self, request: Request) -> str:
+    def _resolve_origin(self, request: RequestLike) -> str:
         override = str(os.getenv("QUIZ_WEBAUTHN_ORIGIN", "")).strip()
         if override != "":
             return override.rstrip("/")
@@ -427,7 +468,7 @@ class AccountAuthManager:
             return header_origin.rstrip("/")
         return str(request.base_url).rstrip("/")
 
-    def _resolve_rp_id(self, request: Request) -> str:
+    def _resolve_rp_id(self, request: RequestLike) -> str:
         override = str(os.getenv("QUIZ_WEBAUTHN_RP_ID", "")).strip()
         if override != "":
             return override
@@ -452,7 +493,7 @@ class AccountAuthManager:
             "current_client_id": user.current_client_id,
         }
 
-    def _set_session_cookie(self, response: Response, session_id: str, request: Request) -> None:
+    def _set_session_cookie(self, response: ResponseLike, session_id: str, request: RequestLike) -> None:
         response.set_cookie(
             key=SESSION_COOKIE_NAME,
             value=session_id,
@@ -463,16 +504,16 @@ class AccountAuthManager:
             path="/",
         )
 
-    def clear_session_cookie(self, response: Response) -> None:
+    def clear_session_cookie(self, response: ResponseLike) -> None:
         response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
 
-    def get_authenticated_user(self, request: Request) -> AuthenticatedUser | None:
+    def get_authenticated_user(self, request: RequestLike) -> AuthenticatedUser | None:
         session_id = str(request.cookies.get(SESSION_COOKIE_NAME, "") or "").strip()
         if session_id == "":
             return None
         return self.store.build_authenticated_user(session_id)
 
-    def require_authenticated_user(self, request: Request) -> AuthenticatedUser:
+    def require_authenticated_user(self, request: RequestLike) -> AuthenticatedUser:
         user = self.get_authenticated_user(request)
         if user is None:
             raise HTTPException(status_code=401, detail="not_authenticated")
@@ -483,7 +524,7 @@ class AccountAuthManager:
         self.store.update_session_client_id(session_id, client_id)
         return linked
 
-    def begin_registration(self, display_name: str, request: Request) -> dict[str, Any]:
+    def begin_registration(self, display_name: str, request: RequestLike) -> dict[str, Any]:
         webauthn, AuthenticatorSelectionCriteria, ResidentKeyRequirement, UserVerificationRequirement = self._require_webauthn()
         self._purge_pending()
 
@@ -528,8 +569,8 @@ class AccountAuthManager:
         self,
         ceremony_id: str,
         credential: dict[str, Any],
-        request: Request,
-        response: Response,
+        request: RequestLike,
+        response: ResponseLike,
         client_id: str | None = None,
     ) -> dict[str, Any]:
         webauthn, _, _, _ = self._require_webauthn()
@@ -554,6 +595,9 @@ class AccountAuthManager:
 
         credential_id = _base64url_encode(verification.credential_id)
         public_key_b64 = _base64url_encode(verification.credential_public_key)
+        requested_client_id = str(client_id or "").strip()
+        if requested_client_id != "" and not self.store.can_link_client_id("", requested_client_id):
+            raise HTTPException(status_code=409, detail="client_id_owned_by_other_user")
         try:
             user = self.store.create_user(
                 display_name=str(pending.get("display_name") or ""),
@@ -568,16 +612,20 @@ class AccountAuthManager:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-        session_id = self.store.create_session(str(user.get("user_id") or ""), str(client_id or "").strip())
+        user_id = str(user.get("user_id") or "")
+        if requested_client_id != "" and not self.store.can_link_client_id(user_id, requested_client_id):
+            raise HTTPException(status_code=409, detail="client_id_owned_by_other_user")
+
+        session_id = self.store.create_session(user_id, requested_client_id)
         self._set_session_cookie(response, session_id, request)
-        if str(client_id or "").strip() != "":
-            self.link_client_id_for_user(str(user.get("user_id") or ""), session_id, str(client_id or "").strip())
+        if requested_client_id != "":
+            self.link_client_id_for_user(user_id, session_id, requested_client_id)
         authenticated = self.store.build_authenticated_user(session_id)
         if authenticated is None:
             raise HTTPException(status_code=500, detail="session_creation_failed")
         return self._make_public_user_payload(authenticated)
 
-    def begin_authentication(self, request: Request) -> dict[str, Any]:
+    def begin_authentication(self, request: RequestLike) -> dict[str, Any]:
         webauthn, _, _, UserVerificationRequirement = self._require_webauthn()
         self._purge_pending()
 
@@ -606,8 +654,8 @@ class AccountAuthManager:
         self,
         ceremony_id: str,
         credential: dict[str, Any],
-        request: Request,
-        response: Response,
+        request: RequestLike,
+        response: ResponseLike,
         client_id: str | None = None,
     ) -> dict[str, Any]:
         webauthn, _, _, _ = self._require_webauthn()
@@ -645,17 +693,21 @@ class AccountAuthManager:
         if user is None:
             raise HTTPException(status_code=404, detail="user_not_found")
 
-        session_id = self.store.create_session(user_id, str(client_id or "").strip())
+        requested_client_id = str(client_id or "").strip()
+        if requested_client_id != "" and not self.store.can_link_client_id(user_id, requested_client_id):
+            raise HTTPException(status_code=409, detail="client_id_owned_by_other_user")
+
+        session_id = self.store.create_session(user_id, requested_client_id)
         self._set_session_cookie(response, session_id, request)
-        if str(client_id or "").strip() != "":
-            self.link_client_id_for_user(user_id, session_id, str(client_id or "").strip())
+        if requested_client_id != "":
+            self.link_client_id_for_user(user_id, session_id, requested_client_id)
 
         authenticated = self.store.build_authenticated_user(session_id)
         if authenticated is None:
             raise HTTPException(status_code=500, detail="session_creation_failed")
         return self._make_public_user_payload(authenticated)
 
-    def logout(self, request: Request, response: Response) -> None:
+    def logout(self, request: RequestLike, response: ResponseLike) -> None:
         session_id = str(request.cookies.get(SESSION_COOKIE_NAME, "") or "").strip()
         if session_id != "":
             self.store.delete_session(session_id)
@@ -670,7 +722,7 @@ class AccountAuthManager:
             return False
         return owner_id == str(user_id or "")
 
-    def ensure_linked_client_for_request(self, request: Request, client_id: str) -> AuthenticatedUser:
+    def ensure_linked_client_for_request(self, request: RequestLike, client_id: str) -> AuthenticatedUser:
         user = self.require_authenticated_user(request)
         cid = str(client_id or "").strip()
         if not is_valid_client_id(cid):

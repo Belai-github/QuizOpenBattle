@@ -44,19 +44,43 @@ h1 {
 #login-screen {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
 }
 
-.auth-status-card {
+.login-hero-card,
+.auth-status-card,
+.auth-flow-card {
     border: 1px solid #d1d5db;
-    border-radius: 12px;
+    border-radius: 16px;
     background: linear-gradient(135deg, #f8fafc, #eefbf7);
-    padding: 12px;
+    padding: 14px;
 }
 
-.auth-status-card p {
+.login-hero-card p,
+.auth-status-card p,
+.auth-flow-card p {
     margin: 0;
     line-height: 1.5;
+}
+
+.login-eyebrow {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #0f766e;
+}
+
+.login-title {
+    margin: 6px 0 4px;
+    font-size: 1.15rem;
+    line-height: 1.35;
+    color: #0f172a;
+}
+
+.login-subtitle {
+    color: #475569;
+    font-size: 0.95rem;
 }
 
 .auth-stats-text {
@@ -65,10 +89,102 @@ h1 {
     font-size: 0.9rem;
 }
 
-.login-auth-actions {
+.auth-choice-layout {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.auth-flow-card {
+    display: flex;
+    flex-direction: column;
     gap: 10px;
+    background: #ffffff;
+}
+
+.auth-flow-card-login {
+    background: linear-gradient(180deg, #f8fbff, #ffffff);
+}
+
+.auth-flow-card-login #login-passkey-btn {
+    margin-top: auto;
+}
+
+.auth-step-badge {
+    display: inline-flex;
+    align-self: flex-start;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.auth-flow-card h3 {
+    margin: 0;
+    font-size: 1.02rem;
+    color: #0f172a;
+}
+
+.auth-flow-text {
+    color: #475569;
+    font-size: 0.92rem;
+}
+
+.auth-label {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #334155;
+}
+
+.auth-inline-note {
+    color: #64748b;
+    font-size: 0.84rem;
+}
+
+.auth-signed-in-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.auth-signed-in-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0f766e;
+}
+
+#auth-status-text {
+    margin-top: 4px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.auth-account-chip {
+    flex: 0 0 auto;
+    min-width: 72px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #0f766e;
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.auth-join-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+@media (min-width: 520px) {
+    .auth-choice-layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
+    }
 }
 
 input,
@@ -176,6 +292,12 @@ button:hover {
 .text-action-btn:hover {
     background: #f1f5f9;
     color: #0f172a;
+}
+
+#join-btn,
+#register-btn,
+#login-passkey-btn {
+    margin-top: 0;
 }
 
 .waiting-room-header {
