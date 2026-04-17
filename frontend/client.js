@@ -68,6 +68,7 @@ const registerBtnEl = document.getElementById("register-btn");
 const loginPasskeyBtnEl = document.getElementById("login-passkey-btn");
 const logoutBtnEl = document.getElementById("logout-btn");
 const loginScreenEl = document.getElementById("login-screen");
+const loginHeroCardEl = document.querySelector(".login-hero-card");
 const authSignedOutPanelEl = document.getElementById("auth-signed-out-panel");
 const authSignedInPanelEl = document.getElementById("auth-signed-in-panel");
 const authSupportNoteEl = document.getElementById("auth-support-note");
@@ -1494,6 +1495,7 @@ function updateAuthUi() {
         || !loginPasskeyBtnEl
         || !logoutBtnEl
         || !loginScreenEl
+        || !loginHeroCardEl
         || !authSignedOutPanelEl
         || !authSignedInPanelEl
         || !authSupportNoteEl
@@ -1505,6 +1507,7 @@ function updateAuthUi() {
 
     if (currentAccount) {
         loginScreenEl.dataset.authState = "authenticated";
+        loginHeroCardEl.classList.add("hidden");
         authSignedOutPanelEl.classList.add("hidden");
         authSignedInPanelEl.classList.remove("hidden");
         authStatusTextEl.textContent = `${currentAccount.display_name} でログイン済みです。下のボタンからゲームへ参加できます。`;
@@ -1528,6 +1531,7 @@ function updateAuthUi() {
     }
 
     loginScreenEl.dataset.authState = "guest";
+    loginHeroCardEl.classList.remove("hidden");
     authSignedOutPanelEl.classList.remove("hidden");
     authSignedInPanelEl.classList.add("hidden");
     authStatusTextEl.textContent = isServerWebAuthnReady
