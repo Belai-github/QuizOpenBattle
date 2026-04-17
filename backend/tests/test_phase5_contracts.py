@@ -1,7 +1,9 @@
 import asyncio
+import tempfile
 import unittest
 from unittest.mock import patch
 
+from backend.account_auth import AccountStore
 from backend.auth import (
     WebSocketAuthManager,
     is_valid_client_id,
@@ -44,14 +46,16 @@ class TestAuthContracts(unittest.TestCase):
         manager = WebSocketAuthManager()
         manager.ticket_ttl_seconds = 30
 
-        ticket_payload = manager.issue_ticket("Client_12345", "Alice")
+        ticket_payload = manager.issue_ticket("Client_12345", "Alice", "user-1", "session-1")
         ticket = ticket_payload["ticket"]
 
-        ok, reason = manager.verify_ticket(ticket, "Client_12345", "Alice")
+        ok, reason, payload = manager.verify_ticket(ticket, "Client_12345")
         self.assertTrue(ok)
         self.assertEqual(reason, "ok")
+        self.assertEqual(payload["user_id"], "user-1")
+        self.assertEqual(payload["session_id"], "session-1")
 
-        ok2, reason2 = manager.verify_ticket(ticket, "Client_12345", "Alice")
+        ok2, reason2, _ = manager.verify_ticket(ticket, "Client_12345")
         self.assertFalse(ok2)
         self.assertEqual(reason2, "reused_ticket")
 
@@ -202,6 +206,53 @@ class TestReconnectContracts(unittest.TestCase):
         set_room_pending_disconnect(manager, "owner1", "c1", "Alice", "team-left", 111.0)
         clear_room_pending_disconnect(manager, "owner1", "c1")
         self.assertEqual(manager.rooms["owner1"]["pending_disconnects"], {})
+
+
+class TestAccountStoreContracts(unittest.TestCase):
+    def test_linked_client_ids_and_session_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            user = store.create_user(
+                display_name="Alice",
+                user_handle_b64="dXNlci1oYW5kbGU",
+                credential_id="cred-1",
+                public_key_b64="pub-1",
+                sign_count=1,
+            )
+            linked = store.link_client_id(user["user_id"], "Client_12345")
+            self.assertEqual(linked, ["Client_12345"])
+            self.assertEqual(store.resolve_user_id_for_client_id("Client_12345"), user["user_id"])
+
+            session_id = store.create_session(user["user_id"], "Client_12345")
+            auth_user = store.build_authenticated_user(session_id)
+            self.assertIsNotNone(auth_user)
+            self.assertEqual(auth_user.user_id, user["user_id"])  # type: ignore[union-attr]
+            self.assertEqual(auth_user.current_client_id, "Client_12345")  # type: ignore[union-attr]
+
+    def test_record_match_result_updates_stats(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            left = store.create_user(
+                display_name="Left",
+                user_handle_b64="bGVmdA",
+                credential_id="cred-left",
+                public_key_b64="pub-left",
+                sign_count=0,
+            )
+            right = store.create_user(
+                display_name="Right",
+                user_handle_b64="cmlnaHQ",
+                credential_id="cred-right",
+                public_key_b64="pub-right",
+                sign_count=0,
+            )
+
+            store.record_match_result({left["user_id"]}, {right["user_id"]}, "team-left")
+
+            left_after = store.get_user(left["user_id"])
+            right_after = store.get_user(right["user_id"])
+            self.assertEqual(left_after["stats"]["wins"], 1)  # type: ignore[index]
+            self.assertEqual(right_after["stats"]["losses"], 1)  # type: ignore[index]
 
 
 if __name__ == "__main__":

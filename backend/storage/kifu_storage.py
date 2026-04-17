@@ -40,29 +40,38 @@ def _read_json(file_path: str) -> dict[str, Any] | None:
     return None
 
 
-def _player_list(ids: set[str], nicknames: dict[str, str]) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
+def _player_list(
+    ids: set[str],
+    nicknames: dict[str, str],
+    client_user_ids: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str | None]] = []
     for client_id in sorted(set(ids)):
         rows.append(
             {
                 "client_id": client_id,
                 "nickname": str(nicknames.get(client_id, "ゲスト") or "ゲスト"),
+                "user_id": str((client_user_ids or {}).get(client_id, "") or "") or None,
             }
         )
     return rows
 
 
 def _touch_access(record: dict[str, Any]) -> None:
-    access = set()
+    access_clients = set()
+    access_users = set()
     owner_id = str(record.get("room_owner_id") or "")
     if owner_id:
-        access.add(owner_id)
+        access_clients.add(owner_id)
 
     questioner = record.get("questioner")
     if isinstance(questioner, dict):
         qid = str(questioner.get("client_id") or "")
         if qid:
-            access.add(qid)
+            access_clients.add(qid)
+        questioner_user_id = str(questioner.get("user_id") or "")
+        if questioner_user_id:
+            access_users.add(questioner_user_id)
 
     participants = record.get("participants_at_start")
     if isinstance(participants, dict):
@@ -75,7 +84,10 @@ def _touch_access(record: dict[str, Any]) -> None:
                     continue
                 cid = str(item.get("client_id") or "")
                 if cid:
-                    access.add(cid)
+                    access_clients.add(cid)
+                user_id = str(item.get("user_id") or "")
+                if user_id:
+                    access_users.add(user_id)
 
     spectators = record.get("spectators_ever", [])
     if isinstance(spectators, list):
@@ -84,12 +96,21 @@ def _touch_access(record: dict[str, Any]) -> None:
                 continue
             cid = str(item.get("client_id") or "")
             if cid:
-                access.add(cid)
+                access_clients.add(cid)
+            user_id = str(item.get("user_id") or "")
+            if user_id:
+                access_users.add(user_id)
 
-    record["access_client_ids"] = sorted(access)
+    record["access_client_ids"] = sorted(access_clients)
+    record["access_user_ids"] = sorted(access_users)
 
 
-def begin_kifu_record(room_owner_id: str, room: dict[str, Any], nicknames: dict[str, str]) -> str:
+def begin_kifu_record(
+    room_owner_id: str,
+    room: dict[str, Any],
+    nicknames: dict[str, str],
+    client_user_ids: dict[str, str] | None = None,
+) -> str:
     started_at_ms = int(time.time() * 1000)
     kifu_id = f"{room_owner_id}-{started_at_ms}-{uuid.uuid4().hex[:8]}"
     game_value = room.get("game")
@@ -111,12 +132,13 @@ def begin_kifu_record(room_owner_id: str, room: dict[str, Any], nicknames: dict[
         "questioner": {
             "client_id": room_owner_id,
             "nickname": str(room.get("questioner_name") or nicknames.get(room_owner_id, "ゲスト") or "ゲスト"),
+            "user_id": str((client_user_ids or {}).get(room_owner_id, "") or "") or None,
         },
         "participants_at_start": {
-            "team_left": _player_list(set(room.get("left_participants", set())), nicknames),
-            "team_right": _player_list(set(room.get("right_participants", set())), nicknames),
+            "team_left": _player_list(set(room.get("left_participants", set())), nicknames, client_user_ids),
+            "team_right": _player_list(set(room.get("right_participants", set())), nicknames, client_user_ids),
         },
-        "spectators_ever": _player_list(set(room.get("spectators", set())), nicknames),
+        "spectators_ever": _player_list(set(room.get("spectators", set())), nicknames, client_user_ids),
         "actions": [],
         "result": {
             "game_status": str(game.get("game_status") or "playing"),
@@ -183,7 +205,7 @@ def resolve_latest_answer_result(kifu_id: str, team: str, answer_text: str, is_c
         return
 
 
-def touch_spectator(kifu_id: str, client_id: str, nickname: str) -> None:
+def touch_spectator(kifu_id: str, client_id: str, nickname: str, user_id: str | None = None) -> None:
     cid = str(client_id or "").strip()
     if cid == "":
         return
@@ -200,7 +222,13 @@ def touch_spectator(kifu_id: str, client_id: str, nickname: str) -> None:
 
     existing_ids = {str(item.get("client_id") or "") for item in spectators if isinstance(item, dict)}
     if cid not in existing_ids:
-        spectators.append({"client_id": cid, "nickname": str(nickname or "ゲスト")})
+        spectators.append(
+            {
+                "client_id": cid,
+                "nickname": str(nickname or "ゲスト"),
+                "user_id": str(user_id or "") or None,
+            }
+        )
 
     _touch_access(record)
     _atomic_write_json(file_path, record)
@@ -249,8 +277,16 @@ def _all_records() -> list[dict[str, Any]]:
     return records
 
 
-def _resolve_role(record: dict[str, Any], client_id: str) -> str | None:
-    cid = str(client_id or "")
+def _matches_identity(entry: dict[str, Any], user_id: str | None, client_ids: set[str]) -> bool:
+    entry_user_id = str(entry.get("user_id") or "")
+    if user_id and entry_user_id == user_id:
+        return True
+    entry_client_id = str(entry.get("client_id") or "")
+    return entry_client_id in client_ids
+
+
+def _resolve_role(record: dict[str, Any], user_id: str | None, client_ids: set[str]) -> str | None:
+    resolved_user_id = str(user_id or "")
 
     def _resolve_participant_or_spectator() -> str | None:
         participants = record.get("participants_at_start")
@@ -259,12 +295,12 @@ def _resolve_role(record: dict[str, Any], client_id: str) -> str | None:
                 values = participants.get(team_key, [])
                 if not isinstance(values, list):
                     continue
-                if any(isinstance(item, dict) and str(item.get("client_id") or "") == cid for item in values):
+                if any(isinstance(item, dict) and _matches_identity(item, resolved_user_id, client_ids) for item in values):
                     return "participant"
 
         spectators = record.get("spectators_ever", [])
         if isinstance(spectators, list):
-            if any(isinstance(item, dict) and str(item.get("client_id") or "") == cid for item in spectators):
+            if any(isinstance(item, dict) and _matches_identity(item, resolved_user_id, client_ids) for item in spectators):
                 return "spectator"
 
         return None
@@ -273,11 +309,17 @@ def _resolve_role(record: dict[str, Any], client_id: str) -> str | None:
         resolved_role = _resolve_participant_or_spectator()
         if resolved_role is not None:
             return resolved_role
-        if cid == str(record.get("room_owner_id") or ""):
+        if str(record.get("room_owner_id") or "") in client_ids:
+            return "questioner"
+        questioner = record.get("questioner")
+        if isinstance(questioner, dict) and resolved_user_id and str(questioner.get("user_id") or "") == resolved_user_id:
             return "questioner"
         return None
 
-    if cid == str(record.get("room_owner_id") or ""):
+    if str(record.get("room_owner_id") or "") in client_ids:
+        return "questioner"
+    questioner = record.get("questioner")
+    if isinstance(questioner, dict) and resolved_user_id and str(questioner.get("user_id") or "") == resolved_user_id:
         return "questioner"
 
     resolved_role = _resolve_participant_or_spectator()
@@ -287,18 +329,20 @@ def _resolve_role(record: dict[str, Any], client_id: str) -> str | None:
     return None
 
 
-def list_kifu_for_client(client_id: str) -> list[dict[str, Any]]:
-    cid = str(client_id or "").strip()
-    if cid == "":
+def list_kifu_for_identity(user_id: str | None, legacy_client_ids: list[str] | set[str] | None) -> list[dict[str, Any]]:
+    resolved_user_id = str(user_id or "").strip()
+    client_ids = {str(item).strip() for item in (legacy_client_ids or []) if str(item).strip() != ""}
+    if resolved_user_id == "" and not client_ids:
         return []
 
     rows: list[dict[str, Any]] = []
     for record in _all_records():
-        access = set(str(v) for v in record.get("access_client_ids", []) if isinstance(v, str))
-        if cid not in access:
+        access_clients = set(str(v) for v in record.get("access_client_ids", []) if isinstance(v, str))
+        access_users = set(str(v) for v in record.get("access_user_ids", []) if isinstance(v, str))
+        if resolved_user_id not in access_users and access_clients.isdisjoint(client_ids):
             continue
 
-        role = _resolve_role(record, cid)
+        role = _resolve_role(record, resolved_user_id or None, client_ids)
         questioner_value = record.get("questioner")
         questioner: dict[str, Any] = questioner_value if isinstance(questioner_value, dict) else {}
         actions_value = record.get("actions")
@@ -320,16 +364,30 @@ def list_kifu_for_client(client_id: str) -> list[dict[str, Any]]:
     return rows
 
 
-def get_kifu_detail_for_client(kifu_id: str, client_id: str) -> dict[str, Any] | None:
+def get_kifu_detail_for_identity(kifu_id: str, user_id: str | None, legacy_client_ids: list[str] | set[str] | None) -> dict[str, Any] | None:
     record = _read_json(_kifu_file_path(kifu_id))
     if record is None:
         return None
 
-    cid = str(client_id or "").strip()
-    access = set(str(v) for v in record.get("access_client_ids", []) if isinstance(v, str))
-    if cid not in access:
+    resolved_user_id = str(user_id or "").strip()
+    client_ids = {str(item).strip() for item in (legacy_client_ids or []) if str(item).strip() != ""}
+    access_clients = set(str(v) for v in record.get("access_client_ids", []) if isinstance(v, str))
+    access_users = set(str(v) for v in record.get("access_user_ids", []) if isinstance(v, str))
+    if resolved_user_id not in access_users and access_clients.isdisjoint(client_ids):
         return {}
 
     detail = dict(record)
-    detail["your_role"] = _resolve_role(record, cid)
+    detail["your_role"] = _resolve_role(record, resolved_user_id or None, client_ids)
     return detail
+
+
+def list_kifu_for_client(client_id: str) -> list[dict[str, Any]]:
+    cid = str(client_id or "").strip()
+    if cid == "":
+        return []
+    return list_kifu_for_identity(None, {cid})
+
+
+def get_kifu_detail_for_client(kifu_id: str, client_id: str) -> dict[str, Any] | None:
+    cid = str(client_id or "").strip()
+    return get_kifu_detail_for_identity(kifu_id, None, {cid})

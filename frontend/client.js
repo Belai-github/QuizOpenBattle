@@ -1,5 +1,6 @@
 let ws;
 let myClientId = null;
+let currentAccount = null;
 
 const confirmModal = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
@@ -59,6 +60,11 @@ const rulebookContentEl = document.getElementById("rulebook-content");
 const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
 const rulebookTabButtonEls = document.querySelectorAll(".rulebook-tab-btn");
 const rulebookPanelEls = document.querySelectorAll(".rulebook-panel");
+const authStatusTextEl = document.getElementById("auth-status-text");
+const authStatsTextEl = document.getElementById("auth-stats-text");
+const registerBtnEl = document.getElementById("register-btn");
+const loginPasskeyBtnEl = document.getElementById("login-passkey-btn");
+const logoutBtnEl = document.getElementById("logout-btn");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
@@ -116,6 +122,7 @@ let aiQuestionRequestPending = false;
 let aiQuestionGenerationActive = false;
 let aiQuestionGenerationOwnerId = null;
 let currentRulebookTab = "rules";
+let authInitPromise = null;
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
@@ -1373,6 +1380,349 @@ function getOrCreatePersistentClientId() {
     clientId = crypto.randomUUID();
     localStorage.setItem(storageKey, clientId);
     return clientId;
+}
+
+function isWebAuthnSupported() {
+    return Boolean(window.PublicKeyCredential && navigator.credentials);
+}
+
+function bufferToBase64Url(buffer) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer || []);
+    let binary = "";
+    bytes.forEach((value) => {
+        binary += String.fromCharCode(value);
+    });
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToUint8Array(value) {
+    const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+}
+
+function mapCredentialDescriptor(descriptor) {
+    return {
+        ...descriptor,
+        id: base64UrlToUint8Array(descriptor.id),
+    };
+}
+
+function decodeRegistrationOptions(publicKey) {
+    const options = { ...publicKey };
+    options.challenge = base64UrlToUint8Array(publicKey.challenge);
+    options.user = {
+        ...publicKey.user,
+        id: base64UrlToUint8Array(publicKey.user.id),
+    };
+    if (Array.isArray(publicKey.excludeCredentials)) {
+        options.excludeCredentials = publicKey.excludeCredentials.map(mapCredentialDescriptor);
+    }
+    return options;
+}
+
+function decodeAuthenticationOptions(publicKey) {
+    const options = { ...publicKey };
+    options.challenge = base64UrlToUint8Array(publicKey.challenge);
+    if (Array.isArray(publicKey.allowCredentials)) {
+        options.allowCredentials = publicKey.allowCredentials.map(mapCredentialDescriptor);
+    }
+    return options;
+}
+
+function serializeAuthenticatorResponse(response) {
+    const payload = {
+        clientDataJSON: bufferToBase64Url(response.clientDataJSON),
+    };
+    if (response.attestationObject) {
+        payload.attestationObject = bufferToBase64Url(response.attestationObject);
+    }
+    if (response.authenticatorData) {
+        payload.authenticatorData = bufferToBase64Url(response.authenticatorData);
+    }
+    if (response.signature) {
+        payload.signature = bufferToBase64Url(response.signature);
+    }
+    if (response.userHandle) {
+        payload.userHandle = bufferToBase64Url(response.userHandle);
+    }
+    if (Array.isArray(response.getTransports?.())) {
+        payload.transports = response.getTransports();
+    }
+    return payload;
+}
+
+function serializeCredential(credential) {
+    return {
+        id: String(credential.id || ""),
+        rawId: bufferToBase64Url(credential.rawId),
+        type: String(credential.type || "public-key"),
+        authenticatorAttachment: credential.authenticatorAttachment || null,
+        response: serializeAuthenticatorResponse(credential.response),
+        clientExtensionResults: credential.getClientExtensionResults ? credential.getClientExtensionResults() : {},
+    };
+}
+
+function formatAccountStats(stats) {
+    const matches = Number(stats?.matches_played || 0);
+    const wins = Number(stats?.wins || 0);
+    const losses = Number(stats?.losses || 0);
+    const draws = Number(stats?.draws || 0);
+    return `対戦 ${matches} / 勝利 ${wins} / 敗北 ${losses} / 引分 ${draws}`;
+}
+
+function updateAuthUi() {
+    const nicknameInputEl = document.getElementById("nickname");
+    if (!nicknameInputEl || !authStatusTextEl || !authStatsTextEl || !registerBtnEl || !loginPasskeyBtnEl || !logoutBtnEl) {
+        return;
+    }
+
+    if (currentAccount) {
+        authStatusTextEl.textContent = `${currentAccount.display_name} としてログイン済みです。パスキー認証後にゲームへ参加できます。`;
+        authStatsTextEl.textContent = formatAccountStats(currentAccount.stats);
+        authStatsTextEl.classList.remove("hidden");
+        nicknameInputEl.value = currentAccount.display_name;
+        nicknameInputEl.disabled = true;
+        registerBtnEl.disabled = true;
+        loginPasskeyBtnEl.disabled = true;
+        logoutBtnEl.classList.remove("hidden");
+        document.getElementById("join-btn").disabled = false;
+        document.getElementById("my-name").textContent = currentAccount.display_name;
+        return;
+    }
+
+    authStatusTextEl.textContent = "パスキーでアカウントを作成、またはログインしてください。";
+    authStatsTextEl.textContent = "";
+    authStatsTextEl.classList.add("hidden");
+    nicknameInputEl.disabled = false;
+    registerBtnEl.disabled = !isWebAuthnSupported();
+    loginPasskeyBtnEl.disabled = !isWebAuthnSupported();
+    logoutBtnEl.classList.add("hidden");
+    document.getElementById("join-btn").disabled = true;
+    document.getElementById("my-name").textContent = "";
+}
+
+async function fetchJsonOrThrow(path, init = {}) {
+    const response = await fetch(path, buildJsonApiFetchInit(init));
+    let payload = null;
+    try {
+        payload = await response.json();
+    } catch {
+        payload = null;
+    }
+
+    if (!response.ok) {
+        const error = new Error(`request_failed:${response.status}`);
+        error.status = response.status;
+        error.detail = String(payload?.detail || "").trim();
+        throw error;
+    }
+
+    return payload;
+}
+
+async function refreshAuthState() {
+    const payload = await fetchJsonOrThrow("/api/me");
+    currentAccount = payload?.authenticated ? payload.user || null : null;
+    updateAuthUi();
+    return currentAccount;
+}
+
+async function ensureLinkedClientId() {
+    if (!currentAccount) return;
+    const clientId = getOrCreatePersistentClientId();
+    const payload = await fetchJsonOrThrow("/api/auth/link-client", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            client_id: clientId,
+        }),
+    });
+    currentAccount = {
+        ...currentAccount,
+        linked_client_ids: Array.isArray(payload?.linked_client_ids) ? payload.linked_client_ids : currentAccount.linked_client_ids,
+        current_client_id: String(payload?.current_client_id || clientId),
+    };
+    updateAuthUi();
+}
+
+function isPasskeyAbortError(error) {
+    return error?.name === "AbortError" || error?.name === "NotAllowedError";
+}
+
+function getAuthErrorMessage(error, fallbackMessage) {
+    const detail = String(error?.detail || "").trim();
+    if (detail === "webauthn_unavailable") {
+        return "サーバー側で passkey 認証の準備ができていません。`webauthn` パッケージの導入を確認してください。";
+    }
+    if (detail === "display_name_taken") {
+        return "そのアカウント名はすでに使用されています。別の名前を選んでください。";
+    }
+    if (detail === "client_id_owned_by_other_user") {
+        return "このブラウザIDは別アカウントに紐付いています。別ブラウザで試すか、既存アカウントでログインしてください。";
+    }
+    if (detail === "registration_verification_failed") {
+        return "パスキー登録の検証に失敗しました。もう一度やり直してください。";
+    }
+    if (detail === "authentication_verification_failed" || detail === "credential_not_found") {
+        return "パスキー認証に失敗しました。登録済みのパスキーで再試行してください。";
+    }
+    return fallbackMessage;
+}
+
+async function runPasskeyRegistration() {
+    if (!isWebAuthnSupported()) {
+        await showAlertModal("このブラウザは passkey に対応していません。");
+        return;
+    }
+
+    const displayName = document.getElementById("nickname").value.trim();
+    if (displayName === "") {
+        await showAlertModal("アカウント名を入力してください。");
+        return;
+    }
+
+    const clientId = getOrCreatePersistentClientId();
+    try {
+        const startPayload = await fetchJsonOrThrow("/api/auth/register/start", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                display_name: displayName,
+            }),
+        });
+        const credential = await navigator.credentials.create({
+            publicKey: decodeRegistrationOptions(startPayload.publicKey),
+        });
+        if (!credential) {
+            throw new Error("credential_create_failed");
+        }
+        const finishPayload = await fetchJsonOrThrow("/api/auth/register/finish", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                ceremony_id: startPayload.ceremony_id,
+                credential: serializeCredential(credential),
+                client_id: clientId,
+            }),
+        });
+        currentAccount = finishPayload?.user || null;
+        updateAuthUi();
+        await ensureLinkedClientId();
+        await showAlertModal("アカウントを作成しました。ゲームに参加できます。");
+    } catch (error) {
+        if (isPasskeyAbortError(error)) {
+            return;
+        }
+        await showAlertModal(getAuthErrorMessage(error, "アカウント作成に失敗しました。時間をおいて再試行してください。"));
+    }
+}
+
+async function runPasskeyLogin() {
+    if (!isWebAuthnSupported()) {
+        await showAlertModal("このブラウザは passkey に対応していません。");
+        return;
+    }
+
+    const clientId = getOrCreatePersistentClientId();
+    try {
+        const startPayload = await fetchJsonOrThrow("/api/auth/login/start", {
+            method: "POST",
+        });
+        const credential = await navigator.credentials.get({
+            publicKey: decodeAuthenticationOptions(startPayload.publicKey),
+        });
+        if (!credential) {
+            throw new Error("credential_get_failed");
+        }
+        const finishPayload = await fetchJsonOrThrow("/api/auth/login/finish", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                ceremony_id: startPayload.ceremony_id,
+                credential: serializeCredential(credential),
+                client_id: clientId,
+            }),
+        });
+        currentAccount = finishPayload?.user || null;
+        updateAuthUi();
+        await ensureLinkedClientId();
+        await showAlertModal("ログインしました。ゲームに参加できます。");
+    } catch (error) {
+        if (isPasskeyAbortError(error)) {
+            return;
+        }
+        await showAlertModal(getAuthErrorMessage(error, "ログインに失敗しました。登録済み passkey で再試行してください。"));
+    }
+}
+
+async function logoutCurrentAccount() {
+    const shouldProceed = ws && ws.readyState === WebSocket.OPEN
+        ? await showConfirmModal("接続中のゲームから離脱してログアウトしますか？", {
+            okLabel: "ログアウト",
+            cancelLabel: "キャンセル",
+        })
+        : true;
+    if (!shouldProceed) return;
+
+    try {
+        await fetchJsonOrThrow("/api/auth/logout", {
+            method: "POST",
+        });
+    } catch {
+        // セッションが切れていても画面を初期化して問題ない。
+    }
+
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close(1000, "logout");
+    }
+    localStorage.removeItem("quiz_auto_reconnect");
+    window.location.reload();
+}
+
+async function initializeAuthState() {
+    if (authInitPromise) {
+        return authInitPromise;
+    }
+
+    authInitPromise = (async () => {
+        try {
+            await refreshAuthState();
+            if (currentAccount) {
+                try {
+                    await ensureLinkedClientId();
+                } catch {
+                    updateAuthUi();
+                }
+            }
+        } catch {
+            currentAccount = null;
+            updateAuthUi();
+        }
+
+        const shouldAutoReconnect = localStorage.getItem("quiz_auto_reconnect") === "1";
+        if (shouldAutoReconnect && currentAccount) {
+            localStorage.removeItem("quiz_auto_reconnect");
+            window.setTimeout(() => {
+                document.getElementById("join-btn").click();
+            }, 0);
+        }
+    })();
+
+    return authInitPromise;
 }
 
 async function showConnectionTimeoutReloadModal() {
@@ -2786,10 +3136,6 @@ function highlightReplayCurrentLogFromDisplayedProgress() {
     }
 }
 
-function getKifuApiClientId() {
-    return String(myClientId || getOrCreatePersistentClientId() || "").trim();
-}
-
 function isNgrokHostname() {
     const host = String(window.location.hostname || "").toLowerCase();
     return host.endsWith(".ngrok-free.dev") || host.endsWith(".ngrok.app") || host === "ngrok.io";
@@ -2809,18 +3155,15 @@ function buildJsonApiFetchInit(baseInit = {}) {
     return {
         ...baseInit,
         headers,
+        credentials: baseInit.credentials || "same-origin",
         cache: baseInit.cache || "no-store",
     };
 }
 
 async function fetchKifuList() {
-    const clientId = getKifuApiClientId();
-    diagLog("api_kifu_list_start", { client_id: clientId, ws: quizWsReadyStateLabel() });
-    const response = await fetch(
-        `/api/kifu/list?client_id=${encodeURIComponent(clientId)}`,
-        buildJsonApiFetchInit()
-    );
-    diagLog("api_kifu_list_response", { status: response.status, ok: response.ok, client_id: clientId });
+    diagLog("api_kifu_list_start", { ws: quizWsReadyStateLabel() });
+    const response = await fetch("/api/kifu/list", buildJsonApiFetchInit());
+    diagLog("api_kifu_list_response", { status: response.status, ok: response.ok });
     if (!response.ok) {
         throw new Error("kifu_list_fetch_failed");
     }
@@ -2829,13 +3172,9 @@ async function fetchKifuList() {
 }
 
 async function fetchKifuDetail(kifuId) {
-    const clientId = getKifuApiClientId();
-    diagLog("api_kifu_detail_start", { kifu_id: kifuId, client_id: clientId, ws: quizWsReadyStateLabel() });
-    const response = await fetch(
-        `/api/kifu/${encodeURIComponent(kifuId)}?client_id=${encodeURIComponent(clientId)}`,
-        buildJsonApiFetchInit()
-    );
-    diagLog("api_kifu_detail_response", { status: response.status, ok: response.ok, kifu_id: kifuId, client_id: clientId });
+    diagLog("api_kifu_detail_start", { kifu_id: kifuId, ws: quizWsReadyStateLabel() });
+    const response = await fetch(`/api/kifu/${encodeURIComponent(kifuId)}`, buildJsonApiFetchInit());
+    diagLog("api_kifu_detail_response", { status: response.status, ok: response.ok, kifu_id: kifuId });
     if (!response.ok) {
         throw new Error("kifu_detail_fetch_failed");
     }
@@ -5174,18 +5513,17 @@ function hydrateLobbyChatHistoryIfNeeded(history) {
     });
 }
 
-async function fetchWebSocketTicket(clientId, nickname) {
+async function fetchWebSocketTicket(clientId) {
     diagLog("api_ws_ticket_start", { client_id: clientId });
-    const response = await fetch("/api/ws-ticket", {
+    const response = await fetch("/api/ws-ticket", buildJsonApiFetchInit({
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
         body: JSON.stringify({
             client_id: clientId,
-            nickname,
         }),
-    });
+    }));
     diagLog("api_ws_ticket_response", { status: response.status, ok: response.ok, client_id: clientId });
 
     if (!response.ok) {
@@ -5205,7 +5543,7 @@ async function fetchWebSocketTicket(clientId, nickname) {
 
     const payload = await response.json();
     const ticket = String(payload.ticket || "").trim();
-    const sanitizedNickname = String(payload.nickname || nickname || "").trim() || "ゲスト";
+    const sanitizedNickname = String(payload.nickname || currentAccount?.display_name || "").trim() || "ゲスト";
 
     if (ticket === "") {
         throw new Error("ws_ticket_missing");
@@ -5217,30 +5555,18 @@ async function fetchWebSocketTicket(clientId, nickname) {
     };
 }
 
-function buildWebSocketUrl(clientId, nickname, wsTicket) {
+function buildWebSocketUrl(clientId, wsTicket) {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = new URL(window.location.origin);
     wsUrl.protocol = wsProtocol;
     wsUrl.pathname = `/ws/${encodeURIComponent(clientId)}`;
-    wsUrl.searchParams.set("nickname", nickname);
     wsUrl.searchParams.set("ws_ticket", wsTicket);
     return wsUrl.toString();
 }
 
 window.onload = () => {
-    const savedNickname = localStorage.getItem("quiz_nickname");
-
-    if (savedNickname) {
-        document.getElementById("nickname").value = savedNickname;
-    }
-
-    const shouldAutoReconnect = localStorage.getItem("quiz_auto_reconnect") === "1";
-    if (shouldAutoReconnect && savedNickname) {
-        localStorage.removeItem("quiz_auto_reconnect");
-        window.setTimeout(() => {
-            document.getElementById("join-btn").click();
-        }, 0);
-    }
+    updateAuthUi();
+    void initializeAuthState();
 };
 
 window.setInterval(() => {
@@ -5256,9 +5582,8 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         return;
     }
 
-    const nicknameInput = document.getElementById("nickname").value.trim();
-    if (nicknameInput === "") {
-        await showAlertModal("ニックネームを入力してください");
+    if (!currentAccount) {
+        await showAlertModal("先にアカウント作成またはログインを行ってください。");
         return;
     }
 
@@ -5268,12 +5593,19 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
     let ticketPayload;
     try {
-        ticketPayload = await fetchWebSocketTicket(clientId, nicknameInput);
+        await ensureLinkedClientId();
+        ticketPayload = await fetchWebSocketTicket(clientId);
     } catch (error) {
         console.error("WebSocket認証チケットの取得に失敗:", error);
         isConnecting = false;
-        if (error?.status === 409 || error?.detail === "already_connected") {
+        if (error?.status === 401 || error?.detail === "not_authenticated") {
+            currentAccount = null;
+            updateAuthUi();
+            await showAlertModal("ログイン状態が失われました。再度 passkey でログインしてください。");
+        } else if (error?.status === 409 || error?.detail === "already_connected") {
             await showAlertModal("同じクライアントがすでに接続中です。\n\n別タブを閉じてから参加してください。");
+        } else if (error?.status === 409 || error?.detail === "client_id_owned_by_other_user") {
+            await showAlertModal("このブラウザIDは別アカウントに紐付いています。別ブラウザでログインするか、既存アカウントで再試行してください。");
         } else {
             await showAlertModal("接続認証の取得に失敗しました。時間をおいて再試行してください。");
         }
@@ -5281,10 +5613,9 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     }
 
     const effectiveNickname = ticketPayload.nickname;
-    localStorage.setItem("quiz_nickname", effectiveNickname);
     document.getElementById("nickname").value = effectiveNickname;
 
-    const wsUrl = buildWebSocketUrl(clientId, effectiveNickname, ticketPayload.ticket);
+    const wsUrl = buildWebSocketUrl(clientId, ticketPayload.ticket);
     diagLog("ws_connect_start", { client_id: clientId });
     ws = new WebSocket(wsUrl);
 
@@ -5580,7 +5911,23 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 document.getElementById("nickname").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.isComposing) return;
     event.preventDefault();
-    document.getElementById("join-btn").click();
+    if (currentAccount) {
+        document.getElementById("join-btn").click();
+    } else {
+        registerBtnEl?.click();
+    }
+});
+
+registerBtnEl?.addEventListener("click", () => {
+    void runPasskeyRegistration();
+});
+
+loginPasskeyBtnEl?.addEventListener("click", () => {
+    void runPasskeyLogin();
+});
+
+logoutBtnEl?.addEventListener("click", () => {
+    void logoutCurrentAccount();
 });
 
 async function submitQuestion() {

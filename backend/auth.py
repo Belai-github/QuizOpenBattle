@@ -49,7 +49,7 @@ class WebSocketAuthManager:
         padding = "=" * (-len(value) % 4)
         return base64.urlsafe_b64decode(value + padding)
 
-    def issue_ticket(self, client_id: str, nickname: str) -> dict:
+    def issue_ticket(self, client_id: str, nickname: str, user_id: str, session_id: str) -> dict:
         now = int(time.time())
         expires_at = now + self.ticket_ttl_seconds
         nonce = secrets.token_urlsafe(18)
@@ -57,6 +57,8 @@ class WebSocketAuthManager:
         payload = {
             "cid": client_id,
             "nick": nickname,
+            "uid": str(user_id or "").strip(),
+            "sid": str(session_id or "").strip(),
             "exp": expires_at,
             "nonce": nonce,
         }
@@ -69,39 +71,48 @@ class WebSocketAuthManager:
             "expires_at": expires_at,
         }
 
-    def verify_ticket(self, token: str, client_id: str, nickname: str) -> tuple[bool, str]:
+    def verify_ticket(self, token: str, client_id: str) -> tuple[bool, str, dict[str, str]]:
         self._purge_expired_nonces()
 
         token_text = str(token or "").strip()
         if token_text.count(".") != 1:
-            return False, "invalid_format"
+            return False, "invalid_format", {}
 
         payload_segment, signature_segment = token_text.split(".", 1)
         expected_signature = self._sign(payload_segment)
         if not hmac.compare_digest(signature_segment, expected_signature):
-            return False, "invalid_signature"
+            return False, "invalid_signature", {}
 
         try:
             payload_raw = self._decode_base64url(payload_segment)
             payload = json.loads(payload_raw.decode("utf-8"))
         except (ValueError, json.JSONDecodeError):
-            return False, "invalid_payload"
+            return False, "invalid_payload", {}
 
         token_client_id = str(payload.get("cid", "")).strip()
         token_nickname = sanitize_nickname(payload.get("nick", ""))
+        token_user_id = str(payload.get("uid", "")).strip()
+        token_session_id = str(payload.get("sid", "")).strip()
         expires_at = int(payload.get("exp", 0))
         nonce = str(payload.get("nonce", "")).strip()
 
         if token_client_id != client_id:
-            return False, "client_mismatch"
-        if token_nickname != nickname:
-            return False, "nickname_mismatch"
+            return False, "client_mismatch", {}
         if expires_at <= int(time.time()):
-            return False, "expired"
+            return False, "expired", {}
         if nonce == "":
-            return False, "invalid_nonce"
+            return False, "invalid_nonce", {}
         if nonce in self.used_ticket_nonces:
-            return False, "reused_ticket"
+            return False, "reused_ticket", {}
+        if token_user_id == "":
+            return False, "user_mismatch", {}
+        if token_session_id == "":
+            return False, "session_mismatch", {}
 
         self.used_ticket_nonces[nonce] = expires_at
-        return True, "ok"
+        return True, "ok", {
+            "client_id": token_client_id,
+            "nickname": token_nickname,
+            "user_id": token_user_id,
+            "session_id": token_session_id,
+        }

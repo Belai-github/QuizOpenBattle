@@ -41,6 +41,36 @@ h1 {
     box-shadow: 0 10px 24px rgba(17, 24, 39, 0.08);
 }
 
+#login-screen {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.auth-status-card {
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f8fafc, #eefbf7);
+    padding: 12px;
+}
+
+.auth-status-card p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.auth-stats-text {
+    margin-top: 6px;
+    color: #334155;
+    font-size: 0.9rem;
+}
+
+.login-auth-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
 input,
 textarea,
 select,
@@ -126,6 +156,26 @@ button {
 
 button:hover {
     background: var(--primary-hover);
+}
+
+.secondary-action-btn {
+    background: #1d4ed8;
+}
+
+.secondary-action-btn:hover {
+    background: #1e40af;
+}
+
+.text-action-btn {
+    background: transparent;
+    color: #475569;
+    min-height: 32px;
+    margin-top: 0;
+}
+
+.text-action-btn:hover {
+    background: #f1f5f9;
+    color: #0f172a;
 }
 
 .waiting-room-header {

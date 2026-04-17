@@ -8,6 +8,7 @@ import uuid
 from typing import Any, NamedTuple
 
 from pydantic import ValidationError
+from backend.account_auth import AccountAuthManager
 from backend.auth import WebSocketAuthManager, is_valid_client_id, sanitize_nickname
 from backend.events.formatting import (
     format_answer_attempt_message,
@@ -178,7 +179,10 @@ MESSAGE_ROUTER: dict[str, MessageRoute] = {
 class QuizGameManager:
     def __init__(self):
         self.active_connections = {}
+        self.active_session_connections = {}
         self.nicknames = {}
+        self.client_user_ids = {}
+        self.client_session_ids = {}
         self.rooms = {}
         self.reconnect_reservations = {}
         self.pending_disconnect_tasks = {}
@@ -198,6 +202,7 @@ class QuizGameManager:
         self.ai_question_generation_active = False
         self.ai_question_generation_owner_id = None
         self.ai_question_generation_lock = asyncio.Lock()
+        self.account_auth_manager: AccountAuthManager | None = None
 
     def _has_active_ai_room(self):
         return any(bool(room.get("is_ai_mode")) for room in self.rooms.values())
@@ -207,7 +212,7 @@ class QuizGameManager:
         if room is None:
             return
 
-        kifu_id = begin_kifu_record(room_owner_id, room, self.nicknames)
+        kifu_id = begin_kifu_record(room_owner_id, room, self.nicknames, self.client_user_ids)
         self.active_kifu_by_room_owner[room_owner_id] = kifu_id
         room["kifu_id"] = kifu_id
 
@@ -233,7 +238,12 @@ class QuizGameManager:
         if not kifu_id:
             return
 
-        touch_spectator(kifu_id, client_id, self.nicknames.get(client_id, "ゲスト"))
+        touch_spectator(
+            kifu_id,
+            client_id,
+            self.nicknames.get(client_id, "ゲスト"),
+            self.client_user_ids.get(client_id),
+        )
 
     def _resolve_kifu_latest_answer(self, room_owner_id: str, team: str, answer_text: str, is_correct: bool):
         kifu_id = self.active_kifu_by_room_owner.get(room_owner_id)
@@ -247,7 +257,35 @@ class QuizGameManager:
         if not kifu_id:
             return
 
+        if isinstance(room, dict):
+            self._record_finished_game_stats(room, finish_reason)
         finalize_kifu_record(kifu_id, room, finish_reason)
+
+    def _record_finished_game_stats(self, room: dict, finish_reason: str):
+        if self.account_auth_manager is None:
+            return
+        if str(finish_reason or "") not in {"finished", "forfeit", "intentional_draw"}:
+            return
+
+        game_value = room.get("game")
+        game = game_value if isinstance(game_value, dict) else {}
+        winner = str(game.get("winner") or "")
+        if winner not in {"team-left", "team-right", "draw"}:
+            return
+
+        team_left_user_ids = {
+            str(self.client_user_ids.get(client_id) or "")
+            for client_id in set(room.get("left_participants", set()))
+        }
+        team_right_user_ids = {
+            str(self.client_user_ids.get(client_id) or "")
+            for client_id in set(room.get("right_participants", set()))
+        }
+        self.account_auth_manager.store.record_match_result(
+            {user_id for user_id in team_left_user_ids if user_id != ""},
+            {user_id for user_id in team_right_user_ids if user_id != ""},
+            winner,
+        )
 
     def _next_room_event_id(self, room_owner_id: str):
         room = self.rooms.get(room_owner_id)
@@ -1559,11 +1597,16 @@ class QuizGameManager:
         await self._broadcast_game_finished_message(owner_id, room, game_finished_message)
         self._finalize_kifu_if_tracking(owner_id, room, "intentional_draw")
 
-    async def connect(self, websocket: WebSocket, client_id: str, nickname: str):
+    async def connect(self, websocket: WebSocket, client_id: str, nickname: str, user_id: str, session_id: str):
         # 同一 client_id の二重接続は許可しない（別タブ重複やなりすまし抑止）。
         if client_id in self.active_connections:
             await websocket.close(code=1008, reason="Duplicate session")
             print(f"接続拒否（重複client_id）: {client_id}")
+            return False
+
+        if session_id in self.active_session_connections:
+            await websocket.close(code=1008, reason="Duplicate session")
+            print(f"接続拒否（重複session_id）: {session_id}")
             return False
 
         # 接続上限に達している場合は、即座に通信を切断する
@@ -1576,7 +1619,10 @@ class QuizGameManager:
         await websocket.accept()
 
         self.active_connections[client_id] = websocket
+        self.active_session_connections[session_id] = client_id
         self.nicknames[client_id] = nickname
+        self.client_user_ids[client_id] = str(user_id or "")
+        self.client_session_ids[client_id] = str(session_id or "")
         restored = self._try_restore_participant_reconnect(client_id)
         self._clear_pending_disconnect_everywhere(client_id)
         self._cancel_disconnect_grace_timer(client_id)
@@ -1622,6 +1668,10 @@ class QuizGameManager:
             reservation = self._reserve_participant_reconnect(client_id, ctx_before_disconnect)
 
             del self.active_connections[client_id]
+            session_id = self.client_session_ids.pop(client_id, "")
+            if session_id != "":
+                self.active_session_connections.pop(session_id, None)
+            self.client_user_ids.pop(client_id, None)
             nickname = self.nicknames.pop(client_id, client_id)
             self.chat_message_history.pop(client_id, None)
             self.chat_last_message.pop(client_id, None)
@@ -2131,27 +2181,45 @@ class QuizGameManager:
 
 manager = QuizGameManager()
 ws_auth_manager = WebSocketAuthManager()
+account_auth_manager = AccountAuthManager()
+manager.account_auth_manager = account_auth_manager
 
-register_api_routes(app, manager, ws_auth_manager, diag_api_log)
+register_api_routes(app, manager, ws_auth_manager, account_auth_manager, diag_api_log)
 
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     client_id = str(client_id or "").strip()
-    nickname = sanitize_nickname(websocket.query_params.get("nickname", "ゲスト"))
     ws_ticket = str(websocket.query_params.get("ws_ticket", "")).strip()
 
     if not is_valid_client_id(client_id):
         await websocket.close(code=1008, reason="Invalid client id")
         return
 
-    is_valid_ticket, reason = ws_auth_manager.verify_ticket(ws_ticket, client_id, nickname)
+    is_valid_ticket, reason, ticket_payload = ws_auth_manager.verify_ticket(ws_ticket, client_id)
     if not is_valid_ticket:
         await websocket.close(code=1008, reason=f"Unauthorized: {reason}")
         return
 
+    session_id = str(ticket_payload.get("session_id") or "").strip()
+    session = account_auth_manager.store.get_session(session_id, touch=True)
+    if session is None:
+        await websocket.close(code=1008, reason="Unauthorized: session_expired")
+        return
+
+    user_id = str(ticket_payload.get("user_id") or "").strip()
+    if user_id == "" or str(session.get("user_id") or "") != user_id:
+        await websocket.close(code=1008, reason="Unauthorized: session_mismatch")
+        return
+
+    if not account_auth_manager.can_user_access_client_id(user_id, client_id):
+        await websocket.close(code=1008, reason="Unauthorized: client_mismatch")
+        return
+
+    nickname = sanitize_nickname(ticket_payload.get("nickname", "ゲスト"))
+
     # 接続処理を行い、許可されなかった（False）場合はここで処理を終える
-    is_accepted = await manager.connect(websocket, client_id, nickname)
+    is_accepted = await manager.connect(websocket, client_id, nickname, user_id, session_id)
     if not is_accepted:
         return
 

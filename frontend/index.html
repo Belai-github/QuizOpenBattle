@@ -13,8 +13,17 @@
     <h1>QuizOpenBattle</h1>
 
     <div id="login-screen">
-        <input type="text" id="nickname" placeholder="ニックネーム">
-        <button id="join-btn">ゲームに参加</button>
+        <div class="auth-status-card">
+            <p id="auth-status-text">パスキーでアカウントを作成、またはログインしてください。</p>
+            <p id="auth-stats-text" class="auth-stats-text hidden"></p>
+        </div>
+        <input type="text" id="nickname" placeholder="アカウント名">
+        <div class="login-auth-actions">
+            <button id="register-btn" type="button">アカウント作成</button>
+            <button id="login-passkey-btn" type="button" class="secondary-action-btn">パスキーでログイン</button>
+        </div>
+        <button id="join-btn" disabled>ゲームに参加</button>
+        <button id="logout-btn" type="button" class="text-action-btn hidden">ログアウト</button>
     </div>
 
     <div id="waiting-room-screen" style="display: none;">
