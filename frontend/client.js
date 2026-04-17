@@ -3860,13 +3860,18 @@ function showQuestionConfirmModal(questionText) {
 
 function showConfirmModal(message, options = {}) {
     const {
+        allowHtml = false,
         hideCancel = false,
         okLabel = "送信する",
         cancelLabel = "キャンセル",
         requireExplicitChoice = false,
     } = options;
     return new Promise((resolve) => {
-        confirmMessageEl.textContent = message;
+        if (allowHtml) {
+            confirmMessageEl.innerHTML = message;
+        } else {
+            confirmMessageEl.textContent = message;
+        }
         confirmOkBtn.textContent = okLabel;
         confirmCancelBtn.textContent = cancelLabel;
         confirmCancelBtn.style.display = hideCancel ? "none" : "";
@@ -5681,13 +5686,17 @@ async function requestRoomExit() {
     const isOwner = ownerId !== "" && me !== "" && ownerId === me;
     const isAiRoom = Boolean(snapshot?.is_ai_mode);
     const shouldCloseRoom = isOwner && !isAiRoom;
+    const isPlayingParticipantExit = !shouldCloseRoom && isPlayerRole() && currentRoomGameState === "playing";
 
     const confirmMessage = shouldCloseRoom
         ? "部屋を閉じると参加者と観戦者は全員退室になります。\n\n本当に部屋を閉じますか？"
-        : "退室するとプレイヤーとして復帰不能になります。\nまた、チームメンバーが0人になった場合その時点で敗北となります。\n\n本当に退室しますか？";
+        : isPlayingParticipantExit
+            ? "退室するとプレイヤーとしての復帰は不能になります。\nまた、チームメンバーが0人になった場合、その時点で<span class=\"red-bold\">敗北</span>となります。\n\n本当に退室しますか？"
+            : "本当に退室しますか？";
     const okLabel = shouldCloseRoom ? "部屋を閉じる" : "退室する";
 
     const confirmed = await showConfirmModal(confirmMessage, {
+        allowHtml: isPlayingParticipantExit,
         okLabel,
         cancelLabel: "キャンセル"
     });
