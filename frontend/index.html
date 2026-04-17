@@ -42,8 +42,7 @@
                     <textarea class="chat-input" rows="1" maxlength="200" placeholder="チャットを入力..."></textarea>
                     <div class="chat-compose">
                         <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
-                        <button class="chat-send-btn lobby-chat-send-btn" type="button"
-                            aria-label="チャット送信"><b>➜</b></button>
+                        <button class="chat-send-btn lobby-chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                     </div>
                 </div>
             </div>
@@ -58,8 +57,7 @@
                     <div class="question-input-field">
                         <textarea id="question-box" rows="3" maxlength="100" placeholder="問題を入力..."></textarea>
                         <div class="question-input-meta" aria-live="polite">
-                            <span id="question-length-warning" class="question-length-warning-icon hidden"
-                                aria-hidden="true">⚠️</span>
+                            <span id="question-length-warning" class="question-length-warning-icon hidden" aria-hidden="true">⚠️</span>
                             <span id="question-length-counter" class="question-length-counter">0/100</span>
                         </div>
                         <button id="submit-question-btn">出題</button>
@@ -86,20 +84,16 @@
                     <button id="kifu-step-next-btn" type="button" class="kifu-step-btn" aria-label="1手進む">→</button>
                     <button id="kifu-step-last-btn" type="button" class="kifu-step-btn" aria-label="最後へ">→|</button>
                 </div>
-                <button id="toggle-question-visibility-btn" class="question-visibility-btn hidden" type="button"
-                    aria-label="表示視点を切り替え" title="表示視点を切り替え">
+                <button id="toggle-question-visibility-btn" class="question-visibility-btn hidden" type="button" aria-label="表示視点を切り替え" title="表示視点を切り替え">
                     <img src="img/view.png" alt="表示視点" class="question-visibility-icon">
                 </button>
-                <button id="shuffle-participants-btn" class="shuffle-btn hidden" type="button" aria-label="参加者をシャッフル"
-                    title="参加者をシャッフル">
+                <button id="shuffle-participants-btn" class="shuffle-btn hidden" type="button" aria-label="参加者をシャッフル" title="参加者をシャッフル">
                     <img src="img/shuffle.png" alt="シャッフル" class="shuffle-icon">
                 </button>
-                <button id="rulebook-btn-arena" class="rulebook-btn rulebook-trigger" aria-label="ルールブック"
-                    title="ルールを見る">
+                <button id="rulebook-btn-arena" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
                     <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
                 </button>
-                <button id="arena-logs-toggle-btn" class="arena-logs-toggle-btn hidden" type="button"
-                    aria-label="進行ログを表示" title="進行ログを表示">
+                <button id="arena-logs-toggle-btn" class="arena-logs-toggle-btn hidden" type="button" aria-label="進行ログを表示" title="進行ログを表示">
                     <img src="img/chat.png" alt="進行ログ" class="arena-logs-icon">
                     <span id="arena-logs-unread-badge" class="arena-logs-unread-badge hidden" aria-hidden="true"></span>
                 </button>
@@ -116,17 +110,14 @@
                 <div class="arena-player-header">
                     <div class="arena-player-label">先攻</div>
                     <div class="arena-action-points-display arena-action-points-hidden" id="arena-action-points-left">
-                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span
-                            class="times-symbol">×</span><span class="action-count">1</span>
-                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span
-                            class="times-symbol">×</span><span class="bonus-count">0</span>
+                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span class="times-symbol">×</span><span class="action-count">1</span>
+                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span class="times-symbol">×</span><span class="bonus-count">0</span>
                     </div>
                     <div class="arena-result-badge hidden" id="arena-result-badge-left" aria-live="polite"></div>
                 </div>
                 <ul id="arena-player-left-list"></ul>
 
-                <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-left"
-                    data-visibility="team-left,questioner,spectator">
+                <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-left" data-visibility="team-left,questioner,spectator">
                     <div class="arena-chat-title">先攻チャット</div>
                     <div class="log-scroll-shell">
                         <div id="game-chat-log-team-left" class="chat-log"></div>
@@ -134,8 +125,7 @@
                     <div class="chat-compose">
                         <textarea class="chat-input" rows="1" maxlength="200" placeholder="先攻チャット..."></textarea>
                         <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
-                        <button class="chat-send-btn arena-chat-send-btn" type="button"
-                            aria-label="チャット送信"><b>➜</b></button>
+                        <button class="chat-send-btn arena-chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                     </div>
                 </div>
             </div>
@@ -145,15 +135,13 @@
                 <p id="arena-question-text">問題文を準備中...</p>
                 <div id="arena-answer-box" class="hidden">
                     <div class="arena-turn-end-row">
-                        <button id="arena-intentional-draw-btn" type="button" class="hidden" aria-label="フルオープン決着"
-                            title="フルオープン決着">
+                        <button id="arena-intentional-draw-btn" type="button" class="hidden" aria-label="フルオープン決着" title="フルオープン決着">
                             <img src="img/fullopen.png" alt="フルオープン決着" class="arena-intentional-draw-icon">
                         </button>
                         <button id="arena-turn-end-btn" type="button" aria-label="ターンエンド">ターンエンド</button>
                     </div>
                     <div class="arena-answer-compose">
-                        <input id="arena-answer-input" type="text" maxlength="100" placeholder="解答を入力..."
-                            aria-label="解答入力">
+                        <input id="arena-answer-input" type="text" maxlength="100" placeholder="解答を入力..." aria-label="解答入力">
                         <button id="arena-answer-submit-btn" type="button" aria-label="アンサー">アンサー</button>
                     </div>
                     <p id="arena-answer-length-warning" class="chat-length-warning hidden" aria-live="polite">
@@ -165,17 +153,14 @@
                 <div class="arena-player-header">
                     <div class="arena-player-label">後攻</div>
                     <div class="arena-action-points-display arena-action-points-hidden" id="arena-action-points-right">
-                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span
-                            class="times-symbol">×</span><span class="action-count">1</span>
-                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span
-                            class="times-symbol">×</span><span class="bonus-count">0</span>
+                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span class="times-symbol">×</span><span class="action-count">1</span>
+                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span class="times-symbol">×</span><span class="bonus-count">0</span>
                     </div>
                     <div class="arena-result-badge hidden" id="arena-result-badge-right" aria-live="polite"></div>
                 </div>
                 <ul id="arena-player-right-list"></ul>
 
-                <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-right"
-                    data-visibility="team-right,questioner,spectator">
+                <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-right" data-visibility="team-right,questioner,spectator">
                     <div class="arena-chat-title">後攻チャット</div>
                     <div class="log-scroll-shell">
                         <div id="game-chat-log-team-right" class="chat-log"></div>
@@ -183,8 +168,7 @@
                     <div class="chat-compose">
                         <textarea class="chat-input" rows="1" maxlength="200" placeholder="後攻チャット..."></textarea>
                         <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
-                        <button class="chat-send-btn arena-chat-send-btn" type="button"
-                            aria-label="チャット送信"><b>➜</b></button>
+                        <button class="chat-send-btn arena-chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                     </div>
                 </div>
             </div>
@@ -207,8 +191,7 @@
                 <div class="chat-compose">
                     <textarea class="chat-input" rows="1" maxlength="200" placeholder="進行ログに投稿..."></textarea>
                     <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
-                    <button class="chat-send-btn arena-chat-send-btn" type="button"
-                        aria-label="チャット送信"><b>➜</b></button>
+                    <button class="chat-send-btn arena-chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                 </div>
             </div>
         </div>
@@ -221,8 +204,7 @@
             </div>
         </dialog>
 
-        <dialog id="full-open-settlement-modal" class="modal full-open-settlement-modal"
-            aria-labelledby="full-open-settlement-title">
+        <dialog id="full-open-settlement-modal" class="modal full-open-settlement-modal" aria-labelledby="full-open-settlement-title">
             <div class="modal-card full-open-settlement-card">
                 <h2 id="full-open-settlement-title">フルオープン決着</h2>
                 <p id="full-open-settlement-status" class="full-open-settlement-status">回答待機中です。</p>
@@ -230,14 +212,12 @@
                     <section class="full-open-settlement-panel left">
                         <h3>先攻</h3>
                         <p id="full-open-settlement-left-answer" class="full-open-settlement-answer">未回答</p>
-                        <button id="full-open-settlement-left-judge-btn" type="button"
-                            class="full-open-settlement-judge-btn" aria-pressed="false">正解</button>
+                        <button id="full-open-settlement-left-judge-btn" type="button" class="full-open-settlement-judge-btn" aria-pressed="false">正解</button>
                     </section>
                     <section class="full-open-settlement-panel right">
                         <h3>後攻</h3>
                         <p id="full-open-settlement-right-answer" class="full-open-settlement-answer">未回答</p>
-                        <button id="full-open-settlement-right-judge-btn" type="button"
-                            class="full-open-settlement-judge-btn" aria-pressed="false">正解</button>
+                        <button id="full-open-settlement-right-judge-btn" type="button" class="full-open-settlement-judge-btn" aria-pressed="false">正解</button>
                     </section>
                 </div>
                 <div class="modal-actions single">
@@ -277,43 +257,99 @@
     <dialog id="rulebook-modal" class="modal" aria-labelledby="rulebook-title">
         <div class="modal-card rulebook-modal-card">
             <h2 id="rulebook-title">QuizOpenBattle ルールブック</h2>
+            <div class="rulebook-tab-switch" role="tablist" aria-label="ルールブック表示切り替え">
+                <button id="rulebook-tab-rules" class="rulebook-tab-btn" type="button" role="tab" aria-selected="true" aria-controls="rulebook-panel-rules" data-rulebook-tab="rules">
+                    ルール
+                </button>
+                <button id="rulebook-tab-authoring" class="rulebook-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="rulebook-panel-authoring" data-rulebook-tab="authoring">
+                    作問上の注意
+                </button>
+            </div>
             <div id="rulebook-content" class="rulebook-content">
-                <h3>簡単なルール説明 </h3>
-                <p style="margin-bottom: 20px;">伏せ字になっている問題文を交互に１文字ずつ見ていき、先に正解できたほうが勝利です。</p>
-                <hr>
-                <h3>基本ルール </h3>
-                <p>
-                    <span class="red-bold">先攻</span>と<span class="blue-bold">後攻</span>の2人（または2チーム）のターン制ゲームです。
-                </p>
-                <p>自分のターンが回ってきたら<b>「アクション権」</b>を1つ獲得します。ここで<b>「アクション」</b>とは、以下の2種類の行動のうちいずれかを行うことです。</p>
-                <ul>
-                    <li><b>オープン</b>：<br>問題文の開示されていない文字を1つ選び、自分だけに公開する。</li>
-                    <li><b>アンサー</b>：<br>問題に解答する。（ただし、解答の内容は相手に通知されない。）</li>
-                </ul>
-                <p>また、<b>オープンした文字は相手にその旨が表示され、以降相手はその文字をオープンすることはできません。</b></p>
-                <p>ターンエンドを宣言するか、所持している<b>「アクション権」</b>と<span class="red-bold">「＋アクション権」</span>をすべて使い切ったら相手のターンに回ります。</p>
-                <p>また、<b>「アクション権」は次のターン以降に持ち越すことはできません。</b></p>
-                <hr>
-                <h3><span class="red-bold">「＋アクション権」</span>について</h3>
-                <p>アンサーアクションで誤答すると、相手は<span class="red-bold">「＋アクション権」</span>を1つ獲得します。</p>
-                この<span class="red-bold">「＋アクション権」</span>は<b>ターン終了後でも失われず</b>、自分のターンであればいつでも使えます。
-                <hr>
-                <h3>勝利条件</h3>
-                <p>解答の正誤判定は出題者が行います。表記ゆれなどの判定は出題者の裁量で判断してください。</p>
-                <p>先攻が正解した場合、次のターンで後攻が正解すれば引き分け、そうでなければ先攻の勝利です。</p>
-                <p>後攻が正解した場合、その時点で後攻の勝利です。</p>
-                <hr>
-                <h3>約物について</h3>
-                <p>約物（句読点や記号などの読み上げられない文字）がオープンされた場合、その文字は相手にも公開される代わりに、<b>「アクション権」</b>を1回獲得します。</p>
-                <hr>
-                <h3>フルオープン決着について</h3>
-                <ul>
-                    <li>問題文の文字が7割以上オープンされている</li>
-                    <li>先攻/後攻どちらも1回以上誤答している</li>
-                </ul>
-                <p>という状況で<b>フルオープン決着</b>を提案する選択肢が表示されます。</p>
-                <p>全員が合意すると、両陣営に問題文の全文が開示され、両者に1回ずつ<b>「アクション権」</b>が与えられます。</p>
-                <p>それぞれが1回ずつアンサーを行い、<b>両者がどちらも正解または誤答なら引き分け</b>、<b>一方のみ正解ならそのチームの勝利</b>です。</p>
+                <section id="rulebook-panel-rules" class="rulebook-panel" role="tabpanel" aria-labelledby="rulebook-tab-rules">
+                    <h3>簡単なルール説明 </h3>
+                    <p style="margin-bottom: 20px;">伏せ字になっている問題文を交互に１文字ずつ見ていき、先に正解できたほうが勝利です。</p>
+                    <hr>
+                    <h3>基本ルール </h3>
+                    <p>
+                        <span class="red-bold">先攻</span>と<span class="blue-bold">後攻</span>の2人（または2チーム）のターン制ゲームです。<b>出題者</b>はゲームマスターとして正誤判定を行います。
+                    </p>
+                    <p>自分のターンが回ってきたら<b>「アクション権」</b>を1つ獲得します。ここで<b>「アクション」</b>とは、以下の2種類の行動のうちいずれかを行うことです。</p>
+                    <ul>
+                        <li><b>オープン</b>：<br>問題文の開示されていない文字を1つ選び、自分だけに公開する。</li>
+                        <li><b>アンサー</b>：<br>問題に解答する。（ただし、解答の内容は相手に通知されない。）</li>
+                    </ul>
+                    <p>また、<b>オープンした文字は相手にその旨が表示され、以降相手はその文字をオープンすることはできません。</b></p>
+                    <p>ターンエンドを宣言するか、所持している<b>「アクション権」</b>と<span class="red-bold">「＋アクション権」</span>をすべて使い切ったら相手のターンに回ります。
+                    </p>
+                    <p>また、<b>「アクション権」は次のターン以降に持ち越すことはできません。</b></p>
+                    <hr>
+                    <h3><span class="red-bold">「＋アクション権」</span>について</h3>
+                    <p>アンサーアクションで誤答すると、相手は<span class="red-bold">「＋アクション権」</span>を1つ獲得します。</p>
+                    この<span class="red-bold">「＋アクション権」</span>は<b>ターン終了後でも失われず</b>、自分のターンであればいつでも使えます。
+                    <hr>
+                    <h3>勝利条件</h3>
+                    <p>解答の正誤判定は出題者が行います。表記ゆれなどの判定は出題者の裁量で判断してください。</p>
+                    <p>先攻が正解した場合、次のターンで後攻が正解すれば引き分け、そうでなければ先攻の勝利です。</p>
+                    <p>後攻が正解した場合、その時点で後攻の勝利です。</p>
+                    <hr>
+                    <h3>約物について</h3>
+                    <p>約物（句読点や記号などの読み上げられない文字）がオープンされた場合、その文字は相手にも公開される代わりに、<b>「アクション権」</b>を1回獲得します。</p>
+                    <hr>
+                    <h3>フルオープン決着について</h3>
+                    <ul>
+                        <li>問題文の文字が7割以上オープンされている</li>
+                        <li>先攻/後攻どちらも1回以上誤答している</li>
+                    </ul>
+                    <p>という状況で<b>フルオープン決着</b>を提案する選択肢が表示されます。</p>
+                    <p>全員が合意すると、両陣営に問題文の全文が開示され、両者に1回ずつ<b>「アクション権」</b>が与えられます。</p>
+                    <p>それぞれが1回ずつアンサーを行い、<b>両者がどちらも正解または誤答なら引き分け</b>、<b>一方のみ正解ならそのチームの勝利</b>です。</p>
+                </section>
+                <section id="rulebook-panel-authoring" class="rulebook-panel" role="tabpanel" aria-labelledby="rulebook-tab-authoring" hidden>
+                    <h3>作問上の基本方針</h3>
+                    <p>QuizOpenBattleでは、問題文を少しずつ開きながら推理していく体験が面白さの中心です。最初の数文字だけで即答できる問題や、逆に最後まで開いても何も判断できない問題は避けるのがおすすめです。
+                    </p>
+                    <hr>
+                    <h3>推奨される問題文の形式</h3>
+                    <ul>
+                        <li>問題文はできるだけ1文で、読み上げたときに自然につながる形にする。</li>
+                        <li>文末は「〜は何？」「〜は誰？」のように、短い疑問形で締める。</li>
+                        <li>疑問文で終えるなら、末尾に「？」を付ける。</li>
+                        <li>特に必要がない限り、句点「。」で文を切るより、接続を工夫して1本の問題文として流れる形が望ましい。</li>
+                    </ul>
+                    <hr>
+                    <h3>前提の置き方</h3>
+                    <p>作品名・時代・分野などの前提が必要な問題は、その前提を問題文の前半ではっきり示すのがおすすめです。界隈の人にしか通じない略称や内輪用語を、前提なしでいきなり出すのは避けてください。</p>
+                    <hr>
+                    <h3>おすすめの問題文</h3>
+                    <ul>
+                        <li>序盤は広めの候補が残り、中盤以降でしぼれていく問題。</li>
+                        <li>固有名詞だけでなく、その対象の説明や特徴が入っている問題。</li>
+                        <li>ジャンルに偏りすぎず、参加者の知識差だけで勝負が決まりにくい問題。</li>
+                    </ul>
+                    <hr>
+                    <h3>避けたい問題</h3>
+                    <ul>
+                        <li>一文字目や語尾だけで答えがほぼ確定してしまう問題。</li>
+                        <li>複数の答えが想定できる曖昧な問題。</li>
+                        <li>表記ゆれが多く、正誤判定で揉めやすい問題。</li>
+                        <li>内輪ネタやローカルすぎる話題など、参加者が推理できない問題。</li>
+                    </ul>
+                    <hr>
+                    <h3>正誤判定のコツ</h3>
+                    <p>答えが同じ対象を指しているなら、多少の表記ゆれや通称は許容するのが無難です。一方で、別物と解釈できる答えは厳密に区別してください。</p>
+                    <p>迷いそうな問題は、出題前に「どこまでを正解にするか」を自分の中で決めておくとスムーズです。</p>
+                    <hr>
+                    <h3>作問のチェックリスト</h3>
+                    <ul>
+                        <li>答えは1つに定まりやすいか。</li>
+                        <li>序盤・中盤・終盤で推理の手がかりが増えるか。</li>
+                        <li>最後が「〜は何？」「〜は誰？」のような短い疑問形になっているか。</li>
+                        <li>問題文が長すぎず、短すぎないか。</li>
+                        <li>前提が必要な問題で、その前提を文中に明示できているか。</li>
+                        <li>判定基準を出題者が説明できるか。</li>
+                    </ul>
+                </section>
             </div>
             <div class="modal-actions single">
                 <button id="rulebook-close-btn" type="button">閉じる</button>
@@ -330,8 +366,7 @@
             <select id="ai-model-select" aria-label="AIモデル選択"></select>
             <label class="ai-question-modal-label" for="ai-accuracy-rate-range">目標正答率</label>
             <div class="ai-accuracy-rate-control">
-                <input id="ai-accuracy-rate-range" type="range" min="10" max="100" step="10" value="50"
-                    aria-label="AI目標正答率">
+                <input id="ai-accuracy-rate-range" type="range" min="10" max="100" step="10" value="50" aria-label="AI目標正答率">
                 <div class="ai-accuracy-rate-readout" aria-live="polite">
                     <span>目標正答率</span>
                     <strong id="ai-accuracy-rate-value">50%</strong>

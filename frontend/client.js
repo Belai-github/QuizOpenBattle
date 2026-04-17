@@ -57,6 +57,8 @@ const rulebookTriggerEls = document.querySelectorAll(".rulebook-trigger");
 const rulebookModalEl = document.getElementById("rulebook-modal");
 const rulebookContentEl = document.getElementById("rulebook-content");
 const rulebookCloseBtnEl = document.getElementById("rulebook-close-btn");
+const rulebookTabButtonEls = document.querySelectorAll(".rulebook-tab-btn");
+const rulebookPanelEls = document.querySelectorAll(".rulebook-panel");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
@@ -113,6 +115,7 @@ let isConnecting = false;
 let aiQuestionRequestPending = false;
 let aiQuestionGenerationActive = false;
 let aiQuestionGenerationOwnerId = null;
+let currentRulebookTab = "rules";
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
@@ -5681,7 +5684,7 @@ async function requestRoomExit() {
 
     const confirmMessage = shouldCloseRoom
         ? "部屋を閉じると参加者と観戦者は全員退室になります。\n\n本当に部屋を閉じますか？"
-        : "本当に退室しますか？";
+        : "退室するとプレイヤーとして復帰不能になります。\nまた、チームメンバーが0人になった場合その時点で敗北となります。\n\n本当に退室しますか？";
     const okLabel = shouldCloseRoom ? "部屋を閉じる" : "退室する";
 
     const confirmed = await showConfirmModal(confirmMessage, {
@@ -6385,9 +6388,21 @@ function closeRulebookModal() {
 function bindRulebookHandlers() {
     removeWhitespaceTextNodes(rulebookContentEl);
 
+    setRulebookTab(currentRulebookTab);
+
     rulebookTriggerEls.forEach((buttonEl) => {
         buttonEl.addEventListener("click", () => {
             showRulebookModal(buttonEl);
+        });
+    });
+
+    rulebookTabButtonEls.forEach((buttonEl) => {
+        buttonEl.addEventListener("click", () => {
+            const nextTab = String(buttonEl.dataset.rulebookTab || "").trim();
+            if (!nextTab) {
+                return;
+            }
+            setRulebookTab(nextTab);
         });
     });
 
@@ -6409,8 +6424,25 @@ function bindRulebookHandlers() {
     }
 }
 
+function setRulebookTab(tabName) {
+    const normalizedTab = String(tabName || "").trim() || "rules";
+    currentRulebookTab = normalizedTab;
+
+    rulebookTabButtonEls.forEach((buttonEl) => {
+        const buttonTab = String(buttonEl.dataset.rulebookTab || "").trim();
+        const isActive = buttonTab === normalizedTab;
+        buttonEl.setAttribute("aria-selected", isActive ? "true" : "false");
+        buttonEl.tabIndex = isActive ? 0 : -1;
+    });
+
+    rulebookPanelEls.forEach((panelEl) => {
+        const panelId = String(panelEl.id || "").trim();
+        const isActive = panelId === `rulebook-panel-${normalizedTab}`;
+        panelEl.hidden = !isActive;
+    });
+}
+
 bindRulebookHandlers();
 updateQuestionLengthWarning();
 updateArenaAnswerLengthWarning();
 updateViewportDebugOverlay();
-
