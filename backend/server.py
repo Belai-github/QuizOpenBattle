@@ -204,6 +204,9 @@ class QuizGameManager:
         self.ai_question_generation_lock = asyncio.Lock()
         self.account_auth_manager: AccountAuthManager | None = None
 
+    def is_guest_client(self, client_id: str) -> bool:
+        return str(self.client_user_ids.get(client_id) or "").strip() == ""
+
     def _has_active_ai_room(self):
         return any(bool(room.get("is_ai_mode")) for room in self.rooms.values())
 
@@ -1817,6 +1820,10 @@ class QuizGameManager:
         model_id = normalize_model_id(normalized_payload.get("model_id"))
         requester_name = self.nicknames.get(player_id, "ゲスト")
 
+        if self.is_guest_client(player_id):
+            await self.send_private_info(player_id, "ゲスト参加中は出題できません。ログイン後に利用してください。")
+            return
+
         if is_ai_mode:
             async with self.ai_question_generation_lock:
                 if self.ai_question_generation_active:
@@ -2202,19 +2209,21 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         return
 
     session_id = str(ticket_payload.get("session_id") or "").strip()
-    session = account_auth_manager.store.get_session(session_id, touch=True)
-    if session is None:
-        await websocket.close(code=1008, reason="Unauthorized: session_expired")
-        return
-
+    is_guest = bool(ticket_payload.get("is_guest"))
     user_id = str(ticket_payload.get("user_id") or "").strip()
-    if user_id == "" or str(session.get("user_id") or "") != user_id:
-        await websocket.close(code=1008, reason="Unauthorized: session_mismatch")
-        return
+    if not is_guest:
+        session = account_auth_manager.store.get_session(session_id, touch=True)
+        if session is None:
+            await websocket.close(code=1008, reason="Unauthorized: session_expired")
+            return
 
-    if not account_auth_manager.can_user_access_client_id(user_id, client_id):
-        await websocket.close(code=1008, reason="Unauthorized: client_mismatch")
-        return
+        if user_id == "" or str(session.get("user_id") or "") != user_id:
+            await websocket.close(code=1008, reason="Unauthorized: session_mismatch")
+            return
+
+        if not account_auth_manager.can_user_access_client_id(user_id, client_id):
+            await websocket.close(code=1008, reason="Unauthorized: client_mismatch")
+            return
 
     nickname = sanitize_nickname(ticket_payload.get("nickname", "ゲスト"))
 

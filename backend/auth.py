@@ -10,6 +10,7 @@ import time
 
 CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 MAX_NICKNAME_LENGTH = 24
+GUEST_NICKNAME_PREFIX = "ゲスト-"
 
 
 def sanitize_nickname(raw_value: str | None) -> str:
@@ -17,6 +18,20 @@ def sanitize_nickname(raw_value: str | None) -> str:
     if nickname == "":
         return "ゲスト"
     return nickname[:MAX_NICKNAME_LENGTH]
+
+
+def sanitize_guest_nickname(raw_value: str | None) -> str:
+    base_nickname = sanitize_nickname(raw_value)
+    if base_nickname == "ゲスト":
+        return base_nickname
+
+    if base_nickname.startswith(GUEST_NICKNAME_PREFIX):
+        base_nickname = base_nickname[len(GUEST_NICKNAME_PREFIX):].strip() or "ゲスト"
+        if base_nickname == "ゲスト":
+            return base_nickname
+
+    available_length = max(1, MAX_NICKNAME_LENGTH - len(GUEST_NICKNAME_PREFIX))
+    return f"{GUEST_NICKNAME_PREFIX}{base_nickname[:available_length]}"
 
 
 def is_valid_client_id(client_id: str) -> bool:
@@ -49,7 +64,15 @@ class WebSocketAuthManager:
         padding = "=" * (-len(value) % 4)
         return base64.urlsafe_b64decode(value + padding)
 
-    def issue_ticket(self, client_id: str, nickname: str, user_id: str, session_id: str) -> dict:
+    def _issue_ticket_payload(
+        self,
+        client_id: str,
+        nickname: str,
+        user_id: str,
+        session_id: str,
+        *,
+        is_guest: bool,
+    ) -> dict:
         now = int(time.time())
         expires_at = now + self.ticket_ttl_seconds
         nonce = secrets.token_urlsafe(18)
@@ -59,6 +82,7 @@ class WebSocketAuthManager:
             "nick": nickname,
             "uid": str(user_id or "").strip(),
             "sid": str(session_id or "").strip(),
+            "guest": bool(is_guest),
             "exp": expires_at,
             "nonce": nonce,
         }
@@ -71,7 +95,26 @@ class WebSocketAuthManager:
             "expires_at": expires_at,
         }
 
-    def verify_ticket(self, token: str, client_id: str) -> tuple[bool, str, dict[str, str]]:
+    def issue_ticket(self, client_id: str, nickname: str, user_id: str, session_id: str) -> dict:
+        return self._issue_ticket_payload(
+            client_id=client_id,
+            nickname=sanitize_nickname(nickname),
+            user_id=user_id,
+            session_id=session_id,
+            is_guest=False,
+        )
+
+    def issue_guest_ticket(self, client_id: str, nickname: str) -> dict:
+        guest_session_id = f"guest:{secrets.token_urlsafe(18)}"
+        return self._issue_ticket_payload(
+            client_id=client_id,
+            nickname=sanitize_guest_nickname(nickname),
+            user_id="",
+            session_id=guest_session_id,
+            is_guest=True,
+        )
+
+    def verify_ticket(self, token: str, client_id: str) -> tuple[bool, str, dict[str, object]]:
         self._purge_expired_nonces()
 
         token_text = str(token or "").strip()
@@ -93,6 +136,7 @@ class WebSocketAuthManager:
         token_nickname = sanitize_nickname(payload.get("nick", ""))
         token_user_id = str(payload.get("uid", "")).strip()
         token_session_id = str(payload.get("sid", "")).strip()
+        token_is_guest = bool(payload.get("guest"))
         expires_at = int(payload.get("exp", 0))
         nonce = str(payload.get("nonce", "")).strip()
 
@@ -104,10 +148,10 @@ class WebSocketAuthManager:
             return False, "invalid_nonce", {}
         if nonce in self.used_ticket_nonces:
             return False, "reused_ticket", {}
-        if token_user_id == "":
-            return False, "user_mismatch", {}
         if token_session_id == "":
             return False, "session_mismatch", {}
+        if not token_is_guest and token_user_id == "":
+            return False, "user_mismatch", {}
 
         self.used_ticket_nonces[nonce] = expires_at
         return True, "ok", {
@@ -115,4 +159,5 @@ class WebSocketAuthManager:
             "nickname": token_nickname,
             "user_id": token_user_id,
             "session_id": token_session_id,
+            "is_guest": token_is_guest,
         }

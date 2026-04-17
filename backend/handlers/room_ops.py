@@ -56,6 +56,7 @@ def remove_client_from_all_rooms(manager, client_id: str):
 async def join_room(manager, client_id: str, payload: RoomEntryMessage):
     room_owner_id = payload.room_owner_id
     role = payload.role
+
     manager._cancel_disconnect_grace_timer(client_id)
     manager._clear_pending_disconnect_everywhere(client_id)
     manager.reconnect_reservations.pop(client_id, None)

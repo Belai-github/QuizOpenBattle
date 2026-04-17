@@ -64,9 +64,13 @@ const rulebookTabButtonEls = document.querySelectorAll(".rulebook-tab-btn");
 const rulebookPanelEls = document.querySelectorAll(".rulebook-panel");
 const authStatusTextEl = document.getElementById("auth-status-text");
 const authStatsTextEl = document.getElementById("auth-stats-text");
+const authSignedInLabelEl = document.querySelector(".auth-signed-in-label");
 const registerBtnEl = document.getElementById("register-btn");
 const loginPasskeyBtnEl = document.getElementById("login-passkey-btn");
 const logoutBtnEl = document.getElementById("logout-btn");
+const joinBtnEl = document.getElementById("join-btn");
+const guestJoinFieldEl = document.getElementById("guest-join-field");
+const guestNicknameInputEl = document.getElementById("guest-nickname");
 const loginScreenEl = document.getElementById("login-screen");
 const loginHeroCardEl = document.querySelector(".login-hero-card");
 const authSignedOutPanelEl = document.getElementById("auth-signed-out-panel");
@@ -74,6 +78,7 @@ const authSignedInPanelEl = document.getElementById("auth-signed-in-panel");
 const authSupportNoteEl = document.getElementById("auth-support-note");
 const authCreateHelpEl = document.getElementById("auth-create-help");
 const authAccountChipEl = document.getElementById("auth-account-chip");
+const submitQuestionBtnEl = document.getElementById("submit-question-btn");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
@@ -490,13 +495,16 @@ function initializeAiAccuracyRateControl() {
 
 function updateAiQuestionButtonState(rooms = currentRoomsSnapshot) {
     const hasActiveAiRoom = Array.isArray(rooms) && rooms.some((room) => Boolean(room?.is_ai_room));
-    const shouldDisable = aiQuestionRequestPending || aiQuestionGenerationActive || hasActiveAiRoom;
+    const guestSessionActive = isGuestSessionActive();
+    const shouldDisable = guestSessionActive || aiQuestionRequestPending || aiQuestionGenerationActive || hasActiveAiRoom;
 
     if (aiQuestionBtnEl) {
         aiQuestionBtnEl.disabled = shouldDisable;
         aiQuestionBtnEl.setAttribute("aria-busy", aiQuestionRequestPending ? "true" : "false");
 
-        if (aiQuestionRequestPending) {
+        if (guestSessionActive) {
+            aiQuestionBtnEl.title = "ゲスト参加中はAI出題できません";
+        } else if (aiQuestionRequestPending) {
             aiQuestionBtnEl.title = "AI出題を送信中です";
         } else if (aiQuestionGenerationActive) {
             aiQuestionBtnEl.title = String(aiQuestionGenerationOwnerId || "") === String(myClientId || "")
@@ -1491,9 +1499,13 @@ function updateAuthUi() {
         !nicknameInputEl
         || !authStatusTextEl
         || !authStatsTextEl
+        || !authSignedInLabelEl
         || !registerBtnEl
         || !loginPasskeyBtnEl
         || !logoutBtnEl
+        || !joinBtnEl
+        || !guestJoinFieldEl
+        || !guestNicknameInputEl
         || !loginScreenEl
         || !loginHeroCardEl
         || !authSignedOutPanelEl
@@ -1510,6 +1522,7 @@ function updateAuthUi() {
         loginHeroCardEl.classList.add("hidden");
         authSignedOutPanelEl.classList.add("hidden");
         authSignedInPanelEl.classList.remove("hidden");
+        authSignedInLabelEl.textContent = "ログイン中";
         authStatusTextEl.textContent = `${currentAccount.display_name} でログイン済みです。下のボタンからゲームへ参加できます。`;
         if (!isServerWebAuthnReady) {
             authStatusTextEl.textContent = "サーバー側で passkey 認証が無効です。依存導入後に再試行してください。";
@@ -1519,24 +1532,28 @@ function updateAuthUi() {
         nicknameInputEl.value = currentAccount.display_name;
         nicknameInputEl.disabled = true;
         authAccountChipEl.textContent = currentAccount.display_name;
+        authAccountChipEl.classList.remove("hidden");
         registerBtnEl.disabled = true;
         loginPasskeyBtnEl.disabled = true;
         logoutBtnEl.classList.remove("hidden");
         logoutBtnEl.disabled = isAuthBusy;
-        document.getElementById("join-btn").disabled = isAuthBusy;
+        guestJoinFieldEl.classList.add("hidden");
+        guestNicknameInputEl.disabled = true;
+        joinBtnEl.textContent = "ゲームに参加";
+        joinBtnEl.disabled = isAuthBusy;
         authSupportNoteEl.textContent = "ログイン状態はこのブラウザに保持されます。別タブの同時参加はできません。";
         authCreateHelpEl.textContent = "このブラウザの過去の棋譜は、紐付いた client_id を通じて引き継がれます。";
         document.getElementById("my-name").textContent = currentAccount.display_name;
+        updateGuestModeControls();
         return;
     }
 
     loginScreenEl.dataset.authState = "guest";
     loginHeroCardEl.classList.remove("hidden");
     authSignedOutPanelEl.classList.remove("hidden");
-    authSignedInPanelEl.classList.add("hidden");
-    authStatusTextEl.textContent = isServerWebAuthnReady
-        ? "まだログインしていません。"
-        : "サーバー側で passkey 認証が利用できません。";
+    authSignedInPanelEl.classList.remove("hidden");
+    authSignedInLabelEl.textContent = "ゲスト参加";
+    authStatusTextEl.textContent = "アカウントなしでも入場できます。ログインすると戦績管理や棋譜閲覧機能が使えます。\n現在、ゲストは部屋への参加と観戦が可能です。";
     authStatsTextEl.textContent = "";
     authStatsTextEl.classList.add("hidden");
     nicknameInputEl.disabled = isAuthBusy;
@@ -1545,19 +1562,51 @@ function updateAuthUi() {
     logoutBtnEl.classList.add("hidden");
     logoutBtnEl.disabled = true;
     authAccountChipEl.textContent = "";
+    authAccountChipEl.classList.add("hidden");
+    guestJoinFieldEl.classList.remove("hidden");
+    guestNicknameInputEl.disabled = isAuthBusy;
     authSupportNoteEl.textContent = isServerWebAuthnReady
-        ? "はじめての人は左から作成、登録済みの人は右からログインしてください。ログイン後にゲーム参加ボタンが有効になります。"
-        : "サーバーで passkey 認証ライブラリが読み込めていません。セットアップ完了後にボタンが有効になります。";
+        ? "はじめての人は左から作成、登録済みの人は右からログインできます。今すぐ遊びたい場合は下のゲスト参加も使えます。"
+        : "サーバーで passkey 認証ライブラリが読み込めていません。セットアップ完了後に登録とログインが使えます。ゲスト参加ならそのまま利用できます。";
     authCreateHelpEl.textContent = isServerWebAuthnReady
         ? "アカウント名は最初に決めます。作成後は同じパスキーでログインできます。"
         : "いまは passkey 登録を開始できません。サーバー設定を確認してください。";
-    document.getElementById("join-btn").disabled = true;
+    joinBtnEl.textContent = "ゲストとして入室";
+    joinBtnEl.disabled = isAuthBusy;
     document.getElementById("my-name").textContent = "";
+    updateGuestModeControls();
 }
 
 function setAuthBusy(nextValue) {
     isAuthBusy = Boolean(nextValue);
     updateAuthUi();
+}
+
+function isGuestSessionActive() {
+    return !currentAccount && Boolean(ws) && ws.readyState === WebSocket.OPEN;
+}
+
+function updateGuestModeControls() {
+    const guestSessionActive = isGuestSessionActive();
+
+    if (questionInputEl) {
+        questionInputEl.disabled = guestSessionActive;
+        questionInputEl.placeholder = guestSessionActive
+            ? "ログインすると問題を出題できます"
+            : "問題を入力...";
+    }
+
+    if (submitQuestionBtnEl) {
+        submitQuestionBtnEl.disabled = guestSessionActive;
+        submitQuestionBtnEl.title = guestSessionActive ? "ゲスト参加中は出題できません" : "";
+    }
+
+    if (openKifuListBtnEl) {
+        openKifuListBtnEl.disabled = guestSessionActive;
+        openKifuListBtnEl.title = guestSessionActive ? "棋譜閲覧機能はログイン後に利用できます" : "";
+    }
+
+    updateAiQuestionButtonState(currentRoomsSnapshot);
 }
 
 async function fetchJsonOrThrow(path, init = {}) {
@@ -2926,6 +2975,7 @@ function showWaitingRoomScreen() {
     updateArenaCloseButtonVisibility(null);
     updateArenaLogsButtonVisibility();
     updateChatBoxVisibility();
+    updateGuestModeControls();
     updateAiQuestionButtonState(currentRoomsSnapshot);
 }
 
@@ -2948,6 +2998,7 @@ function showGameArenaScreen() {
     updateArenaCloseButtonVisibility(currentRoomSnapshot);
     updateArenaLogsButtonVisibility();
     updateChatBoxVisibility();
+    updateGuestModeControls();
     updateAiQuestionButtonState(currentRoomsSnapshot);
 
     syncArenaLogsPresentation();
@@ -3293,7 +3344,7 @@ function renderKifuListRows(rows) {
             } catch (error) {
                 if (error?.status === 401) {
                     currentAccount = null;
-                    void refreshAuthState().catch(() => {});
+                    void refreshAuthState().catch(() => { });
                     void showAlertModal("ログイン状態が失われました。再度 passkey でログインしてください。");
                     return;
                 }
@@ -5631,6 +5682,49 @@ async function fetchWebSocketTicket(clientId) {
     };
 }
 
+async function fetchGuestWebSocketTicket(clientId, nickname) {
+    diagLog("api_ws_ticket_guest_start", { client_id: clientId });
+    const response = await fetch("/api/ws-ticket/guest", buildJsonApiFetchInit({
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            client_id: clientId,
+            nickname,
+        }),
+    }));
+    diagLog("api_ws_ticket_guest_response", { status: response.status, ok: response.ok, client_id: clientId });
+
+    if (!response.ok) {
+        let detail = "";
+        try {
+            const errorPayload = await response.json();
+            detail = String(errorPayload?.detail || "").trim();
+        } catch {
+            detail = "";
+        }
+
+        const error = new Error(`guest_ws_ticket_request_failed:${response.status}`);
+        error.status = response.status;
+        error.detail = detail;
+        throw error;
+    }
+
+    const payload = await response.json();
+    const ticket = String(payload.ticket || "").trim();
+    const sanitizedNickname = String(payload.nickname || "").trim() || "ゲスト";
+
+    if (ticket === "") {
+        throw new Error("guest_ws_ticket_missing");
+    }
+
+    return {
+        ticket,
+        nickname: sanitizedNickname,
+    };
+}
+
 function buildWebSocketUrl(clientId, wsTicket) {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = new URL(window.location.origin);
@@ -5658,19 +5752,19 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         return;
     }
 
-    if (!currentAccount) {
-        await showAlertModal("先にアカウント作成またはログインを行ってください。");
-        return;
-    }
-
     isConnecting = true;
     const clientId = getOrCreatePersistentClientId();
     myClientId = clientId;
+    const guestNickname = guestNicknameInputEl?.value?.trim() || "ゲスト";
 
     let ticketPayload;
     try {
-        await ensureLinkedClientId();
-        ticketPayload = await fetchWebSocketTicket(clientId);
+        if (currentAccount) {
+            await ensureLinkedClientId();
+            ticketPayload = await fetchWebSocketTicket(clientId);
+        } else {
+            ticketPayload = await fetchGuestWebSocketTicket(clientId, guestNickname);
+        }
     } catch (error) {
         console.error("WebSocket認証チケットの取得に失敗:", error);
         isConnecting = false;
@@ -5682,6 +5776,8 @@ document.getElementById("join-btn").addEventListener("click", async () => {
             await showAlertModal("同じクライアントがすでに接続中です。\n\n別タブを閉じてから参加してください。");
         } else if (error?.status === 409 || error?.detail === "client_id_owned_by_other_user") {
             await showAlertModal("このブラウザIDは別アカウントに紐付いています。別ブラウザでログインするか、既存アカウントで再試行してください。");
+        } else if (!currentAccount && error?.status === 400) {
+            await showAlertModal("ゲスト参加の準備に失敗しました。名前を確認して再試行してください。");
         } else {
             await showAlertModal("接続認証の取得に失敗しました。時間をおいて再試行してください。");
         }
@@ -5689,7 +5785,11 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     }
 
     const effectiveNickname = ticketPayload.nickname;
-    document.getElementById("nickname").value = effectiveNickname;
+    if (currentAccount) {
+        document.getElementById("nickname").value = effectiveNickname;
+    } else if (guestNicknameInputEl) {
+        guestNicknameInputEl.value = effectiveNickname === "ゲスト" ? "" : effectiveNickname;
+    }
 
     const wsUrl = buildWebSocketUrl(clientId, ticketPayload.ticket);
     diagLog("ws_connect_start", { client_id: clientId });
@@ -5704,6 +5804,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
         document.getElementById("login-screen").style.display = "none";
         showWaitingRoomScreen();
         document.getElementById("my-name").textContent = effectiveNickname;
+        updateGuestModeControls();
     };
 
     ws.onerror = () => {
@@ -5854,7 +5955,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 
         if (data.event_type === "game_finished") {
             if (currentAccount) {
-                void refreshAuthState().catch(() => {});
+                void refreshAuthState().catch(() => { });
             }
             closeAllModals();
             void showAlertModal(buildGameFinishedAlertMessage(data));
@@ -5990,11 +6091,13 @@ document.getElementById("join-btn").addEventListener("click", async () => {
 document.getElementById("nickname").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.isComposing) return;
     event.preventDefault();
-    if (currentAccount) {
-        document.getElementById("join-btn").click();
-    } else {
-        registerBtnEl?.click();
-    }
+    registerBtnEl?.click();
+});
+
+guestNicknameInputEl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    joinBtnEl?.click();
 });
 
 registerBtnEl?.addEventListener("click", () => {
@@ -6012,6 +6115,10 @@ logoutBtnEl?.addEventListener("click", () => {
 async function submitQuestion() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     if (!questionInputEl) return;
+    if (isGuestSessionActive()) {
+        await showAlertModal("ゲスト参加中は出題できません。ログイン後に利用してください。");
+        return;
+    }
 
     const questionText = questionInputEl.value.trim();
     if (questionText === "") {
@@ -6046,6 +6153,10 @@ async function submitQuestion() {
 
 async function submitAiQuestion() {
     if (aiQuestionRequestPending) {
+        return;
+    }
+    if (isGuestSessionActive()) {
+        await showAlertModal("ゲスト参加中はAI出題できません。ログイン後に利用してください。");
         return;
     }
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -6758,6 +6869,10 @@ openKifuListBtnEl?.addEventListener("click", async () => {
         void showAlertModal("サーバー接続後に利用できます");
         return;
     }
+    if (!currentAccount) {
+        void showAlertModal("棋譜一覧はログイン後に利用できます。");
+        return;
+    }
     try {
         currentKifuList = await fetchKifuList();
         renderKifuListRows(currentKifuList);
@@ -6765,7 +6880,7 @@ openKifuListBtnEl?.addEventListener("click", async () => {
     } catch (error) {
         if (error?.status === 401) {
             currentAccount = null;
-            void refreshAuthState().catch(() => {});
+            void refreshAuthState().catch(() => { });
             void showAlertModal("ログイン状態が失われました。再度 passkey でログインしてください。");
             return;
         }

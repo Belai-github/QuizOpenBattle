@@ -4,7 +4,7 @@ from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel
 
 from backend.account_auth import AccountAuthManager, sanitize_account_name
-from backend.auth import is_valid_client_id
+from backend.auth import is_valid_client_id, sanitize_guest_nickname
 from backend.model_catalog import get_frontend_model_payload
 from backend.storage.kifu_storage import get_kifu_detail_for_identity, list_kifu_for_identity
 
@@ -25,6 +25,11 @@ class ClientLinkRequest(BaseModel):
 
 class WsTicketIssueRequest(BaseModel):
     client_id: str
+
+
+class GuestWsTicketIssueRequest(BaseModel):
+    client_id: str
+    nickname: str | None = None
 
 
 def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_manager: AccountAuthManager, diag_api_log):
@@ -154,6 +159,23 @@ def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_ma
             session_id=user.session_id,
         )
         ticket_payload["nickname"] = user.display_name
+        return ticket_payload
+
+    @app.post("/api/ws-ticket/guest")
+    async def issue_guest_ws_ticket(payload: GuestWsTicketIssueRequest):
+        client_id = str(payload.client_id or "").strip()
+        if not is_valid_client_id(client_id):
+            raise HTTPException(status_code=400, detail="invalid_client_id")
+
+        if client_id in manager.active_connections:
+            raise HTTPException(status_code=409, detail="already_connected")
+
+        guest_nickname = sanitize_guest_nickname(payload.nickname)
+        ticket_payload = ws_auth_manager.issue_guest_ticket(
+            client_id=client_id,
+            nickname=guest_nickname,
+        )
+        ticket_payload["nickname"] = guest_nickname
         return ticket_payload
 
     @app.get("/api/ai-models")
