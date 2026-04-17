@@ -303,6 +303,17 @@ button:hover {
     color: #0f172a;
 }
 
+#logout-btn {
+    background: #dc2626;
+    color: #ffffff;
+    min-height: 44px;
+}
+
+#logout-btn:hover {
+    background: #b91c1c;
+    color: #ffffff;
+}
+
 #join-btn,
 #register-btn,
 #login-passkey-btn {
