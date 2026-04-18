@@ -3401,45 +3401,23 @@ body.modal-open #arena-question-text .arena-question-line {
         transform: scale(1.1);
     }
 
-    /* 時系列ボタン群を直感的な3段配置にする: ラベル > 前次 > 最初最後 */
+    /* 時系列ボタン群を1段で横並びにする */
     #kifu-replay-controls:not(.hidden) {
-        display: grid;
-        grid-template-columns: repeat(2, max-content);
-        grid-template-areas:
-            "label label"
-            "prev next"
-            "first last";
+        display: flex;
+        flex-wrap: nowrap;
         justify-content: center;
-        justify-items: center;
         align-items: center;
-        gap: 6px 8px;
-    }
-
-    #kifu-step-first-btn {
-        grid-area: first;
-    }
-
-    #kifu-step-prev-btn {
-        grid-area: prev;
+        gap: 6px;
     }
 
     #kifu-step-label {
-        grid-area: label;
-        min-width: 0;
+        min-width: 48px;
         font-size: 0.74rem;
     }
 
-    #kifu-step-next-btn {
-        grid-area: next;
-    }
-
-    #kifu-step-last-btn {
-        grid-area: last;
-    }
-
     .kifu-step-btn {
-        width: 32px !important;
-        min-height: 32px !important;
+        width: 20px !important;
+        min-height: 20px !important;
         font-size: 0.72rem;
     }
 }
@@ -3453,6 +3431,10 @@ body.modal-open #arena-question-text .arena-question-line {
 
     /* デスクトップ版では進行ログトグルボタン自体を非表示 */
     #arena-logs-toggle-btn {
+        display: none !important;
+    }
+
+    .arena-panel-close-btn {
         display: none !important;
     }
 
