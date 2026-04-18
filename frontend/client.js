@@ -4331,6 +4331,7 @@ function showConfirmModal(message, options = {}) {
         okLabel = "送信する",
         cancelLabel = "キャンセル",
         requireExplicitChoice = false,
+        variant = "",
     } = options;
     return new Promise((resolve) => {
         if (allowHtml) {
@@ -4342,6 +4343,10 @@ function showConfirmModal(message, options = {}) {
         confirmCancelBtn.textContent = cancelLabel;
         confirmCancelBtn.style.display = hideCancel ? "none" : "";
         confirmActionsEl.classList.toggle("single", hideCancel);
+        confirmModal.dataset.variant = String(variant || "").trim();
+        const isAnswerJudgementVariant = String(variant || "").trim() === "answer-judgement";
+        confirmOkBtn.classList.toggle("answer-judgement-correct-btn", isAnswerJudgementVariant);
+        confirmCancelBtn.classList.toggle("answer-judgement-wrong-btn", isAnswerJudgementVariant);
         if (!confirmModal.open) {
             confirmModal.showModal();
         }
@@ -4358,6 +4363,9 @@ function showConfirmModal(message, options = {}) {
             confirmActionsEl.classList.remove("single");
             confirmOkBtn.textContent = "送信する";
             confirmCancelBtn.textContent = "キャンセル";
+            delete confirmModal.dataset.variant;
+            confirmOkBtn.classList.remove("answer-judgement-correct-btn");
+            confirmCancelBtn.classList.remove("answer-judgement-wrong-btn");
             confirmOkBtn.removeEventListener("click", onOk);
             confirmCancelBtn.removeEventListener("click", onCancelClick);
             confirmModal.removeEventListener("click", onBackdropClick);
@@ -6644,6 +6652,7 @@ async function handleAnswerJudgementRequest(payload) {
             okLabel: "正解",
             cancelLabel: "誤答",
             requireExplicitChoice: true,
+            variant: "answer-judgement",
         }
     );
 

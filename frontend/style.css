@@ -1480,6 +1480,48 @@ body.modal-open #arena-question-text .arena-question-line {
     background: #fff1f2;
 }
 
+#confirm-modal[data-variant="answer-judgement"] #confirm-cancel-btn {
+    background: #2563eb;
+    color: #ffffff;
+    border: 1px solid #2563eb;
+}
+
+#confirm-modal[data-variant="answer-judgement"] #confirm-cancel-btn:hover {
+    background: #1d4ed8;
+    color: #ffffff;
+}
+
+#confirm-modal[data-variant="answer-judgement"] #confirm-ok-btn {
+    background: #dc2626;
+    color: #ffffff;
+}
+
+#confirm-modal[data-variant="answer-judgement"] #confirm-ok-btn:hover {
+    background: #b91c1c;
+    color: #ffffff;
+}
+
+#confirm-cancel-btn.answer-judgement-wrong-btn {
+    background: #2563eb !important;
+    color: #ffffff !important;
+    border: 1px solid #2563eb !important;
+}
+
+#confirm-cancel-btn.answer-judgement-wrong-btn:hover {
+    background: #1d4ed8 !important;
+    color: #ffffff !important;
+}
+
+#confirm-ok-btn.answer-judgement-correct-btn {
+    background: #dc2626 !important;
+    color: #ffffff !important;
+}
+
+#confirm-ok-btn.answer-judgement-correct-btn:hover {
+    background: #b91c1c !important;
+    color: #ffffff !important;
+}
+
 #arena-room-title {
     margin: 0 0 12px;
     display: flex;
