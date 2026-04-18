@@ -1519,10 +1519,9 @@ function serializeCredential(credential) {
 function formatAccountStats(stats) {
     const matches = Number(stats?.matches_played || 0);
     const wins = Number(stats?.wins || 0);
-    const losses = Number(stats?.losses || 0);
     const draws = Number(stats?.draws || 0);
     const authored = Number(stats?.questions_authored || 0);
-    return `対戦 ${matches} / 勝利 ${wins} / 敗北 ${losses} / 引分 ${draws} / 出題 ${authored}`;
+    return `対戦 ${matches} / 勝利 ${wins} / 引分 ${draws} / 出題 ${authored}`;
 }
 
 function renderProfileStats(stats) {
@@ -1534,7 +1533,6 @@ function renderProfileStats(stats) {
     const statItems = [
         { label: "対戦", value: Number(stats?.matches_played || 0) },
         { label: "勝利", value: Number(stats?.wins || 0) },
-        { label: "敗北", value: Number(stats?.losses || 0) },
         { label: "引分", value: Number(stats?.draws || 0) },
         { label: "出題", value: Number(stats?.questions_authored || 0) },
     ];
@@ -1555,6 +1553,16 @@ function renderProfileStats(stats) {
         chipEl.appendChild(valueEl);
         profileModalStatsEl.appendChild(chipEl);
     });
+}
+
+function setProfileModalTextBlock(element, text) {
+    if (!element) {
+        return;
+    }
+
+    const normalizedText = String(text || "").trim();
+    element.textContent = normalizedText;
+    element.classList.toggle("hidden", normalizedText === "");
 }
 
 function setProfileModalEditState(canEdit, nickname = "", editing = false) {
@@ -1606,20 +1614,21 @@ function renderProfileModalContent(profile, fallbackNickname = "", options = {})
 
     profileModalKickerEl.textContent = isMe ? "YOUR PROFILE" : "PLAYER PROFILE";
     profileModalTitleEl.textContent = nickname;
+    profileModalStatsEl.innerHTML = "";
+    profileModalStatsEl.classList.add("hidden");
+    setProfileModalTextBlock(profileModalSubtitleEl, "");
+    setProfileModalTextBlock(profileModalNoteEl, "");
 
     if (profileType === "account") {
-        profileModalSubtitleEl.textContent = "";
         setProfileModalEditState(canEdit, nickname, false);
         renderProfileStats(profile?.stats || {});
         profileModalStatsEl.classList.remove("hidden");
-        profileModalNoteEl.textContent = "戦績は passkey アカウントに保存されています。";
+        setProfileModalTextBlock(profileModalNoteEl, "戦績は passkey アカウントに保存されます。");
         return;
     }
 
     setProfileModalEditState(false, "", false);
-    profileModalSubtitleEl.textContent = isMe ? "ゲスト参加中のプロフィールです。" : "ゲスト参加中のプレイヤーです。";
-    profileModalStatsEl.classList.add("hidden");
-    profileModalNoteEl.textContent = "ゲストはニックネームのみ表示され、戦績は保存されません。";
+    setProfileModalTextBlock(profileModalNoteEl, "ゲストの戦績は保存されてません。");
 }
 
 function setProfileModalLoading(fallbackNickname = "") {
@@ -1636,15 +1645,12 @@ function setProfileModalLoading(fallbackNickname = "") {
     if (profileModalKickerEl) {
         profileModalKickerEl.textContent = "LOADING";
     }
-    if (profileModalSubtitleEl) {
-        profileModalSubtitleEl.textContent = "プロフィールを読み込み中です。";
-    }
+    setProfileModalTextBlock(profileModalSubtitleEl, "プロフィールを読み込み中です。");
     if (profileModalStatsEl) {
+        profileModalStatsEl.innerHTML = "";
         profileModalStatsEl.classList.add("hidden");
     }
-    if (profileModalNoteEl) {
-        profileModalNoteEl.textContent = "";
-    }
+    setProfileModalTextBlock(profileModalNoteEl, "");
 }
 
 function closeProfileModal() {
@@ -1883,7 +1889,7 @@ function updateAuthUi() {
     authSignedOutPanelEl.classList.remove("hidden");
     authSignedInPanelEl.classList.remove("hidden");
     authSignedInLabelEl.textContent = "ゲスト参加";
-    authStatusTextEl.textContent = "アカウントなしでも入場できます。ログインすると戦績管理や棋譜閲覧機能が使えます。\n現在、ゲストは部屋への参加と観戦が可能です。";
+    authStatusTextEl.textContent = "アカウントなしでも入場でき、対戦の参加と観戦が可能です。\nログインするとクイズの出題、戦績保存や棋譜閲覧機能が解放されます。";
     authStatsTextEl.textContent = "";
     authStatsTextEl.classList.add("hidden");
     nicknameInputEl.disabled = isAuthBusy;
@@ -1896,7 +1902,7 @@ function updateAuthUi() {
     guestJoinFieldEl.classList.remove("hidden");
     guestNicknameInputEl.disabled = isAuthBusy;
     authSupportNoteEl.textContent = isServerWebAuthnReady
-        ? "はじめての人は左から作成、登録済みの人は右からログインできます。今すぐ遊びたい場合は下のゲスト参加も使えます。"
+        ? "はじめての人は左から作成、登録済みの人は右からログインできます。今すぐ遊びたい場合はゲスト参加も可能です。"
         : "サーバーで passkey 認証ライブラリが読み込めていません。セットアップ完了後に登録とログインが使えます。ゲスト参加ならそのまま利用できます。";
     authCreateHelpEl.textContent = isServerWebAuthnReady
         ? "アカウント名は最初に決めます。作成後は同じパスキーでログインできます。"

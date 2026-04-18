@@ -1478,7 +1478,7 @@ body.modal-open #arena-question-text .arena-question-line {
     flex-direction: column;
     gap: 10px;
     width: min(420px, calc(100vw - 32px));
-    height: min(430px, calc(100vh - 48px));
+    max-height: min(430px, calc(100vh - 48px));
     overflow: hidden;
 }
 
@@ -1552,7 +1552,6 @@ body.modal-open #arena-question-text .arena-question-line {
     margin: 0;
     color: #475569;
     line-height: 1.5;
-    min-height: 24px;
 }
 
 .profile-modal-edit {
@@ -1602,7 +1601,6 @@ body.modal-open #arena-question-text .arena-question-line {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     align-content: start;
-    min-height: 140px;
 }
 
 .profile-modal-stat-chip {
@@ -1633,7 +1631,7 @@ body.modal-open #arena-question-text .arena-question-line {
     color: #64748b;
     font-size: 0.9rem;
     line-height: 1.5;
-    min-height: 44px;
+    overflow-wrap: anywhere;
 }
 
 .ai-question-modal-card {
