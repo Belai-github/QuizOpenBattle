@@ -61,7 +61,10 @@
 
     <div id="waiting-room-screen" style="display: none;">
         <div class="waiting-room-header">
-            <p>あなたの名前: <span id="my-name" style="font-weight: bold;"></span></p>
+            <button id="my-profile-card" type="button" class="waiting-profile-card" aria-label="あなたのプロフィール">
+                <span class="waiting-profile-card-label">あなたの名前</span>
+                <span id="my-name" class="waiting-profile-card-name">-</span>
+            </button>
             <button id="ai-question-btn" type="button" class="kifu-nav-btn ai-question-btn" aria-label="AIが出題">
                 AIが出題
                 <span id="ai-question-spinner" class="ai-btn-spinner hidden" aria-hidden="true"></span>
@@ -292,6 +295,19 @@
             <p id="alert-message"></p>
             <div class="modal-actions single">
                 <button id="alert-ok-btn" type="button">OK</button>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="profile-modal" class="modal profile-modal" aria-labelledby="profile-modal-title">
+        <div class="modal-card profile-modal-card">
+            <p id="profile-modal-kicker" class="profile-modal-kicker">PROFILE</p>
+            <h2 id="profile-modal-title" class="profile-modal-title">プロフィール</h2>
+            <p id="profile-modal-subtitle" class="profile-modal-subtitle"></p>
+            <div id="profile-modal-stats" class="profile-modal-stats hidden"></div>
+            <p id="profile-modal-note" class="profile-modal-note"></p>
+            <div class="modal-actions single">
+                <button id="profile-modal-close-btn" type="button">閉じる</button>
             </div>
         </div>
     </dialog>

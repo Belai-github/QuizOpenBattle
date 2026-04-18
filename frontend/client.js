@@ -12,6 +12,13 @@ const confirmActionsEl = confirmModal.querySelector(".modal-actions");
 const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
+const profileModalEl = document.getElementById("profile-modal");
+const profileModalKickerEl = document.getElementById("profile-modal-kicker");
+const profileModalTitleEl = document.getElementById("profile-modal-title");
+const profileModalSubtitleEl = document.getElementById("profile-modal-subtitle");
+const profileModalStatsEl = document.getElementById("profile-modal-stats");
+const profileModalNoteEl = document.getElementById("profile-modal-note");
+const profileModalCloseBtnEl = document.getElementById("profile-modal-close-btn");
 const questionInputEl = document.getElementById("question-box");
 const questionLengthWarningEl = document.getElementById("question-length-warning");
 const questionLengthCounterEl = document.getElementById("question-length-counter");
@@ -79,6 +86,7 @@ const authSupportNoteEl = document.getElementById("auth-support-note");
 const authCreateHelpEl = document.getElementById("auth-create-help");
 const authAccountChipEl = document.getElementById("auth-account-chip");
 const submitQuestionBtnEl = document.getElementById("submit-question-btn");
+const myProfileCardEl = document.getElementById("my-profile-card");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
@@ -137,6 +145,7 @@ let aiQuestionGenerationActive = false;
 let aiQuestionGenerationOwnerId = null;
 let currentRulebookTab = "rules";
 let authInitPromise = null;
+let activeProfileRequestToken = 0;
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
@@ -1490,7 +1499,186 @@ function formatAccountStats(stats) {
     const wins = Number(stats?.wins || 0);
     const losses = Number(stats?.losses || 0);
     const draws = Number(stats?.draws || 0);
-    return `対戦 ${matches} / 勝利 ${wins} / 敗北 ${losses} / 引分 ${draws}`;
+    const authored = Number(stats?.questions_authored || 0);
+    return `対戦 ${matches} / 勝利 ${wins} / 敗北 ${losses} / 引分 ${draws} / 出題 ${authored}`;
+}
+
+function renderProfileStats(stats) {
+    if (!profileModalStatsEl) {
+        return;
+    }
+
+    profileModalStatsEl.innerHTML = "";
+    const statItems = [
+        { label: "対戦", value: Number(stats?.matches_played || 0) },
+        { label: "勝利", value: Number(stats?.wins || 0) },
+        { label: "敗北", value: Number(stats?.losses || 0) },
+        { label: "引分", value: Number(stats?.draws || 0) },
+        { label: "出題", value: Number(stats?.questions_authored || 0) },
+    ];
+
+    statItems.forEach(({ label, value }) => {
+        const chipEl = document.createElement("div");
+        chipEl.className = "profile-modal-stat-chip";
+
+        const labelEl = document.createElement("span");
+        labelEl.className = "profile-modal-stat-label";
+        labelEl.textContent = label;
+
+        const valueEl = document.createElement("span");
+        valueEl.className = "profile-modal-stat-value";
+        valueEl.textContent = String(value);
+
+        chipEl.appendChild(labelEl);
+        chipEl.appendChild(valueEl);
+        profileModalStatsEl.appendChild(chipEl);
+    });
+}
+
+function renderProfileModalContent(profile, fallbackNickname = "") {
+    if (
+        !profileModalKickerEl
+        || !profileModalTitleEl
+        || !profileModalSubtitleEl
+        || !profileModalStatsEl
+        || !profileModalNoteEl
+    ) {
+        return;
+    }
+
+    const nickname = String(profile?.nickname || fallbackNickname || "ゲスト").trim() || "ゲスト";
+    const profileType = String(profile?.profile_type || "guest").trim();
+    const isMe = String(profile?.client_id || "").trim() !== ""
+        && String(profile?.client_id || "").trim() === String(myClientId || "").trim();
+
+    profileModalKickerEl.textContent = isMe ? "YOUR PROFILE" : "PLAYER PROFILE";
+    profileModalTitleEl.textContent = nickname;
+
+    if (profileType === "account") {
+        profileModalSubtitleEl.textContent = "";
+        renderProfileStats(profile?.stats || {});
+        profileModalStatsEl.classList.remove("hidden");
+        profileModalNoteEl.textContent = "戦績は passkey アカウントに保存されています。";
+        return;
+    }
+
+    profileModalSubtitleEl.textContent = isMe ? "ゲスト参加中のプロフィールです。" : "ゲスト参加中のプレイヤーです。";
+    profileModalStatsEl.classList.add("hidden");
+    profileModalNoteEl.textContent = "ゲストはニックネームのみ表示され、戦績は保存されません。";
+}
+
+function setProfileModalLoading(fallbackNickname = "") {
+    const nickname = String(fallbackNickname || "プレイヤー").trim() || "プレイヤー";
+    renderProfileModalContent(
+        {
+            client_id: "",
+            nickname,
+            profile_type: "guest",
+        },
+        nickname
+    );
+    if (profileModalKickerEl) {
+        profileModalKickerEl.textContent = "LOADING";
+    }
+    if (profileModalSubtitleEl) {
+        profileModalSubtitleEl.textContent = "プロフィールを読み込み中です。";
+    }
+    if (profileModalStatsEl) {
+        profileModalStatsEl.classList.add("hidden");
+    }
+    if (profileModalNoteEl) {
+        profileModalNoteEl.textContent = "";
+    }
+}
+
+function closeProfileModal() {
+    activeProfileRequestToken += 1;
+    if (!profileModalEl?.open) {
+        return;
+    }
+    profileModalEl.close();
+    updateArenaInteractionLock();
+}
+
+async function fetchPublicProfile(clientId) {
+    const normalizedClientId = String(clientId || "").trim();
+    if (normalizedClientId === "") {
+        throw new Error("missing_client_id");
+    }
+    return fetchJsonOrThrow(`/api/profile/${encodeURIComponent(normalizedClientId)}`);
+}
+
+async function openProfileModalForClient(clientId, fallbackNickname = "") {
+    if (!profileModalEl) {
+        return;
+    }
+
+    const normalizedClientId = String(clientId || "").trim();
+    if (normalizedClientId === "") {
+        await showAlertModal("プロフィールを表示できませんでした。");
+        return;
+    }
+
+    const requestToken = ++activeProfileRequestToken;
+    setProfileModalLoading(fallbackNickname);
+    if (!profileModalEl.open) {
+        profileModalEl.showModal();
+    }
+    updateArenaInteractionLock();
+
+    try {
+        const profile = await fetchPublicProfile(normalizedClientId);
+        if (requestToken !== activeProfileRequestToken) {
+            return;
+        }
+        renderProfileModalContent(profile, fallbackNickname);
+        profileModalCloseBtnEl?.focus();
+    } catch (error) {
+        if (requestToken !== activeProfileRequestToken) {
+            return;
+        }
+        closeProfileModal();
+        await showAlertModal("プロフィールの読み込みに失敗しました。");
+    }
+}
+
+function bindProfileTrigger(targetEl, clientId, fallbackNickname = "") {
+    if (!targetEl) {
+        return;
+    }
+
+    const normalizedClientId = String(clientId || "").trim();
+    if (normalizedClientId === "") {
+        targetEl.classList.remove("player-profile-trigger");
+        targetEl.removeAttribute("role");
+        targetEl.removeAttribute("tabindex");
+        return;
+    }
+
+    if (targetEl.dataset.profileClientId === normalizedClientId) {
+        return;
+    }
+
+    targetEl.dataset.profileClientId = normalizedClientId;
+    targetEl.dataset.profileNickname = String(fallbackNickname || "").trim();
+    targetEl.classList.add("player-profile-trigger");
+    targetEl.setAttribute("role", "button");
+    targetEl.setAttribute("tabindex", "0");
+    targetEl.setAttribute("aria-label", `${targetEl.dataset.profileNickname || "プレイヤー"}のプロフィールを表示`);
+
+    targetEl.addEventListener("click", (event) => {
+        if (event.target?.closest?.(".player-swap-btn")) {
+            return;
+        }
+        void openProfileModalForClient(normalizedClientId, targetEl.dataset.profileNickname || fallbackNickname);
+    });
+    targetEl.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+        event.preventDefault();
+        void openProfileModalForClient(normalizedClientId, targetEl.dataset.profileNickname || fallbackNickname);
+    });
 }
 
 function updateAuthUi() {
@@ -1527,8 +1715,8 @@ function updateAuthUi() {
         if (!isServerWebAuthnReady) {
             authStatusTextEl.textContent = "サーバー側で passkey 認証が無効です。依存導入後に再試行してください。";
         }
-        authStatsTextEl.textContent = formatAccountStats(currentAccount.stats);
-        authStatsTextEl.classList.remove("hidden");
+        authStatsTextEl.textContent = "";
+        authStatsTextEl.classList.add("hidden");
         nicknameInputEl.value = currentAccount.display_name;
         nicknameInputEl.disabled = true;
         authAccountChipEl.textContent = currentAccount.display_name;
@@ -1891,6 +2079,7 @@ function isAnyModalOpen() {
     const judgementModal = document.getElementById("answer-judgement-modal");
     if (confirmModal && confirmModal.open) return true;
     if (alertModal && alertModal.open) return true;
+    if (profileModalEl && profileModalEl.open) return true;
     if (aiQuestionModalEl && aiQuestionModalEl.open) return true;
     if (rulebookModalEl && rulebookModalEl.open) return true;
     if (judgementModal && !judgementModal.classList.contains("hidden")) return true;
@@ -4161,6 +4350,7 @@ function closeAllModals() {
     alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
     if (alertModal.open) alertModal.close();
     if (confirmModal.open) confirmModal.close();
+    closeProfileModal();
     if (aiQuestionModalEl && aiQuestionModalEl.open) aiQuestionModalEl.close();
     if (rulebookModalEl && rulebookModalEl.open) rulebookModalEl.close();
     const judgementModal = document.getElementById("answer-judgement-modal");
@@ -4534,6 +4724,7 @@ function renderParticipants(participants) {
             item.appendChild(meTagEl);
         }
 
+        bindProfileTrigger(item, participant.client_id, nickname);
         listEl.appendChild(item);
     });
 }
@@ -4609,6 +4800,8 @@ function renderNameList(listEl, names, options = {}) {
             item.appendChild(meTagEl);
         }
 
+        bindProfileTrigger(item, entry?.client_id, nickname);
+
         if (allowSwap && entry?.client_id) {
             const swapBtnEl = document.createElement("button");
             swapBtnEl.type = "button";
@@ -4626,6 +4819,9 @@ function renderNameList(listEl, names, options = {}) {
                 event.preventDefault();
                 event.stopPropagation();
                 requestSwapParticipantTeam(entry.client_id);
+            });
+            swapBtnEl.addEventListener("keydown", (event) => {
+                event.stopPropagation();
             });
 
             item.insertBefore(swapBtnEl, item.firstChild);
@@ -5076,6 +5272,7 @@ function renderArena(currentRoom) {
             questionerItemEl.appendChild(meTagEl);
         }
 
+        bindProfileTrigger(questionerItemEl, currentRoom.questioner_id, questionerName);
         questionerListEl.appendChild(questionerItemEl);
     } else if (titleEl) {
         titleEl.textContent = `出題者: ${questionerName}${isMeQuestioner ? " (You)" : ""}`;
@@ -6928,6 +7125,28 @@ kifuStepLastBtnEl?.addEventListener("click", () => {
     renderKifuStep();
 });
 
+function bindProfileModalHandlers() {
+    profileModalCloseBtnEl?.addEventListener("click", () => {
+        closeProfileModal();
+    });
+
+    profileModalEl?.addEventListener("click", (event) => {
+        if (event.target === profileModalEl) {
+            closeProfileModal();
+        }
+    });
+
+    profileModalEl?.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        closeProfileModal();
+    });
+
+    myProfileCardEl?.addEventListener("click", () => {
+        const fallbackNickname = String(document.getElementById("my-name")?.textContent || "").trim() || "ゲスト";
+        void openProfileModalForClient(myClientId, fallbackNickname);
+    });
+}
+
 function showRulebookModal(triggerEl = null) {
     if (!rulebookModalEl) return;
     if (triggerEl instanceof HTMLElement) {
@@ -7007,6 +7226,7 @@ function setRulebookTab(tabName) {
     });
 }
 
+bindProfileModalHandlers();
 bindRulebookHandlers();
 updateQuestionLengthWarning();
 updateArenaAnswerLengthWarning();

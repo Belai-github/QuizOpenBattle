@@ -255,6 +255,22 @@ class TestAccountStoreContracts(unittest.TestCase):
             self.assertEqual(left_after["stats"]["wins"], 1)  # type: ignore[index]
             self.assertEqual(right_after["stats"]["losses"], 1)  # type: ignore[index]
 
+    def test_record_authored_match_updates_stats(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            author = store.create_user(
+                display_name="Author",
+                user_handle_b64="YXV0aG9y",
+                credential_id="cred-author",
+                public_key_b64="pub-author",
+                sign_count=0,
+            )
+
+            store.record_authored_match(author["user_id"])
+
+            author_after = store.get_user(author["user_id"])
+            self.assertEqual(author_after["stats"]["questions_authored"], 1)  # type: ignore[index]
+
     def test_can_link_client_id_blocks_other_users(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             store = AccountStore(f"{tmp_dir}/auth_state.json")

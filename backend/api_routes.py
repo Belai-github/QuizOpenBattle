@@ -134,6 +134,41 @@ def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_ma
             raise HTTPException(status_code=403, detail="forbidden")
         return detail
 
+    @app.get("/api/profile/{client_id}")
+    async def get_public_profile(client_id: str):
+        resolved_client_id = str(client_id or "").strip()
+        if not is_valid_client_id(resolved_client_id):
+            raise HTTPException(status_code=400, detail="invalid_client_id")
+
+        nickname = str(manager.nicknames.get(resolved_client_id) or "").strip()
+        if nickname == "":
+            raise HTTPException(status_code=404, detail="profile_not_found")
+
+        user_id = str(manager.client_user_ids.get(resolved_client_id) or "").strip()
+        if user_id == "":
+            return {
+                "client_id": resolved_client_id,
+                "nickname": nickname,
+                "profile_type": "guest",
+                "stats": None,
+            }
+
+        user = account_auth_manager.store.get_user(user_id)
+        if not isinstance(user, dict):
+            return {
+                "client_id": resolved_client_id,
+                "nickname": nickname,
+                "profile_type": "guest",
+                "stats": None,
+            }
+
+        return {
+            "client_id": resolved_client_id,
+            "nickname": str(user.get("display_name") or nickname),
+            "profile_type": "account",
+            "stats": dict(user.get("stats") or {}),
+        }
+
     @app.post("/api/ws-ticket")
     async def issue_ws_ticket(request: Request, payload: WsTicketIssueRequest):
         user = _resolve_current_user_or_401(request)

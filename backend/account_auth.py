@@ -9,11 +9,15 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping, Protocol
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fastapi import HTTPException
+    from starlette.requests import Request as RequestLike
+    from starlette.responses import Response as ResponseLike
 else:
+    RequestLike = Any
+    ResponseLike = Any
     try:
         from fastapi import HTTPException
     except ImportError:  # pragma: no cover - test shell may not have app deps installed
@@ -33,19 +37,6 @@ if not TYPE_CHECKING:
                 super().__init__(detail)
                 self.status_code = status_code
                 self.detail = detail
-
-
-class RequestLike(Protocol):
-    headers: Mapping[str, str]
-    cookies: Mapping[str, str]
-    base_url: Any
-    url: Any
-
-
-class ResponseLike(Protocol):
-    def set_cookie(self, *args: Any, **kwargs: Any) -> None: ...
-
-    def delete_cookie(self, *args: Any, **kwargs: Any) -> None: ...
 
 from backend.auth import MAX_NICKNAME_LENGTH, is_valid_client_id
 
@@ -162,6 +153,7 @@ class AccountStore:
             "wins": 0,
             "losses": 0,
             "draws": 0,
+            "questions_authored": 0,
         }
 
     def _copy_stats(self, stats: Any) -> dict[str, int]:
@@ -431,6 +423,24 @@ class AccountStore:
 
             if changed:
                 self._persist_locked()
+
+    def record_authored_match(self, user_id: str) -> None:
+        resolved_user_id = str(user_id or "").strip()
+        if resolved_user_id == "":
+            return
+
+        with self._lock:
+            user = self._state["users"].get(resolved_user_id)
+            if not isinstance(user, dict):
+                return
+
+            stats = user.get("stats")
+            if not isinstance(stats, dict):
+                stats = self._default_stats()
+                user["stats"] = stats
+
+            stats["questions_authored"] = max(0, int(stats.get("questions_authored") or 0)) + 1
+            self._persist_locked()
 
 
 class AccountAuthManager:

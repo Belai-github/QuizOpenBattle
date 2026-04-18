@@ -290,6 +290,14 @@ class QuizGameManager:
             winner,
         )
 
+        if bool(room.get("is_ai_mode")):
+            return
+
+        questioner_client_id = str(room.get("questioner_id") or "").strip()
+        questioner_user_id = str(self.client_user_ids.get(questioner_client_id) or "").strip()
+        if questioner_user_id != "":
+            self.account_auth_manager.store.record_authored_match(questioner_user_id)
+
     def _next_room_event_id(self, room_owner_id: str):
         room = self.rooms.get(room_owner_id)
         if room is None:
@@ -2225,7 +2233,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             await websocket.close(code=1008, reason="Unauthorized: client_mismatch")
             return
 
-    nickname = sanitize_nickname(ticket_payload.get("nickname", "ゲスト"))
+    raw_nickname = ticket_payload.get("nickname")
+    nickname = sanitize_nickname(raw_nickname if isinstance(raw_nickname, str) else "ゲスト")
 
     # 接続処理を行い、許可されなかった（False）場合はここで処理を終える
     is_accepted = await manager.connect(websocket, client_id, nickname, user_id, session_id)
