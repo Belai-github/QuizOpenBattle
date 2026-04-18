@@ -15,7 +15,12 @@ const alertOkBtn = document.getElementById("alert-ok-btn");
 const profileModalEl = document.getElementById("profile-modal");
 const profileModalKickerEl = document.getElementById("profile-modal-kicker");
 const profileModalTitleEl = document.getElementById("profile-modal-title");
+const profileModalEditToggleBtnEl = document.getElementById("profile-modal-edit-toggle-btn");
 const profileModalSubtitleEl = document.getElementById("profile-modal-subtitle");
+const profileModalEditEl = document.getElementById("profile-modal-edit");
+const profileModalNameInputEl = document.getElementById("profile-modal-name-input");
+const profileModalNameSaveBtnEl = document.getElementById("profile-modal-name-save-btn");
+const profileModalEditHelpEl = document.getElementById("profile-modal-edit-help");
 const profileModalStatsEl = document.getElementById("profile-modal-stats");
 const profileModalNoteEl = document.getElementById("profile-modal-note");
 const profileModalCloseBtnEl = document.getElementById("profile-modal-close-btn");
@@ -84,9 +89,11 @@ const authSignedOutPanelEl = document.getElementById("auth-signed-out-panel");
 const authSignedInPanelEl = document.getElementById("auth-signed-in-panel");
 const authSupportNoteEl = document.getElementById("auth-support-note");
 const authCreateHelpEl = document.getElementById("auth-create-help");
-const authAccountChipEl = document.getElementById("auth-account-chip");
+const authProfileCardEl = document.getElementById("auth-profile-card");
+const authProfileNameEl = document.getElementById("auth-profile-name");
 const submitQuestionBtnEl = document.getElementById("submit-question-btn");
 const myProfileCardEl = document.getElementById("my-profile-card");
+const authLoadingPanelEl = document.getElementById("auth-loading-panel");
 
 let pendingArenaMode = null;
 let userRole = null; // "questioner", "team-left", "team-right", "spectator", null
@@ -145,7 +152,10 @@ let aiQuestionGenerationActive = false;
 let aiQuestionGenerationOwnerId = null;
 let currentRulebookTab = "rules";
 let authInitPromise = null;
+let isAuthInitializing = true;
 let activeProfileRequestToken = 0;
+let isProfileNameSaving = false;
+let isProfileEditMode = false;
 const LOG_AUTO_SCROLL_THRESHOLD_PX = 16;
 const logNewIndicatorMap = new WeakMap();
 const logScrollListenerBound = new WeakSet();
@@ -1535,11 +1545,41 @@ function renderProfileStats(stats) {
     });
 }
 
-function renderProfileModalContent(profile, fallbackNickname = "") {
+function setProfileModalEditState(canEdit, nickname = "", editing = false) {
+    if (
+        !profileModalEditEl
+        || !profileModalEditToggleBtnEl
+        || !profileModalNameInputEl
+        || !profileModalNameSaveBtnEl
+        || !profileModalEditHelpEl
+    ) {
+        return;
+    }
+
+    if (!canEdit) {
+        isProfileEditMode = false;
+        profileModalEditToggleBtnEl.classList.add("hidden");
+        profileModalEditEl.classList.add("hidden");
+        profileModalNameInputEl.value = "";
+        profileModalNameInputEl.disabled = true;
+        profileModalNameSaveBtnEl.disabled = true;
+        return;
+    }
+
+    isProfileEditMode = Boolean(editing);
+    profileModalEditToggleBtnEl.classList.remove("hidden");
+    profileModalEditEl.classList.toggle("hidden", !isProfileEditMode);
+    profileModalNameInputEl.value = nickname;
+    profileModalNameInputEl.disabled = isProfileNameSaving;
+    profileModalNameSaveBtnEl.disabled = isProfileNameSaving;
+}
+
+function renderProfileModalContent(profile, fallbackNickname = "", options = {}) {
     if (
         !profileModalKickerEl
         || !profileModalTitleEl
         || !profileModalSubtitleEl
+        || !profileModalEditEl
         || !profileModalStatsEl
         || !profileModalNoteEl
     ) {
@@ -1550,18 +1590,21 @@ function renderProfileModalContent(profile, fallbackNickname = "") {
     const profileType = String(profile?.profile_type || "guest").trim();
     const isMe = String(profile?.client_id || "").trim() !== ""
         && String(profile?.client_id || "").trim() === String(myClientId || "").trim();
+    const canEdit = Boolean(options?.canEdit);
 
     profileModalKickerEl.textContent = isMe ? "YOUR PROFILE" : "PLAYER PROFILE";
     profileModalTitleEl.textContent = nickname;
 
     if (profileType === "account") {
         profileModalSubtitleEl.textContent = "";
+        setProfileModalEditState(canEdit, nickname, false);
         renderProfileStats(profile?.stats || {});
         profileModalStatsEl.classList.remove("hidden");
         profileModalNoteEl.textContent = "戦績は passkey アカウントに保存されています。";
         return;
     }
 
+    setProfileModalEditState(false, "", false);
     profileModalSubtitleEl.textContent = isMe ? "ゲスト参加中のプロフィールです。" : "ゲスト参加中のプレイヤーです。";
     profileModalStatsEl.classList.add("hidden");
     profileModalNoteEl.textContent = "ゲストはニックネームのみ表示され、戦績は保存されません。";
@@ -1575,7 +1618,8 @@ function setProfileModalLoading(fallbackNickname = "") {
             nickname,
             profile_type: "guest",
         },
-        nickname
+        nickname,
+        { canEdit: false }
     );
     if (profileModalKickerEl) {
         profileModalKickerEl.textContent = "LOADING";
@@ -1593,6 +1637,7 @@ function setProfileModalLoading(fallbackNickname = "") {
 
 function closeProfileModal() {
     activeProfileRequestToken += 1;
+    isProfileEditMode = false;
     if (!profileModalEl?.open) {
         return;
     }
@@ -1606,6 +1651,18 @@ async function fetchPublicProfile(clientId) {
         throw new Error("missing_client_id");
     }
     return fetchJsonOrThrow(`/api/profile/${encodeURIComponent(normalizedClientId)}`);
+}
+
+async function updateCurrentAccountDisplayName(displayName) {
+    return fetchJsonOrThrow("/api/auth/profile/display-name", {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            display_name: displayName,
+        }),
+    });
 }
 
 async function openProfileModalForClient(clientId, fallbackNickname = "") {
@@ -1631,7 +1688,9 @@ async function openProfileModalForClient(clientId, fallbackNickname = "") {
         if (requestToken !== activeProfileRequestToken) {
             return;
         }
-        renderProfileModalContent(profile, fallbackNickname);
+        renderProfileModalContent(profile, fallbackNickname, {
+            canEdit: Boolean(currentAccount) && normalizedClientId === String(myClientId || "").trim(),
+        });
         profileModalCloseBtnEl?.focus();
     } catch (error) {
         if (requestToken !== activeProfileRequestToken) {
@@ -1640,6 +1699,62 @@ async function openProfileModalForClient(clientId, fallbackNickname = "") {
         closeProfileModal();
         await showAlertModal("プロフィールの読み込みに失敗しました。");
     }
+}
+
+async function submitProfileDisplayNameChange() {
+    if (!currentAccount || !profileModalNameInputEl || !profileModalNameSaveBtnEl) {
+        return;
+    }
+
+    const nextDisplayName = String(profileModalNameInputEl.value || "").trim();
+    if (nextDisplayName === "") {
+        await showAlertModal("アカウント名を入力してください。");
+        return;
+    }
+    if (nextDisplayName === String(currentAccount.display_name || "").trim()) {
+        return;
+    }
+
+    isProfileNameSaving = true;
+    setProfileModalEditState(true, nextDisplayName, true);
+
+    try {
+        const payload = await updateCurrentAccountDisplayName(nextDisplayName);
+        currentAccount = payload?.user || currentAccount;
+        updateAuthUi();
+        openCurrentAccountProfileModal();
+        await showAlertModal("アカウント名を変更しました。");
+    } catch (error) {
+        await showAlertModal(getAuthErrorMessage(error, "アカウント名の変更に失敗しました。"));
+        setProfileModalEditState(true, nextDisplayName, true);
+    } finally {
+        isProfileNameSaving = false;
+        if (currentAccount) {
+            setProfileModalEditState(true, currentAccount.display_name, isProfileEditMode);
+        }
+    }
+}
+
+function openCurrentAccountProfileModal() {
+    if (!currentAccount || !profileModalEl) {
+        return;
+    }
+
+    renderProfileModalContent(
+        {
+            client_id: String(currentAccount.current_client_id || ""),
+            nickname: currentAccount.display_name,
+            profile_type: "account",
+            stats: currentAccount.stats || {},
+        },
+        currentAccount.display_name,
+        { canEdit: true }
+    );
+    if (!profileModalEl.open) {
+        profileModalEl.showModal();
+    }
+    updateArenaInteractionLock();
+    profileModalCloseBtnEl?.focus();
 }
 
 function bindProfileTrigger(targetEl, clientId, fallbackNickname = "") {
@@ -1700,10 +1815,25 @@ function updateAuthUi() {
         || !authSignedInPanelEl
         || !authSupportNoteEl
         || !authCreateHelpEl
-        || !authAccountChipEl
+        || !authProfileCardEl
+        || !authProfileNameEl
+        || !authLoadingPanelEl
     ) {
         return;
     }
+
+    if (isAuthInitializing) {
+        loginScreenEl.dataset.authState = "loading";
+        loginHeroCardEl.classList.add("hidden");
+        authSignedOutPanelEl.classList.add("hidden");
+        authSignedInPanelEl.classList.add("hidden");
+        authLoadingPanelEl.classList.remove("hidden");
+        authProfileCardEl.classList.add("hidden");
+        document.getElementById("my-name").textContent = "";
+        return;
+    }
+
+    authLoadingPanelEl.classList.add("hidden");
 
     if (currentAccount) {
         loginScreenEl.dataset.authState = "authenticated";
@@ -1711,7 +1841,7 @@ function updateAuthUi() {
         authSignedOutPanelEl.classList.add("hidden");
         authSignedInPanelEl.classList.remove("hidden");
         authSignedInLabelEl.textContent = "ログイン中";
-        authStatusTextEl.textContent = `${currentAccount.display_name} でログイン済みです。下のボタンからゲームへ参加できます。`;
+        authStatusTextEl.textContent = "";
         if (!isServerWebAuthnReady) {
             authStatusTextEl.textContent = "サーバー側で passkey 認証が無効です。依存導入後に再試行してください。";
         }
@@ -1719,8 +1849,8 @@ function updateAuthUi() {
         authStatsTextEl.classList.add("hidden");
         nicknameInputEl.value = currentAccount.display_name;
         nicknameInputEl.disabled = true;
-        authAccountChipEl.textContent = currentAccount.display_name;
-        authAccountChipEl.classList.remove("hidden");
+        authProfileNameEl.textContent = currentAccount.display_name;
+        authProfileCardEl.classList.remove("hidden");
         registerBtnEl.disabled = true;
         loginPasskeyBtnEl.disabled = true;
         logoutBtnEl.classList.remove("hidden");
@@ -1749,8 +1879,8 @@ function updateAuthUi() {
     loginPasskeyBtnEl.disabled = isAuthBusy || !isWebAuthnSupported() || !isServerWebAuthnReady;
     logoutBtnEl.classList.add("hidden");
     logoutBtnEl.disabled = true;
-    authAccountChipEl.textContent = "";
-    authAccountChipEl.classList.add("hidden");
+    authProfileNameEl.textContent = "-";
+    authProfileCardEl.classList.add("hidden");
     guestJoinFieldEl.classList.remove("hidden");
     guestNicknameInputEl.disabled = isAuthBusy;
     authSupportNoteEl.textContent = isServerWebAuthnReady
@@ -2013,8 +2143,10 @@ async function initializeAuthState() {
             }
         } catch {
             currentAccount = null;
-            updateAuthUi();
         }
+
+        isAuthInitializing = false;
+        updateAuthUi();
 
         const shouldAutoReconnect = localStorage.getItem("quiz_auto_reconnect") === "1";
         if (shouldAutoReconnect && currentAccount) {
@@ -5939,10 +6071,16 @@ function buildWebSocketUrl(clientId, wsTicket) {
     return wsUrl.toString();
 }
 
-window.onload = () => {
+function bootstrapApp() {
     updateAuthUi();
     void initializeAuthState();
-};
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootstrapApp, { once: true });
+} else {
+    bootstrapApp();
+}
 
 window.setInterval(() => {
     if (!isInGameArena()) {
@@ -7130,6 +7268,30 @@ function bindProfileModalHandlers() {
         closeProfileModal();
     });
 
+    profileModalEditToggleBtnEl?.addEventListener("click", () => {
+        if (!currentAccount) {
+            return;
+        }
+        isProfileEditMode = !isProfileEditMode;
+        setProfileModalEditState(true, currentAccount.display_name, isProfileEditMode);
+        if (isProfileEditMode) {
+            profileModalNameInputEl?.focus();
+            profileModalNameInputEl?.select();
+        }
+    });
+
+    profileModalNameSaveBtnEl?.addEventListener("click", () => {
+        void submitProfileDisplayNameChange();
+    });
+
+    profileModalNameInputEl?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.isComposing) {
+            return;
+        }
+        event.preventDefault();
+        void submitProfileDisplayNameChange();
+    });
+
     profileModalEl?.addEventListener("click", (event) => {
         if (event.target === profileModalEl) {
             closeProfileModal();
@@ -7144,6 +7306,10 @@ function bindProfileModalHandlers() {
     myProfileCardEl?.addEventListener("click", () => {
         const fallbackNickname = String(document.getElementById("my-name")?.textContent || "").trim() || "ゲスト";
         void openProfileModalForClient(myClientId, fallbackNickname);
+    });
+
+    authProfileCardEl?.addEventListener("click", () => {
+        openCurrentAccountProfileModal();
     });
 }
 

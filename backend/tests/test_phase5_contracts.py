@@ -271,6 +271,23 @@ class TestAccountStoreContracts(unittest.TestCase):
             author_after = store.get_user(author["user_id"])
             self.assertEqual(author_after["stats"]["questions_authored"], 1)  # type: ignore[index]
 
+    def test_update_user_display_name_updates_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            user = store.create_user(
+                display_name="Before",
+                user_handle_b64="YmVmb3Jl",
+                credential_id="cred-before",
+                public_key_b64="pub-before",
+                sign_count=0,
+            )
+
+            updated = store.update_user_display_name(user["user_id"], "After")
+
+            self.assertEqual(updated["display_name"], "After")
+            refreshed = store.get_user(user["user_id"])
+            self.assertEqual(refreshed["display_name"], "After")  # type: ignore[index]
+
     def test_can_link_client_id_blocks_other_users(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             store = AccountStore(f"{tmp_dir}/auth_state.json")

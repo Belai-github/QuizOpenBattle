@@ -285,6 +285,25 @@ class AccountStore:
             self._persist_locked()
             return dict(user)
 
+    def update_user_display_name(self, user_id: str, display_name: str) -> dict[str, Any]:
+        with self._lock:
+            resolved_user_id = str(user_id or "").strip()
+            user = self._state["users"].get(resolved_user_id)
+            if not isinstance(user, dict):
+                raise ValueError("user_not_found")
+
+            account_name = sanitize_account_name(display_name)
+            if account_name == "":
+                raise ValueError("empty_display_name")
+
+            existing_user = self.find_user_by_display_name(account_name)
+            if isinstance(existing_user, dict) and str(existing_user.get("user_id") or "") != resolved_user_id:
+                raise ValueError("display_name_taken")
+
+            user["display_name"] = account_name
+            self._persist_locked()
+            return dict(user)
+
     def link_client_id(self, user_id: str, client_id: str) -> list[str]:
         cid = str(client_id or "").strip()
         if not is_valid_client_id(cid):

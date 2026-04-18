@@ -23,6 +23,10 @@ class ClientLinkRequest(BaseModel):
     client_id: str
 
 
+class DisplayNameUpdateRequest(BaseModel):
+    display_name: str
+
+
 class WsTicketIssueRequest(BaseModel):
     client_id: str
 
@@ -38,6 +42,26 @@ def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_ma
         if user is None:
             raise HTTPException(status_code=401, detail="not_authenticated")
         return user
+
+    async def _broadcast_profile_name_update(user_id: str, display_name: str):
+        resolved_user_id = str(user_id or "").strip()
+        resolved_display_name = str(display_name or "").strip()
+        if resolved_user_id == "" or resolved_display_name == "":
+            return
+
+        updated_client_ids = set()
+        for client_id, connected_user_id in list(manager.client_user_ids.items()):
+            if str(connected_user_id or "").strip() != resolved_user_id:
+                continue
+            manager.nicknames[client_id] = resolved_display_name
+            updated_client_ids.add(client_id)
+
+        for owner_id, room in manager.rooms.items():
+            if owner_id in updated_client_ids and not bool(room.get("is_ai_mode")):
+                room["questioner_name"] = resolved_display_name
+
+        if updated_client_ids:
+            await manager.broadcast_state(public_info="")
 
     @app.get("/api/me")
     async def get_me(request: Request):
@@ -103,6 +127,40 @@ def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_ma
         return {
             "linked_client_ids": list(user.linked_client_ids),
             "current_client_id": user.current_client_id,
+        }
+
+    @app.patch("/api/auth/profile/display-name")
+    async def update_display_name(request: Request, payload: DisplayNameUpdateRequest):
+        user = _resolve_current_user_or_401(request)
+        display_name = sanitize_account_name(payload.display_name)
+        if display_name == "":
+            raise HTTPException(status_code=400, detail="empty_display_name")
+
+        try:
+            account_auth_manager.store.update_user_display_name(user.user_id, display_name)
+        except ValueError as exc:
+            detail = str(exc) or "profile_update_failed"
+            if detail in {"empty_display_name", "display_name_taken", "user_not_found"}:
+                status_code = 409 if detail == "display_name_taken" else 400
+                if detail == "user_not_found":
+                    status_code = 404
+                raise HTTPException(status_code=status_code, detail=detail) from exc
+            raise HTTPException(status_code=400, detail="profile_update_failed") from exc
+
+        refreshed_user = account_auth_manager.get_authenticated_user(request)
+        if refreshed_user is None:
+            raise HTTPException(status_code=401, detail="not_authenticated")
+
+        await _broadcast_profile_name_update(refreshed_user.user_id, refreshed_user.display_name)
+        return {
+            "authenticated": True,
+            "user": {
+                "user_id": refreshed_user.user_id,
+                "display_name": refreshed_user.display_name,
+                "stats": dict(refreshed_user.stats),
+                "linked_client_ids": list(refreshed_user.linked_client_ids),
+                "current_client_id": refreshed_user.current_client_id,
+            },
         }
 
     @app.get("/api/kifu/list")

@@ -12,7 +12,12 @@
 <body>
     <h1>QuizOpenBattle</h1>
 
-    <div id="login-screen" data-auth-state="guest">
+    <div id="login-screen" data-auth-state="loading">
+        <div id="auth-loading-panel" class="auth-status-card">
+            <p class="auth-signed-in-label">確認中</p>
+            <p id="auth-loading-text">ログイン状態を確認しています...</p>
+        </div>
+
         <div class="login-hero-card">
             <p class="login-eyebrow">Passkey Account</p>
             <h2 class="login-title">ログインしてゲームに参加</h2>
@@ -40,12 +45,13 @@
 
         <div id="auth-signed-in-panel" class="auth-status-card hidden">
             <div class="auth-signed-in-header">
-                <div>
-                    <p class="auth-signed-in-label">ログイン中</p>
-                    <p id="auth-status-text">パスキーでアカウントを作成、またはログインしてください。</p>
-                </div>
-                <div id="auth-account-chip" class="auth-account-chip"></div>
+                <p class="auth-signed-in-label">ログイン中</p>
+                <p id="auth-status-text">パスキーでアカウントを作成、またはログインしてください。</p>
             </div>
+            <button id="auth-profile-card" type="button" class="waiting-profile-card auth-profile-card hidden" aria-label="あなたのプロフィール">
+                <span class="waiting-profile-card-label">あなたの名前</span>
+                <span id="auth-profile-name" class="waiting-profile-card-name">-</span>
+            </button>
             <p id="auth-stats-text" class="auth-stats-text hidden"></p>
             <div id="guest-join-field" class="guest-join-field hidden">
                 <label for="guest-nickname" class="auth-label">ゲスト名</label>
@@ -302,8 +308,21 @@
     <dialog id="profile-modal" class="modal profile-modal" aria-labelledby="profile-modal-title">
         <div class="modal-card profile-modal-card">
             <p id="profile-modal-kicker" class="profile-modal-kicker">PROFILE</p>
-            <h2 id="profile-modal-title" class="profile-modal-title">プロフィール</h2>
+            <div class="profile-modal-title-row">
+                <h2 id="profile-modal-title" class="profile-modal-title">プロフィール</h2>
+                <button id="profile-modal-edit-toggle-btn" type="button" class="profile-modal-edit-toggle-btn hidden" aria-label="プロフィール名を編集">
+                    <img src="img/edit.png" alt="" class="profile-modal-edit-toggle-icon">
+                </button>
+            </div>
             <p id="profile-modal-subtitle" class="profile-modal-subtitle"></p>
+            <div id="profile-modal-edit" class="profile-modal-edit hidden">
+                <label for="profile-modal-name-input" class="profile-modal-edit-label">アカウント名</label>
+                <div class="profile-modal-edit-row">
+                    <input id="profile-modal-name-input" class="profile-modal-name-input" type="text" maxlength="24" placeholder="アカウント名を入力">
+                    <button id="profile-modal-name-save-btn" type="button" class="profile-modal-name-save-btn">確定</button>
+                </div>
+                <p id="profile-modal-edit-help" class="profile-modal-edit-help">他のアカウントと重複する名前は使えません。</p>
+            </div>
             <div id="profile-modal-stats" class="profile-modal-stats hidden"></div>
             <p id="profile-modal-note" class="profile-modal-note"></p>
             <div class="modal-actions single">
