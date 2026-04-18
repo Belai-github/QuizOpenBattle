@@ -2606,9 +2606,52 @@ body.modal-open #arena-question-text .arena-question-line {
 /* モバイル版（768px未満）: 進行ログをオーバーレイ化 */
 @media (max-width: 767px) {
 
+    body:has(#waiting-room-screen:not([style*="none"])) {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: stretch;
+        height: 100vh;
+        height: 100dvh;
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow: hidden;
+        padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+        gap: 10px;
+        box-sizing: border-box;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) h1 {
+        flex: 0 0 auto;
+        margin: 0;
+        font-size: 1.28rem;
+        line-height: 1.1;
+        text-align: center;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) #waiting-room-screen {
+        display: flex !important;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 12px;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) #waiting-room-screen>hr {
+        flex: 0 0 auto;
+        width: 100%;
+        margin: 4px 0 8px;
+    }
+
     .waiting-room-header {
         align-items: flex-start;
         justify-content: flex-start;
+        margin-bottom: 4px;
     }
 
     .waiting-profile-card {
@@ -2630,6 +2673,100 @@ body.modal-open #arena-question-text .arena-question-line {
     #open-kifu-list-btn {
         order: 4;
         flex: 0 0 auto;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) #waiting-panels {
+        flex: 1 1 auto;
+        min-height: 0;
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        gap: 10px;
+        overflow: hidden;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel,
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel {
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel {
+        order: 1;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel {
+        order: 2;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel #room-list-box {
+        margin-top: 0;
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
+        max-height: none;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel .question-input-row {
+        flex: 0 0 auto;
+        margin-top: 10px;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) #question-box {
+        min-height: 72px;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel .log-scroll-shell {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel #event-log-box {
+        margin-top: 0;
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
+        max-height: none;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel .chat-box {
+        flex: 0 0 auto;
+        margin-top: 10px;
+        overflow: visible;
+        padding-bottom: 22px;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel .chat-compose {
+        position: relative;
+        min-height: 0;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel .chat-compose .chat-length-warning {
+        position: absolute;
+        left: 2px;
+        top: calc(100% + 4px);
+        margin: 0;
+        z-index: 2;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-participants-section {
+        flex: 0 0 auto;
+        margin-top: 10px;
+        min-height: 0;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-participants-section h3 {
+        margin: 0 0 8px;
+        font-size: 1rem;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) #participants-list {
+        margin: 0;
+        max-height: 96px;
+        overflow-y: auto;
+        padding-right: 4px;
     }
 
     html,
