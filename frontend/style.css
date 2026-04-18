@@ -405,6 +405,7 @@ button:hover {
 .waiting-room-header .rulebook-btn {
     margin-right: 0;
     margin-top: 0;
+    align-self: flex-start;
 }
 
 .kifu-nav-btn {
