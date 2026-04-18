@@ -8,6 +8,7 @@
     --primary-hover: #115e59;
     --danger-muted: #dc2626;
     --arena-team-log-height: 300px;
+    --arena-mobile-modal-log-height: 300px;
 }
 
 * {
@@ -1964,8 +1965,21 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-player-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: #f8fafc;
+    color: #1e293b;
+    font-size: 0.84rem;
     font-weight: 700;
     margin-bottom: 0;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
 }
 
 .arena-player-header {
@@ -2511,11 +2525,19 @@ body.modal-open #arena-question-text .arena-question-line {
     gap: 8px;
 }
 
+.arena-mobile-chat-toolbar {
+    display: none;
+}
+
+.arena-mobile-chat-toolbar.hidden {
+    display: none !important;
+}
+
 #arena-global-chat-box {
     gap: 8px;
 }
 
-.arena-logs-toggle-btn {
+.arena-panel-toggle-btn {
     flex: 0 0 32px;
     width: 32px;
     height: 32px;
@@ -2531,12 +2553,34 @@ body.modal-open #arena-question-text .arena-question-line {
     -webkit-tap-highlight-color: transparent;
 }
 
-.arena-logs-toggle-btn .arena-logs-icon {
+.arena-panel-toggle-icon {
     width: 100%;
     height: 100%;
     margin-bottom: 5px;
     object-fit: contain;
+}
+
+.arena-panel-toggle-btn-global .arena-panel-toggle-icon {
     filter: brightness(0) saturate(100%) invert(79%) sepia(47%) saturate(600%) hue-rotate(38deg);
+}
+
+.arena-panel-toggle-btn-left .arena-panel-toggle-icon {
+    filter: brightness(0) saturate(100%) invert(26%) sepia(90%) saturate(2032%) hue-rotate(337deg) brightness(94%) contrast(95%);
+}
+
+.arena-panel-toggle-btn-right .arena-panel-toggle-icon {
+    filter: brightness(0) saturate(100%) invert(31%) sepia(91%) saturate(1779%) hue-rotate(213deg) brightness(96%) contrast(98%);
+}
+
+.arena-panel-toggle-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.34;
+    transform: none;
+}
+
+.arena-panel-toggle-btn:disabled .arena-panel-toggle-icon {
+    opacity: 0.58;
+    filter: brightness(1.48) saturate(1.15);
 }
 
 .arena-logs-unread-badge {
@@ -2551,17 +2595,39 @@ body.modal-open #arena-question-text .arena-question-line {
     pointer-events: none;
 }
 
-.arena-logs-toggle-btn:hover,
-.arena-logs-toggle-btn:active,
-.arena-logs-toggle-btn:focus,
-.arena-logs-toggle-btn:focus-visible {
+.arena-panel-toggle-btn:hover,
+.arena-panel-toggle-btn:active,
+.arena-panel-toggle-btn:focus,
+.arena-panel-toggle-btn:focus-visible {
     background: transparent !important;
     box-shadow: none;
     outline: none;
 }
 
-.arena-logs-toggle-btn:hover {
+.arena-panel-toggle-btn:hover:not(:disabled) {
     transform: scale(1.1);
+}
+
+.arena-panel-close-btn {
+    width: 32px;
+    height: 32px;
+    min-height: auto;
+    margin: 0;
+    padding: 0;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: #111827;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.arena-panel-close-btn:hover {
+    background: rgba(255, 255, 255, 0.6);
 }
 
 /* 狭いチャット欄でも本文が1文字ずつ縦崩れしないようにする */
@@ -2594,9 +2660,40 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-spectator-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.84rem;
     font-weight: 700;
-    height: 30px;
     margin-bottom: 8px;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#arena-player-left .arena-player-label {
+    background: #fff1f2;
+    border-color: #fca5a5;
+    color: #b91c1c;
+}
+
+#arena-player-right .arena-player-label {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+}
+
+#arena-spectator-box .arena-spectator-label {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: #334155;
 }
 
 #arena-global-chat-toggle {
@@ -2769,6 +2866,325 @@ body.modal-open #arena-question-text .arena-question-line {
         padding-right: 4px;
     }
 
+    body:has(#game-arena-screen:not([style*="none"])) {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: stretch;
+        height: 100vh;
+        height: 100dvh;
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow: hidden;
+        padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+        gap: 10px;
+        box-sizing: border-box;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) h1 {
+        flex: 0 0 auto;
+        margin: 0;
+        font-size: 1.22rem;
+        line-height: 1.1;
+        text-align: center;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
+        display: flex !important;
+        flex-direction: column;
+        flex: 0 1 auto;
+        min-height: 0;
+        width: 100%;
+        max-width: none;
+        max-height: calc(100dvh - 64px);
+        margin: 0;
+        padding: 10px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        box-sizing: border-box;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-header-tools {
+        flex: 0 0 auto;
+        gap: 6px;
+        margin-bottom: 6px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-header-left-actions,
+    body:has(#game-arena-screen:not([style*="none"])) .arena-header-right-actions {
+        gap: 6px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-header-right-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-room-title {
+        flex: 0 0 auto;
+        gap: 6px;
+        margin: 0 0 8px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-room-meta {
+        gap: 6px;
+        max-height: 56px;
+        overflow-y: auto;
+        padding-right: 2px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-room-meta-chip {
+        min-height: 24px;
+        padding: 4px 8px;
+        font-size: 0.72rem;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-board-layout {
+        flex: 0 0 auto;
+        min-height: 0;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+            "question question"
+            "left right";
+        grid-template-rows: auto auto;
+        gap: 6px;
+        align-items: start;
+        overflow: hidden;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-question-board {
+        grid-area: question;
+        min-height: 0;
+        max-height: min(42vh, 360px);
+        padding: 10px 10px 12px;
+        gap: 6px;
+        justify-content: flex-start;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-progress-announcement {
+        font-size: 0.86rem;
+        line-height: 1.22;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-question-text {
+        width: 100%;
+        font-size: clamp(1.62rem, 7vw, 2.3rem);
+        line-height: 1.14;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-answer-box {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-answer-input {
+        min-height: 42px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-left,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-right {
+        min-height: 0;
+        height: auto;
+        padding: 8px;
+        align-self: start;
+        overflow: hidden;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-left {
+        grid-area: left;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-right {
+        grid-area: right;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-player-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+        height: auto;
+        min-height: 24px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-player-label {
+        order: 1;
+        min-height: 26px;
+        padding: 0 12px;
+        font-size: 0.8rem;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-result-badge {
+        order: 2;
+        margin-left: auto;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-action-points-display {
+        order: 3;
+        flex: 0 0 100%;
+        justify-content: flex-start;
+        gap: 6px;
+        padding-left: 2px;
+        font-size: 0.9rem;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-left-list,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-right-list {
+        flex: 0 1 auto;
+        min-height: 0;
+        max-height: 92px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-left .chat-box:not(.hidden),
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-right .chat-box:not(.hidden) {
+        margin-top: 8px;
+        padding-bottom: 22px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-left>.chat-box,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-right>.chat-box,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box {
+        display: none !important;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-logs-modal-slot>.chat-box {
+        display: flex !important;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-left .chat-compose,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-right .chat-compose,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-global-chat-box .chat-compose {
+        position: relative;
+        min-height: 0;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-left .chat-length-warning,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-player-right .chat-length-warning,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-global-chat-box .chat-length-warning {
+        position: absolute;
+        left: 2px;
+        top: calc(100% + 4px);
+        margin: 0;
+        z-index: 2;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout {
+        flex: 0 0 auto;
+        min-height: 0;
+        grid-template-columns: 1fr;
+        gap: 6px;
+        margin-top: 12px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout:has(#arena-global-chat-box.hidden) {
+        grid-template-columns: 1fr;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-global-chat-box {
+        margin-top: 0;
+        min-height: 0;
+        height: auto;
+        padding: 8px;
+        overflow: hidden;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box {
+        gap: 6px;
+        width: 100%;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-spectator-label {
+        min-height: 26px;
+        margin-bottom: 0;
+        padding: 0 12px;
+        font-size: 0.8rem;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: 84px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box {
+        width: auto;
+        gap: 0;
+        align-self: stretch;
+        padding-bottom: 22px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-mobile-chat-toolbar {
+        display: block;
+        flex: 0 0 auto;
+        margin-top: 8px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-mobile-chat-toolbar hr {
+        margin: 0 0 8px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-mobile-chat-toolbar-buttons {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: center;
+        gap: 12px;
+        justify-items: center;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-panel-toggle-btn {
+        width: 38px;
+        height: 38px;
+        flex: 0 0 38px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box .arena-chat-title {
+        padding: 0 0 6px;
+        background: transparent;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box .log-scroll-shell {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+        overflow: hidden;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box .chat-log,
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box #game-chat-log-game-global {
+        height: auto;
+        min-height: 0;
+        max-height: none;
+        margin-bottom: 0;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box .chat-compose {
+        padding: 8px 0 0;
+        background: transparent;
+        border-top: 1px solid #facc15;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box .chat-input {
+        width: 100%;
+        margin: 0;
+        padding-right: 46px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box .arena-chat-send-btn {
+        right: 0;
+        top: 50%;
+        bottom: auto;
+        transform: translateY(-50%);
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box .arena-chat-send-btn:hover {
+        transform: translateY(-50%) scale(1.1);
+    }
+
     html,
     body,
     a,
@@ -2781,14 +3197,26 @@ body.modal-open #arena-question-text .arena-question-line {
     }
 
     #arena-logs-modal {
-        padding: 12px;
         border: none;
         background: transparent;
-        width: min(100vw - 24px, 760px);
-        height: min(100vh - 24px, 860px);
+        min-width: 0;
+        min-height: 0;
         max-width: none;
         max-height: none;
+        margin: 0;
+        padding: 0;
         overflow: visible;
+        box-sizing: border-box;
+    }
+
+    #arena-logs-modal[open] {
+        display: grid;
+        place-items: center;
+        width: 100vw;
+        width: 100dvw;
+        height: 100vh;
+        height: 100dvh;
+        padding: 8px;
     }
 
     #arena-logs-modal::backdrop {
@@ -2796,97 +3224,147 @@ body.modal-open #arena-question-text .arena-question-line {
     }
 
     .arena-logs-modal-shell {
-        width: 100%;
-        height: 100%;
+        width: calc(100vw - 16px);
+        width: calc(100dvw - 16px);
+        max-width: calc(100vw - 16px);
+        max-width: calc(100dvw - 16px);
+        height: auto;
+        max-height: calc(100vh - 16px);
+        max-height: calc(100dvh - 16px);
         display: flex;
     }
 
     .arena-logs-modal-slot {
         width: 100%;
-        height: 100%;
+        height: auto;
         display: flex;
     }
 
-    #arena-global-chat-box {
+    #arena-logs-modal-slot>.chat-box {
         margin: 0;
         width: 100%;
-        height: 100%;
+        height: auto;
         max-width: none;
         border-radius: 14px;
         padding: 10px 10px 0;
-        border: 1px solid #facc15;
-        background: #fff7cc;
-        align-self: stretch;
+        align-self: center;
+        box-sizing: border-box;
     }
 
-    #arena-global-chat-box .arena-chat-title {
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] {
+        border: 1px solid #facc15;
+        background: #fff7cc;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] {
+        border: 1px solid #fca5a5;
+        background: #fff1f2;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] {
+        border: 1px solid #93c5fd;
+        background: #eff6ff;
+    }
+
+    #arena-logs-modal-slot>.chat-box .arena-chat-title {
         position: relative;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        background: #fff7cc;
         padding: 10px;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] .arena-chat-title {
+        background: #fff7cc;
         border-bottom: 1px solid #facc15;
     }
 
-    #arena-logs-close-btn {
-        width: 32px;
-        height: 32px;
-        min-height: auto;
-        margin: 0;
-        padding: 0;
-        border-radius: 6px;
-        border: none;
-        background: transparent;
-        color: #111827;
-        font-size: 1.4rem;
-        line-height: 1;
-        cursor: pointer;
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] .arena-chat-title {
+        background: #fff1f2;
+        border-bottom: 1px solid #fca5a5;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] .arena-chat-title {
+        background: #eff6ff;
+        border-bottom: 1px solid #93c5fd;
+    }
+
+    #arena-logs-modal-slot>.chat-box .arena-panel-close-btn {
+        display: inline-flex !important;
+    }
+
+    #arena-logs-modal-slot>.chat-box .log-scroll-shell {
+        flex: 0 0 var(--arena-mobile-modal-log-height);
+        min-height: var(--arena-mobile-modal-log-height);
+        max-height: var(--arena-mobile-modal-log-height);
+        overflow: hidden;
         display: flex;
-        align-items: center;
-        justify-content: center;
+        flex-direction: column;
     }
 
-    #arena-logs-close-btn:hover {
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] .chat-log {
         background: #fef3c7;
+        min-height: 100%;
+        max-height: 100%;
     }
 
-    #arena-global-chat-box .log-scroll-shell {
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] .chat-log {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        min-height: 100%;
+        max-height: 100%;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] .chat-log {
+        background: #dbeafe;
+        border-color: #93c5fd;
+        min-height: 100%;
+        max-height: 100%;
+    }
+
+    #arena-logs-modal-slot>.chat-box .chat-log {
+        height: 100%;
         flex: 1 1 auto;
-        max-height: none;
-        min-height: 0;
         overflow-y: auto;
+        overflow-x: hidden;
     }
 
-    #arena-global-chat-box .chat-log {
-        background: #fef3c7;
-        min-height: auto;
-        max-height: none;
-    }
-
-    #arena-global-chat-box .chat-compose {
+    #arena-logs-modal-slot>.chat-box .chat-compose {
         position: relative;
-        background: #fff7cc;
         padding: 10px;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] .chat-compose {
+        background: #fff7cc;
         border-top: 1px solid #facc15;
     }
 
-    #arena-global-chat-box .chat-input {
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] .chat-compose {
+        background: #fff1f2;
+        border-top: 1px solid #fca5a5;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] .chat-compose {
+        background: #eff6ff;
+        border-top: 1px solid #93c5fd;
+    }
+
+    #arena-logs-modal-slot>.chat-box .chat-input {
         width: 100%;
         margin: 0;
         padding-right: 46px;
     }
 
-    #arena-global-chat-box .arena-chat-send-btn {
+    #arena-logs-modal-slot>.chat-box .arena-chat-send-btn {
         position: absolute;
         right: 16px;
-        top: 48%;
-        bottom: auto;
-        transform: translateY(-50%);
+        top: auto;
+        bottom: 22px;
+        transform: none;
     }
 
-    #arena-global-chat-box .arena-chat-send-btn:hover {
-        transform: translateY(-50%) scale(1.1);
+    #arena-logs-modal-slot>.chat-box .arena-chat-send-btn:hover {
+        transform: scale(1.1);
     }
 
     /* 時系列ボタン群を直感的な3段配置にする: ラベル > 前次 > 最初最後 */
@@ -3101,7 +3579,8 @@ body.modal-open #arena-question-text .arena-question-line {
     }
 
     .arena-spectator-label {
-        width: 100%;
+        width: fit-content;
+        align-self: flex-start;
         margin-bottom: 8px;
     }
 

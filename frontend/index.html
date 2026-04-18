@@ -146,10 +146,6 @@
                 <button id="rulebook-btn-arena" class="rulebook-btn rulebook-trigger" aria-label="ルールブック" title="ルールを見る">
                     <img src="img/help.png" alt="ルールブック" class="rulebook-icon">
                 </button>
-                <button id="arena-logs-toggle-btn" class="arena-logs-toggle-btn hidden" type="button" aria-label="進行ログを表示" title="進行ログを表示">
-                    <img src="img/chat.png" alt="進行ログ" class="arena-logs-icon">
-                    <span id="arena-logs-unread-badge" class="arena-logs-unread-badge hidden" aria-hidden="true"></span>
-                </button>
             </div>
         </div>
 
@@ -171,7 +167,10 @@
                 <ul id="arena-player-left-list"></ul>
 
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-left" data-visibility="team-left,questioner,spectator">
-                    <div class="arena-chat-title">先攻チャット</div>
+                    <div class="arena-chat-title">
+                        <span>先攻チャット</span>
+                        <button type="button" class="arena-panel-close-btn hidden" data-chat-panel-close="team-left" aria-label="先攻チャットを閉じる">×</button>
+                    </div>
                     <div class="log-scroll-shell">
                         <div id="game-chat-log-team-left" class="chat-log"></div>
                     </div>
@@ -214,7 +213,10 @@
                 <ul id="arena-player-right-list"></ul>
 
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-right" data-visibility="team-right,questioner,spectator">
-                    <div class="arena-chat-title">後攻チャット</div>
+                    <div class="arena-chat-title">
+                        <span>後攻チャット</span>
+                        <button type="button" class="arena-panel-close-btn hidden" data-chat-panel-close="team-right" aria-label="後攻チャットを閉じる">×</button>
+                    </div>
                     <div class="log-scroll-shell">
                         <div id="game-chat-log-team-right" class="chat-log"></div>
                     </div>
@@ -236,7 +238,7 @@
             <div id="arena-global-chat-box" class="chat-box hidden" data-chat-room="game" data-chat-type="game-global">
                 <div class="arena-chat-title">
                     <span>進行ログ</span>
-                    <button id="arena-logs-close-btn" type="button" aria-label="進行ログを閉じる">×</button>
+                    <button id="arena-logs-close-btn" type="button" class="arena-panel-close-btn" data-chat-panel-close="game-global" aria-label="進行ログを閉じる">×</button>
                 </div>
                 <div class="log-scroll-shell">
                     <div id="game-chat-log-game-global" class="chat-log"></div>
@@ -246,6 +248,24 @@
                     <p class="chat-length-warning hidden" aria-live="polite">⚠️送信できる文字数は200文字までです</p>
                     <button class="chat-send-btn arena-chat-send-btn" type="button" aria-label="チャット送信"><b>➜</b></button>
                 </div>
+            </div>
+        </div>
+
+        <div class="arena-mobile-chat-toolbar" aria-label="アリーナ補助パネル">
+            <hr>
+            <div class="arena-mobile-chat-toolbar-buttons">
+                <button id="arena-team-left-toggle-btn" class="arena-panel-toggle-btn arena-panel-toggle-btn-left hidden" type="button" aria-label="先攻チャットを表示" title="先攻チャット">
+                    <img src="img/chat.png" alt="先攻チャット" class="arena-panel-toggle-icon">
+                    <span id="arena-team-left-unread-badge" class="arena-logs-unread-badge hidden" aria-hidden="true"></span>
+                </button>
+                <button id="arena-logs-toggle-btn" class="arena-panel-toggle-btn arena-panel-toggle-btn-global hidden" type="button" aria-label="進行ログを表示" title="進行ログ">
+                    <img src="img/chat.png" alt="進行ログ" class="arena-panel-toggle-icon">
+                    <span id="arena-logs-unread-badge" class="arena-logs-unread-badge hidden" aria-hidden="true"></span>
+                </button>
+                <button id="arena-team-right-toggle-btn" class="arena-panel-toggle-btn arena-panel-toggle-btn-right hidden" type="button" aria-label="後攻チャットを表示" title="後攻チャット">
+                    <img src="img/chat.png" alt="後攻チャット" class="arena-panel-toggle-icon">
+                    <span id="arena-team-right-unread-badge" class="arena-logs-unread-badge hidden" aria-hidden="true"></span>
+                </button>
             </div>
         </div>
 

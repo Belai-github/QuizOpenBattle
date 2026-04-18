@@ -33,9 +33,16 @@ const startGameBtnEl = document.getElementById("start-game-btn");
 const shuffleParticipantsBtnEl = document.getElementById("shuffle-participants-btn");
 const toggleQuestionVisibilityBtnEl = document.getElementById("toggle-question-visibility-btn");
 const arenaGlobalChatBoxEl = document.getElementById("arena-global-chat-box");
+const arenaTeamLeftChatBoxEl = document.querySelector('.chat-box[data-chat-room="game"][data-chat-type="team-left"]');
+const arenaTeamRightChatBoxEl = document.querySelector('.chat-box[data-chat-room="game"][data-chat-type="team-right"]');
 const arenaLogsModalEl = document.getElementById("arena-logs-modal");
 const arenaLogsModalSlotEl = document.getElementById("arena-logs-modal-slot");
 const arenaLogsUnreadBadgeEl = document.getElementById("arena-logs-unread-badge");
+const arenaTeamLeftUnreadBadgeEl = document.getElementById("arena-team-left-unread-badge");
+const arenaTeamRightUnreadBadgeEl = document.getElementById("arena-team-right-unread-badge");
+const arenaTeamLeftToggleBtnEl = document.getElementById("arena-team-left-toggle-btn");
+const arenaTeamRightToggleBtnEl = document.getElementById("arena-team-right-toggle-btn");
+const arenaMobileChatToolbarEl = document.querySelector(".arena-mobile-chat-toolbar");
 const fullOpenSettlementModalEl = document.getElementById("full-open-settlement-modal");
 const fullOpenSettlementStatusEl = document.getElementById("full-open-settlement-status");
 const fullOpenSettlementLeftAnswerEl = document.getElementById("full-open-settlement-left-answer");
@@ -215,7 +222,12 @@ const ARENA_ALLOWED_EVENT_TYPES = new Set([
 ]);
 const arenaRoomLogStore = new Map();
 let currentArenaLogRoomId = null;
-let arenaLogsUnreadPending = false;
+const arenaPanelUnreadPending = {
+    "team-left": false,
+    "game-global": false,
+    "team-right": false,
+};
+let currentArenaModalPanelType = "";
 const arenaChatHistorySeenSeqSetByRoom = new Map();
 const preGameGlobalHistorySeenSeqSetByRoom = new Map();
 const ARENA_HISTORY_DEBUG_STORAGE_KEY = "quiz_debug_arena_history";
@@ -618,7 +630,7 @@ function attachChatLogFilterControls(chatBoxEl) {
     if (!titleEl || !logEl) return;
     if (titleEl.querySelector(".chat-log-filter-tools")) return;
 
-    const closeBtnEl = titleEl.querySelector("#arena-logs-close-btn");
+    const closeBtnEl = titleEl.querySelector("[data-chat-panel-close]");
     const titleTextSourceEl = Array.from(titleEl.children).find((child) => child !== closeBtnEl);
     const titleText = String(titleTextSourceEl?.textContent || titleEl.textContent || "").replace("×", "").trim();
     titleEl.textContent = "";
@@ -2476,58 +2488,183 @@ function isMobileArenaLogsMode() {
     return window.matchMedia("(max-width: 767px)").matches;
 }
 
-function mountArenaLogsIntoModal() {
-    if (!arenaGlobalChatBoxEl || !arenaLogsModalSlotEl) return;
-    if (arenaGlobalChatBoxEl.parentElement === arenaLogsModalSlotEl) return;
-    arenaLogsModalSlotEl.appendChild(arenaGlobalChatBoxEl);
+function getArenaChatBoxForPanel(panelType) {
+    if (panelType === "team-left") return arenaTeamLeftChatBoxEl;
+    if (panelType === "team-right") return arenaTeamRightChatBoxEl;
+    if (panelType === "game-global") return arenaGlobalChatBoxEl;
+    return null;
 }
 
-function restoreArenaLogsToLayout() {
+function restoreArenaChatBoxToLayout(panelType) {
+    const chatBoxEl = getArenaChatBoxForPanel(panelType);
+    if (!chatBoxEl) return;
+
     const arenaLowerLayoutEl = document.getElementById("arena-lower-layout");
-    if (!arenaGlobalChatBoxEl || !arenaLowerLayoutEl) return;
-    if (arenaGlobalChatBoxEl.parentElement === arenaLowerLayoutEl) return;
-    arenaLowerLayoutEl.appendChild(arenaGlobalChatBoxEl);
+    const arenaLeftBoxEl = document.getElementById("arena-player-left");
+    const arenaRightBoxEl = document.getElementById("arena-player-right");
+
+    if (panelType === "team-left") {
+        if (!arenaLeftBoxEl || chatBoxEl.parentElement === arenaLeftBoxEl) return;
+        arenaLeftBoxEl.appendChild(chatBoxEl);
+        return;
+    }
+
+    if (panelType === "team-right") {
+        if (!arenaRightBoxEl || chatBoxEl.parentElement === arenaRightBoxEl) return;
+        arenaRightBoxEl.appendChild(chatBoxEl);
+        return;
+    }
+
+    if (!arenaLowerLayoutEl || chatBoxEl.parentElement === arenaLowerLayoutEl) return;
+    arenaLowerLayoutEl.appendChild(chatBoxEl);
 }
 
-function closeArenaLogsPresentation(restoreLayout = !isMobileArenaLogsMode()) {
+function restoreAllArenaChatBoxesToLayout() {
+    ["team-left", "team-right", "game-global"].forEach((panelType) => {
+        restoreArenaChatBoxToLayout(panelType);
+    });
+    currentArenaModalPanelType = "";
+    if (arenaLogsModalEl) {
+        delete arenaLogsModalEl.dataset.panelType;
+    }
+}
+
+function canOpenArenaPanel(panelType) {
+    if (!isInGameArena() || isKifuMode) {
+        return false;
+    }
+
+    if (panelType === "game-global") {
+        return true;
+    }
+
+    const chatBoxEl = getArenaChatBoxForPanel(panelType);
+    if (!chatBoxEl) {
+        return false;
+    }
+
+    const roomState = currentRoomGameState || "waiting";
+    if (roomState === "waiting") {
+        return false;
+    }
+
+    if (roomState === "finished") {
+        return true;
+    }
+
+    const visibility = String(chatBoxEl.getAttribute("data-visibility") || "").trim();
+    return visibility === "" ? true : canViewChatBox(visibility);
+}
+
+function mountArenaPanelIntoModal(panelType) {
+    const chatBoxEl = getArenaChatBoxForPanel(panelType);
+    if (!chatBoxEl || !arenaLogsModalSlotEl) return false;
+
+    if (chatBoxEl.parentElement !== arenaLogsModalSlotEl) {
+        restoreAllArenaChatBoxesToLayout();
+        arenaLogsModalSlotEl.appendChild(chatBoxEl);
+    }
+
+    currentArenaModalPanelType = panelType;
+    if (arenaLogsModalEl) {
+        arenaLogsModalEl.dataset.panelType = panelType;
+    }
+    return true;
+}
+
+function closeArenaLogsPresentation(restoreLayout = true) {
     if (arenaLogsModalEl?.open) {
         arenaLogsModalEl.close();
     }
     if (restoreLayout) {
-        restoreArenaLogsToLayout();
+        restoreAllArenaChatBoxesToLayout();
     }
+}
+
+function openArenaPanelPresentation(panelType) {
+    if (!isMobileArenaLogsMode() || !canOpenArenaPanel(panelType)) {
+        return;
+    }
+
+    if (arenaLogsModalEl?.open && currentArenaModalPanelType === panelType) {
+        closeArenaLogsPresentation();
+        return;
+    }
+
+    if (!mountArenaPanelIntoModal(panelType)) {
+        return;
+    }
+
+    if (!arenaLogsModalEl?.open) {
+        arenaLogsModalEl?.showModal();
+    }
+    clearArenaUnreadState(panelType);
 }
 
 function syncArenaLogsPresentation() {
     if (!arenaGlobalChatBoxEl) return;
 
     if (isMobileArenaLogsMode()) {
-        mountArenaLogsIntoModal();
-        setArenaLogsUnreadBadgeVisible(arenaLogsUnreadPending && !(arenaLogsModalEl?.open));
+        if (arenaLogsModalEl?.open && currentArenaModalPanelType && !canOpenArenaPanel(currentArenaModalPanelType)) {
+            closeArenaLogsPresentation();
+        }
+
+        if (arenaLogsModalEl?.open && currentArenaModalPanelType) {
+            mountArenaPanelIntoModal(currentArenaModalPanelType);
+        } else {
+            restoreAllArenaChatBoxesToLayout();
+        }
+        refreshArenaUnreadBadges();
         return;
     }
 
     closeArenaLogsPresentation(true);
-    setArenaLogsUnreadBadgeVisible(false);
+    refreshArenaUnreadBadges();
 }
 
-function setArenaLogsUnreadBadgeVisible(visible) {
-    if (!arenaLogsUnreadBadgeEl) return;
-    arenaLogsUnreadBadgeEl.classList.toggle("hidden", !visible);
+function getArenaUnreadBadgeElement(panelType) {
+    if (panelType === "team-left") return arenaTeamLeftUnreadBadgeEl;
+    if (panelType === "team-right") return arenaTeamRightUnreadBadgeEl;
+    if (panelType === "game-global") return arenaLogsUnreadBadgeEl;
+    return null;
 }
 
-function clearArenaLogsUnreadState() {
-    arenaLogsUnreadPending = false;
-    setArenaLogsUnreadBadgeVisible(false);
+function getArenaPanelTypeForLogElement(logEl) {
+    const logId = String(logEl?.id || "").trim();
+    if (logId === "game-chat-log-team-left") return "team-left";
+    if (logId === "game-chat-log-team-right") return "team-right";
+    if (logId === "game-chat-log-game-global") return "game-global";
+    return "";
+}
+
+function setArenaUnreadBadgeVisible(panelType, visible) {
+    const badgeEl = getArenaUnreadBadgeElement(panelType);
+    if (!badgeEl) return;
+    badgeEl.classList.toggle("hidden", !visible);
+}
+
+function refreshArenaUnreadBadges() {
+    ["team-left", "game-global", "team-right"].forEach((panelType) => {
+        const isOpenPanel = Boolean(arenaLogsModalEl?.open) && currentArenaModalPanelType === panelType;
+        const visible = isMobileArenaLogsMode() && !isOpenPanel && Boolean(arenaPanelUnreadPending[panelType]);
+        setArenaUnreadBadgeVisible(panelType, visible);
+    });
+}
+
+function clearArenaUnreadState(panelType) {
+    if (!panelType || !(panelType in arenaPanelUnreadPending)) return;
+    arenaPanelUnreadPending[panelType] = false;
+    refreshArenaUnreadBadges();
 }
 
 function notifyArenaLogsUnreadIfNeeded(logEl) {
-    if (!logEl || logEl.id !== "game-chat-log-game-global") return;
-    if (arenaLogsModalEl?.open) return;
+    const panelType = getArenaPanelTypeForLogElement(logEl);
+    if (!panelType) return;
+    if (arenaLogsModalEl?.open && currentArenaModalPanelType === panelType) return;
 
-    arenaLogsUnreadPending = true;
+    arenaPanelUnreadPending[panelType] = true;
     if (isMobileArenaLogsMode()) {
-        setArenaLogsUnreadBadgeVisible(true);
+        refreshArenaUnreadBadges();
     }
 }
 
@@ -4439,10 +4576,28 @@ function updateArenaCloseButtonVisibility(currentRoom) {
 
 function updateArenaLogsButtonVisibility() {
     const toggleBtn = document.getElementById("arena-logs-toggle-btn");
-    if (!toggleBtn) return;
+    const shouldShow = isInGameArena() && isMobileArenaLogsMode() && !isKifuMode;
+    if (arenaLogsModalEl?.open && currentArenaModalPanelType && !canOpenArenaPanel(currentArenaModalPanelType)) {
+        closeArenaLogsPresentation();
+    }
+    if (!shouldShow && arenaLogsModalEl?.open) {
+        closeArenaLogsPresentation();
+    }
+    if (arenaMobileChatToolbarEl) {
+        arenaMobileChatToolbarEl.classList.toggle("hidden", !shouldShow);
+    }
 
-    const shouldShow = isInGameArena() && isMobileArenaLogsMode();
-    toggleBtn.classList.toggle("hidden", !shouldShow);
+    const setPanelButtonState = (buttonEl, enabled) => {
+        if (!buttonEl) return;
+        buttonEl.classList.toggle("hidden", !shouldShow);
+        buttonEl.disabled = !enabled;
+        buttonEl.setAttribute("aria-disabled", String(!enabled));
+    };
+
+    setPanelButtonState(arenaTeamLeftToggleBtnEl, shouldShow && canOpenArenaPanel("team-left"));
+    setPanelButtonState(toggleBtn, shouldShow && canOpenArenaPanel("game-global"));
+    setPanelButtonState(arenaTeamRightToggleBtnEl, shouldShow && canOpenArenaPanel("team-right"));
+    refreshArenaUnreadBadges();
 }
 
 async function requestCloseRoom(roomOwnerId) {
@@ -4482,6 +4637,7 @@ function closeAllModals() {
     alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
     if (alertModal.open) alertModal.close();
     if (confirmModal.open) confirmModal.close();
+    closeArenaLogsPresentation();
     closeProfileModal();
     if (aiQuestionModalEl && aiQuestionModalEl.open) aiQuestionModalEl.close();
     if (rulebookModalEl && rulebookModalEl.open) rulebookModalEl.close();
@@ -7108,6 +7264,12 @@ document.getElementById("arena-logs-close-btn")?.addEventListener("click", () =>
     closeArenaLogsPresentation();
 });
 
+document.querySelectorAll("[data-chat-panel-close]").forEach((closeBtnEl) => {
+    closeBtnEl.addEventListener("click", () => {
+        closeArenaLogsPresentation();
+    });
+});
+
 arenaLogsModalEl?.addEventListener("click", (event) => {
     if (event.target === arenaLogsModalEl) {
         closeArenaLogsPresentation();
@@ -7152,10 +7314,10 @@ arenaAnswerInputEl?.addEventListener("input", () => {
 });
 
 document.addEventListener("click", (event) => {
-    const toggleBtnEl = document.getElementById("arena-logs-toggle-btn");
-    if (!arenaLogsModalEl || !toggleBtnEl || !arenaLogsModalEl.open) return;
+    if (!arenaLogsModalEl || !arenaLogsModalEl.open) return;
 
-    const isClickInside = arenaLogsModalEl.contains(event.target) || toggleBtnEl.contains(event.target);
+    const triggerBtnEl = event.target instanceof HTMLElement ? event.target.closest(".arena-panel-toggle-btn") : null;
+    const isClickInside = arenaLogsModalEl.contains(event.target) || Boolean(triggerBtnEl);
     if (!isClickInside) {
         closeArenaLogsPresentation();
     }
@@ -7180,21 +7342,15 @@ leaveGameArenaEl?.addEventListener("keydown", (event) => {
 });
 
 document.getElementById("arena-logs-toggle-btn")?.addEventListener("click", () => {
-    if (!arenaGlobalChatBoxEl) return;
+    openArenaPanelPresentation("game-global");
+});
 
-    if (isMobileArenaLogsMode()) {
-        if (arenaLogsModalEl?.open) {
-            closeArenaLogsPresentation();
-            return;
-        }
+arenaTeamLeftToggleBtnEl?.addEventListener("click", () => {
+    openArenaPanelPresentation("team-left");
+});
 
-        mountArenaLogsIntoModal();
-        arenaLogsModalEl?.showModal();
-        clearArenaLogsUnreadState();
-        return;
-    }
-
-    arenaGlobalChatBoxEl.classList.toggle("open");
+arenaTeamRightToggleBtnEl?.addEventListener("click", () => {
+    openArenaPanelPresentation("team-right");
 });
 
 closeRoomBtnEl?.addEventListener("click", () => {
