@@ -774,6 +774,7 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         "left_participants": set(),
         "right_participants": set(),
         "spectators": set(),
+        "forced_loss_user_ids": set(),
         "pending_disconnects": {},
         "arena_chat_history": [],
         "arena_chat_seq": 0,

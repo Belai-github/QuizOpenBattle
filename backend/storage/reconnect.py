@@ -99,6 +99,7 @@ def reserve_participant_reconnect(manager, client_id: str, ctx: dict | None):
             "team": team,
             "expires_at": expires_at,
             "nickname": nickname,
+            "user_id": str(manager.client_user_ids.get(client_id) or "").strip(),
         }
         manager.reconnect_reservations[client_id] = reservation
         return reservation
@@ -217,6 +218,11 @@ async def finalize_participant_disconnect_after_grace(
 
         manager.reconnect_reservations.pop(client_id, None)
         clear_room_pending_disconnect(manager, room_owner_id, client_id)
+        manager._mark_forced_loss_user_id(
+            room,
+            reservation.get("user_id"),
+            reservation.get("team"),
+        )
 
         room["left_participants"].discard(client_id)
         room["right_participants"].discard(client_id)

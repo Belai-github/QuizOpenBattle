@@ -261,10 +261,70 @@ class QuizGameManager:
             return
 
         if isinstance(room, dict):
-            self._record_finished_game_stats(room, finish_reason)
+            self._record_finished_game_stats(room_owner_id, room, finish_reason)
         finalize_kifu_record(kifu_id, room, finish_reason)
 
-    def _record_finished_game_stats(self, room: dict, finish_reason: str):
+    def _mark_forced_loss_user_id(self, room: dict | None, user_id: str | None, team: str | None):
+        if not isinstance(room, dict):
+            return
+        if str(room.get("game_state") or "") != "playing":
+            return
+        if str(team or "") not in {"team-left", "team-right"}:
+            return
+
+        resolved_user_id = str(user_id or "").strip()
+        if resolved_user_id == "":
+            return
+
+        raw_forced_losses = room.get("forced_loss_user_ids")
+        if isinstance(raw_forced_losses, set):
+            forced_loss_user_ids = raw_forced_losses
+        elif isinstance(raw_forced_losses, (list, tuple)):
+            forced_loss_user_ids = {
+                str(item or "").strip()
+                for item in raw_forced_losses
+                if str(item or "").strip() != ""
+            }
+            room["forced_loss_user_ids"] = forced_loss_user_ids
+        else:
+            forced_loss_user_ids = set()
+            room["forced_loss_user_ids"] = forced_loss_user_ids
+
+        forced_loss_user_ids.add(resolved_user_id)
+
+    def _collect_finished_room_team_user_ids(self, room_owner_id: str, room: dict) -> tuple[set[str], set[str]]:
+        team_left_user_ids = {
+            str(self.client_user_ids.get(client_id) or "").strip()
+            for client_id in set(room.get("left_participants", set()))
+            if str(self.client_user_ids.get(client_id) or "").strip() != ""
+        }
+        team_right_user_ids = {
+            str(self.client_user_ids.get(client_id) or "").strip()
+            for client_id in set(room.get("right_participants", set()))
+            if str(self.client_user_ids.get(client_id) or "").strip() != ""
+        }
+
+        for reservation in self.reconnect_reservations.values():
+            if not isinstance(reservation, dict):
+                continue
+            if str(reservation.get("kind") or "") != "participant":
+                continue
+            if str(reservation.get("room_owner_id") or "") != str(room_owner_id or ""):
+                continue
+
+            reserved_user_id = str(reservation.get("user_id") or "").strip()
+            reserved_team = str(reservation.get("team") or "").strip()
+            if reserved_user_id == "":
+                continue
+
+            if reserved_team == "team-left":
+                team_left_user_ids.add(reserved_user_id)
+            elif reserved_team == "team-right":
+                team_right_user_ids.add(reserved_user_id)
+
+        return team_left_user_ids, team_right_user_ids
+
+    def _record_finished_game_stats(self, room_owner_id: str, room: dict, finish_reason: str):
         if self.account_auth_manager is None:
             return
         if str(finish_reason or "") not in {"finished", "forfeit", "intentional_draw"}:
@@ -276,18 +336,28 @@ class QuizGameManager:
         if winner not in {"team-left", "team-right", "draw"}:
             return
 
-        team_left_user_ids = {
-            str(self.client_user_ids.get(client_id) or "")
-            for client_id in set(room.get("left_participants", set()))
-        }
-        team_right_user_ids = {
-            str(self.client_user_ids.get(client_id) or "")
-            for client_id in set(room.get("right_participants", set()))
-        }
+        team_left_user_ids, team_right_user_ids = self._collect_finished_room_team_user_ids(room_owner_id, room)
+        raw_forced_loss_user_ids = room.get("forced_loss_user_ids")
+        if isinstance(raw_forced_loss_user_ids, set):
+            forced_loss_user_ids = {
+                str(user_id or "").strip()
+                for user_id in raw_forced_loss_user_ids
+                if str(user_id or "").strip() != ""
+            }
+        elif isinstance(raw_forced_loss_user_ids, (list, tuple)):
+            forced_loss_user_ids = {
+                str(user_id or "").strip()
+                for user_id in raw_forced_loss_user_ids
+                if str(user_id or "").strip() != ""
+            }
+        else:
+            forced_loss_user_ids = set()
+
         self.account_auth_manager.store.record_match_result(
             {user_id for user_id in team_left_user_ids if user_id != ""},
             {user_id for user_id in team_right_user_ids if user_id != ""},
             winner,
+            forced_loss_user_ids=forced_loss_user_ids,
         )
 
         if bool(room.get("is_ai_mode")):
@@ -1780,6 +1850,14 @@ class QuizGameManager:
     async def exit_room(self, client_id: str, payload: RoomExitMessage | None = None):
         ctx_before_exit = resolve_client_room_context(self.rooms, client_id)
         room_owner_id_before_exit = ctx_before_exit.get("room_owner_id") if ctx_before_exit else None
+        room_before_exit = ctx_before_exit.get("room") if isinstance(ctx_before_exit, dict) else None
+        user_id_before_exit = str(self.client_user_ids.get(client_id) or "").strip()
+        if isinstance(ctx_before_exit, dict):
+            self._mark_forced_loss_user_id(
+                room_before_exit,
+                user_id_before_exit,
+                ctx_before_exit.get("chat_role"),
+            )
 
         self._cancel_disconnect_grace_timer(client_id)
         self._clear_pending_disconnect_everywhere(client_id)

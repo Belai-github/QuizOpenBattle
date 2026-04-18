@@ -401,10 +401,21 @@ class AccountStore:
             current_client_id=str(session.get("current_client_id") or ""),
         )
 
-    def record_match_result(self, team_left_user_ids: set[str], team_right_user_ids: set[str], winner: str) -> None:
+    def record_match_result(
+        self,
+        team_left_user_ids: set[str],
+        team_right_user_ids: set[str],
+        winner: str,
+        forced_loss_user_ids: set[str] | None = None,
+    ) -> None:
         winner_text = str(winner or "")
         with self._lock:
             changed = False
+            forced_losses = {
+                str(user_id or "").strip()
+                for user_id in (forced_loss_user_ids or set())
+                if str(user_id or "").strip() != ""
+            }
 
             def _apply(user_id: str, result: str) -> None:
                 nonlocal changed
@@ -424,7 +435,10 @@ class AccountStore:
                     stats["draws"] = max(0, int(stats.get("draws") or 0)) + 1
                 changed = True
 
-            for user_id in sorted({uid for uid in team_left_user_ids if str(uid or "").strip() != ""}):
+            for user_id in sorted({
+                uid for uid in team_left_user_ids
+                if str(uid or "").strip() != "" and str(uid or "").strip() not in forced_losses
+            }):
                 if winner_text == "team-left":
                     _apply(user_id, "win")
                 elif winner_text == "team-right":
@@ -432,13 +446,19 @@ class AccountStore:
                 else:
                     _apply(user_id, "draw")
 
-            for user_id in sorted({uid for uid in team_right_user_ids if str(uid or "").strip() != ""}):
+            for user_id in sorted({
+                uid for uid in team_right_user_ids
+                if str(uid or "").strip() != "" and str(uid or "").strip() not in forced_losses
+            }):
                 if winner_text == "team-right":
                     _apply(user_id, "win")
                 elif winner_text == "team-left":
                     _apply(user_id, "loss")
                 else:
                     _apply(user_id, "draw")
+
+            for user_id in sorted(forced_losses):
+                _apply(user_id, "loss")
 
             if changed:
                 self._persist_locked()

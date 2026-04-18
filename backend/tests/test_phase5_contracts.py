@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.account_auth import AccountStore
+from backend.account_auth import AccountAuthManager
 from backend.auth import (
     WebSocketAuthManager,
     is_valid_client_id,
@@ -22,6 +23,7 @@ from backend.storage.reconnect import (
     try_restore_participant_reconnect,
 )
 from backend.storage import kifu_storage
+from backend.server import QuizGameManager
 from backend.schemas import (
     JudgeAnswerMessage,
     LegacyQuestionSubmissionMessage,
@@ -249,6 +251,92 @@ class TestAccountStoreContracts(unittest.TestCase):
             )
 
             store.record_match_result({left["user_id"]}, {right["user_id"]}, "team-left")
+
+            left_after = store.get_user(left["user_id"])
+            right_after = store.get_user(right["user_id"])
+            self.assertEqual(left_after["stats"]["wins"], 1)  # type: ignore[index]
+            self.assertEqual(right_after["stats"]["losses"], 1)  # type: ignore[index]
+
+    def test_record_match_result_forced_loss_overrides_team_result(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            left_departed = store.create_user(
+                display_name="LeftDeparted",
+                user_handle_b64="bGVmdC1kZXBhcnRlZA",
+                credential_id="cred-left-departed",
+                public_key_b64="pub-left-departed",
+                sign_count=0,
+            )
+            left_remaining = store.create_user(
+                display_name="LeftRemain",
+                user_handle_b64="bGVmdC1yZW1haW4",
+                credential_id="cred-left-remain",
+                public_key_b64="pub-left-remain",
+                sign_count=0,
+            )
+            right = store.create_user(
+                display_name="Right",
+                user_handle_b64="cmlnaHQ",
+                credential_id="cred-right",
+                public_key_b64="pub-right",
+                sign_count=0,
+            )
+
+            store.record_match_result(
+                {left_departed["user_id"], left_remaining["user_id"]},
+                {right["user_id"]},
+                "team-left",
+                forced_loss_user_ids={left_departed["user_id"]},
+            )
+
+            left_departed_after = store.get_user(left_departed["user_id"])
+            left_remaining_after = store.get_user(left_remaining["user_id"])
+            right_after = store.get_user(right["user_id"])
+            self.assertEqual(left_departed_after["stats"]["losses"], 1)  # type: ignore[index]
+            self.assertEqual(left_remaining_after["stats"]["wins"], 1)  # type: ignore[index]
+            self.assertEqual(right_after["stats"]["losses"], 1)  # type: ignore[index]
+
+    def test_finished_game_records_pending_reconnect_user_stats(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            left = store.create_user(
+                display_name="Left",
+                user_handle_b64="bGVmdA",
+                credential_id="cred-left",
+                public_key_b64="pub-left",
+                sign_count=0,
+            )
+            right = store.create_user(
+                display_name="Right",
+                user_handle_b64="cmlnaHQ",
+                credential_id="cred-right",
+                public_key_b64="pub-right",
+                sign_count=0,
+            )
+
+            manager = QuizGameManager()
+            manager.account_auth_manager = AccountAuthManager(store)
+            manager.rooms["owner-1"] = {
+                "left_participants": {"left-client"},
+                "right_participants": {"right-client"},
+                "spectators": set(),
+                "forced_loss_user_ids": set(),
+                "game": {"winner": "team-left"},
+                "game_state": "finished",
+                "is_ai_mode": False,
+                "questioner_id": "owner-1",
+            }
+            manager.client_user_ids["right-client"] = right["user_id"]
+            manager.reconnect_reservations["left-client"] = {
+                "kind": "participant",
+                "room_owner_id": "owner-1",
+                "team": "team-left",
+                "user_id": left["user_id"],
+                "nickname": "Left",
+                "expires_at": 9999999999,
+            }
+
+            manager._record_finished_game_stats("owner-1", manager.rooms["owner-1"], "finished")
 
             left_after = store.get_user(left["user_id"])
             right_after = store.get_user(right["user_id"])
