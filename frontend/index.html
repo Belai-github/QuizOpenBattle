@@ -314,17 +314,19 @@
                     <img src="img/edit.png" alt="" class="profile-modal-edit-toggle-icon">
                 </button>
             </div>
-            <p id="profile-modal-subtitle" class="profile-modal-subtitle"></p>
-            <div id="profile-modal-edit" class="profile-modal-edit hidden">
-                <label for="profile-modal-name-input" class="profile-modal-edit-label">アカウント名</label>
-                <div class="profile-modal-edit-row">
-                    <input id="profile-modal-name-input" class="profile-modal-name-input" type="text" maxlength="24" placeholder="アカウント名を入力">
-                    <button id="profile-modal-name-save-btn" type="button" class="profile-modal-name-save-btn">確定</button>
+            <div class="profile-modal-body">
+                <p id="profile-modal-subtitle" class="profile-modal-subtitle"></p>
+                <div id="profile-modal-edit" class="profile-modal-edit hidden">
+                    <label for="profile-modal-name-input" class="profile-modal-edit-label">アカウント名</label>
+                    <div class="profile-modal-edit-row">
+                        <input id="profile-modal-name-input" class="profile-modal-name-input" type="text" maxlength="24" placeholder="アカウント名を入力">
+                        <button id="profile-modal-name-save-btn" type="button" class="profile-modal-name-save-btn">確定</button>
+                    </div>
+                    <p id="profile-modal-edit-help" class="profile-modal-edit-help">他のアカウントと重複する名前は使えません。</p>
                 </div>
-                <p id="profile-modal-edit-help" class="profile-modal-edit-help">他のアカウントと重複する名前は使えません。</p>
+                <div id="profile-modal-stats" class="profile-modal-stats hidden"></div>
+                <p id="profile-modal-note" class="profile-modal-note"></p>
             </div>
-            <div id="profile-modal-stats" class="profile-modal-stats hidden"></div>
-            <p id="profile-modal-note" class="profile-modal-note"></p>
             <div class="modal-actions single">
                 <button id="profile-modal-close-btn" type="button">閉じる</button>
             </div>
