@@ -534,7 +534,7 @@ function updateAiQuestionButtonState(rooms = currentRoomsSnapshot) {
         aiQuestionBtnEl.setAttribute("aria-busy", aiQuestionRequestPending ? "true" : "false");
 
         if (guestSessionActive) {
-            aiQuestionBtnEl.title = "ゲスト参加中はAI出題できません";
+            aiQuestionBtnEl.title = "AI出題機能ははログイン後に利用できます";
         } else if (aiQuestionRequestPending) {
             aiQuestionBtnEl.title = "AI出題を送信中です";
         } else if (aiQuestionGenerationActive) {
@@ -1928,7 +1928,7 @@ function updateGuestModeControls() {
     if (questionInputEl) {
         questionInputEl.disabled = guestSessionActive;
         questionInputEl.placeholder = guestSessionActive
-            ? "ログインすると問題を出題できます"
+            ? "ログインすると問題を出題できます。"
             : "問題を入力...";
     }
 
@@ -6661,7 +6661,7 @@ async function submitAiQuestion() {
         return;
     }
     if (isGuestSessionActive()) {
-        await showAlertModal("ゲスト参加中はAI出題できません。ログイン後に利用してください。");
+        await showAlertModal("AI出題機能はログイン後に利用できます。");
         return;
     }
     if (!ws || ws.readyState !== WebSocket.OPEN) {
