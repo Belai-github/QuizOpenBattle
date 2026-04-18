@@ -405,6 +405,7 @@ button:hover {
     margin-right: 0;
     margin-top: 0;
     align-self: flex-start;
+    margin-left: 10px;
 }
 
 .kifu-nav-btn {
@@ -2790,7 +2791,7 @@ body.modal-open #arena-question-text .arena-question-line {
         flex: 0 0 32px;
         width: 32px;
         height: 32px;
-        margin-left: 0;
+        margin-left: 10px;
     }
 
     #ai-question-btn {
@@ -3744,4 +3745,35 @@ body:has(#login-screen:not([style*="none"])) {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
+}
+
+#my-profile-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+#my-profile-card .waiting-profile-card-main {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 3px;
+}
+
+#my-profile-card .waiting-profile-card-chevron {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    opacity: 0.55;
+    transition: transform 0.16s ease, opacity 0.16s ease;
+}
+
+#my-profile-card:hover .waiting-profile-card-chevron,
+#my-profile-card:focus-visible .waiting-profile-card-chevron {
+    opacity: 0.85;
+    transform: translateX(2px);
 }
