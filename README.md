@@ -110,14 +110,6 @@ QuizOpenBattle では、パスワードの代わりに **パスキー（WebAuthn
 そのため、ログイン後のリアルタイム接続についても、
 単に WebSocket を開くだけでは接続できないようにしています。
 
-### 安全性についての補足
-
-本プロジェクトは、**安全性を意識した認証設計**を採用しています。
-ただし、あらゆるシステムと同様に、安全性は実装だけでなく、HTTPS 配信、環境変数設定、リバースプロキシ構成などの運用条件にも依存します。
-
-そのため、この README では「絶対に安全」とは表現せず、
-**どういう保護を採用しているかを明示する**方針をとっています。
-
 ---
 
 ## ログイン方法
@@ -197,9 +189,38 @@ QUIZ_TRUST_PROXY_HEADERS=<0_OR_1>
 QUIZ_DIAG_API=<0_OR_1>
 
 # AI 出題機能を使う場合の設定例
-<YOUR_AI_ENV_EXAMPLE_1>
-<YOUR_AI_ENV_EXAMPLE_2>
+# 現在のデフォルトモデルは Gemini 系なので、少なくとも GEMINI_API_KEY が必要です
+GEMINI_API_KEY=<YOUR_GOOGLE_AI_API_KEY>
+
+# OpenAI モデルを有効化して使う場合のみ必要
+OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
 ```
+
+`.env` を使う場合は、リポジトリ直下に作成して上記の環境変数を記述してください。
+バックエンドでは `python-dotenv` により `.env` が読み込まれます。
+
+```bash
+cp .env.example .env  # .env.example を用意している場合
+```
+
+または、最小限であれば次のように作成します。
+
+```dotenv
+QUIZ_WEBAUTHN_ORIGIN=https://your-domain.example
+QUIZ_WEBAUTHN_RP_ID=your-domain.example
+QUIZ_WEBAUTHN_RP_NAME=QuizOpenBattle
+QUIZ_WS_AUTH_SECRET=replace-with-a-random-secret
+QUIZ_SESSION_COOKIE_SECURE=always
+QUIZ_TRUST_PROXY_HEADERS=1
+GEMINI_API_KEY=replace-with-your-google-ai-api-key
+```
+
+AI 出題機能で使うプロバイダは、[`backend/storage/data/models.json`](./backend/storage/data/models.json) の有効モデルに依存します。
+
+- 現在のデフォルト出題モデルは Gemini 系です
+- OpenAI 系モデルを選択肢として使う場合は `OPENAI_API_KEY` も設定してください
+- API キーが未設定だと、そのプロバイダを使う AI 出題・AI 判定は失敗します
+- `.env` や API キーは Git にコミットしないでください
 
 ### 4. サーバーを起動
 
