@@ -137,7 +137,7 @@ QuizOpenBattle では、パスワードの代わりに **パスキー（WebAuthn
 - Backend: Python / FastAPI
 - Realtime: WebSocket
 - Authentication: WebAuthn / Passkey
-- AI-assisted question generation: `<YOUR_AI_PROVIDER_OR_DESCRIPTION>`
+- AI-assisted question generation: `Google Gemini` (default), optional `OpenAI GPT`
 
 ---
 
@@ -146,9 +146,13 @@ QuizOpenBattle では、パスワードの代わりに **パスキー（WebAuthn
 ```text
 .
 ├── backend/
+├── docs/
 ├── frontend/
+├── LICENSE
 ├── README.md
-└── <OTHER_DIRECTORIES>
+├── THIRD_PARTY_NOTICES.md
+├── requirements.txt
+└── RULES.md
 ```
 
 ---
@@ -158,8 +162,8 @@ QuizOpenBattle では、パスワードの代わりに **パスキー（WebAuthn
 ### 1. リポジトリを取得
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
-cd <YOUR_REPOSITORY_DIRECTORY>
+git clone https://github.com/Belai-github/QuizOpenBattle.git
+cd QuizOpenBattle
 ```
 
 ### 2. 依存関係をインストール
@@ -175,7 +179,7 @@ pip install -r requirements.txt
 ```bash
 QUIZ_WEBAUTHN_ORIGIN=<YOUR_HTTPS_ORIGIN>
 QUIZ_WEBAUTHN_RP_ID=<YOUR_RP_ID>
-QUIZ_WEBAUTHN_RP_NAME=<YOUR_RP_NAME>
+QUIZ_WEBAUTHN_RP_NAME=QuizOpenBattle
 QUIZ_WS_AUTH_SECRET=<YOUR_RANDOM_SECRET>
 QUIZ_SESSION_COOKIE_SECURE=always
 ```
@@ -184,8 +188,8 @@ QUIZ_SESSION_COOKIE_SECURE=always
 
 ```bash
 # 例
-QUIZ_TRUST_PROXY_HEADERS=<0_OR_1>
-QUIZ_DIAG_API=<0_OR_1>
+QUIZ_TRUST_PROXY_HEADERS=1
+QUIZ_DIAG_API=0
 
 # AI 出題機能を使う場合の設定例
 # 現在のデフォルトモデルは Gemini 系なので、少なくとも GEMINI_API_KEY が必要です
@@ -224,13 +228,13 @@ AI 出題機能で使うプロバイダは、[`backend/storage/data/models.json`
 ### 4. サーバーを起動
 
 ```bash
-<YOUR_START_COMMAND>
+uvicorn backend.server:app --host 0.0.0.0 --port 8000
 ```
 
 ### 5. ブラウザでアクセス
 
 ```text
-<YOUR_APP_URL>
+http://127.0.0.1:8000
 ```
 
 ---
