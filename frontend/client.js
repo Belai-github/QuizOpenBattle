@@ -3,6 +3,7 @@ let myClientId = null;
 let currentAccount = null;
 let isAuthBusy = false;
 let isServerWebAuthnReady = true;
+let waitingRoomMobilePanel = "right";
 
 const confirmModal = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
@@ -153,6 +154,11 @@ const joinBtnEl = document.getElementById("join-btn");
 const guestJoinFieldEl = document.getElementById("guest-join-field");
 const guestNicknameInputEl = document.getElementById("guest-nickname");
 const loginScreenEl = document.getElementById("login-screen");
+const waitingRoomScreenEl = document.getElementById("waiting-room-screen");
+const waitingPanelLeftBtnEl = document.getElementById("waiting-panel-left-btn");
+const waitingPanelRightBtnEl = document.getElementById(
+  "waiting-panel-right-btn",
+);
 const loginHeroCardEl = document.querySelector(".login-hero-card");
 const authSignedOutPanelEl = document.getElementById("auth-signed-out-panel");
 const authSignedInPanelEl = document.getElementById("auth-signed-in-panel");
@@ -3880,10 +3886,11 @@ async function submitFullOpenSettlementJudgement() {
 
 function showWaitingRoomScreen() {
   if (kifuListScreenEl) kifuListScreenEl.style.display = "none";
-  document.getElementById("waiting-room-screen").style.display = "block";
+  waitingRoomScreenEl.style.display = "block";
   document.getElementById("game-arena-screen").style.display = "none";
   clearReplayState();
   document.body.dataset.appMode = isKifuMode ? "kifu" : "live";
+  syncWaitingRoomMobilePanelState();
   updateStartGameButtonVisibility(null);
   updateQuestionVisibilityButton();
   updateArenaAnswerFormVisibility();
@@ -3897,7 +3904,7 @@ function showWaitingRoomScreen() {
 function showGameArenaScreen() {
   const wasInGameArena = isInGameArena();
   if (kifuListScreenEl) kifuListScreenEl.style.display = "none";
-  document.getElementById("waiting-room-screen").style.display = "none";
+  waitingRoomScreenEl.style.display = "none";
   document.getElementById("game-arena-screen").style.display = "block";
 
   // 出題者は部屋に入った直後のみ、全開示表示を初期状態にする。
@@ -3920,11 +3927,41 @@ function showGameArenaScreen() {
 }
 
 function showKifuListScreen() {
-  document.getElementById("waiting-room-screen").style.display = "none";
+  waitingRoomScreenEl.style.display = "none";
   document.getElementById("game-arena-screen").style.display = "none";
   if (kifuListScreenEl) kifuListScreenEl.style.display = "block";
   clearReplayState();
   document.body.dataset.appMode = "live";
+}
+
+function normalizeWaitingRoomMobilePanel(panel) {
+  return panel === "left" ? "left" : "right";
+}
+
+function syncWaitingRoomMobilePanelState() {
+  waitingRoomMobilePanel = normalizeWaitingRoomMobilePanel(
+    waitingRoomMobilePanel,
+  );
+
+  if (waitingRoomScreenEl) {
+    waitingRoomScreenEl.dataset.mobilePanel = waitingRoomMobilePanel;
+  }
+
+  const isMobile = window.matchMedia("(max-width: 767px)").matches;
+  const updateButtonState = (buttonEl, panel) => {
+    if (!buttonEl) return;
+    const isSelected = isMobile && waitingRoomMobilePanel === panel;
+    buttonEl.setAttribute("aria-selected", String(isSelected));
+    buttonEl.disabled = isSelected;
+  };
+
+  updateButtonState(waitingPanelLeftBtnEl, "left");
+  updateButtonState(waitingPanelRightBtnEl, "right");
+}
+
+function setWaitingRoomMobilePanel(panel) {
+  waitingRoomMobilePanel = normalizeWaitingRoomMobilePanel(panel);
+  syncWaitingRoomMobilePanelState();
 }
 
 function isReplayMode() {
@@ -7374,6 +7411,7 @@ function buildWebSocketUrl(clientId, wsTicket) {
 }
 
 function bootstrapApp() {
+  syncWaitingRoomMobilePanelState();
   updateAuthUi();
   void initializeAuthState();
 }
@@ -8573,7 +8611,16 @@ document.addEventListener("click", (event) => {
   }
 });
 
+waitingPanelLeftBtnEl?.addEventListener("click", () => {
+  setWaitingRoomMobilePanel("left");
+});
+
+waitingPanelRightBtnEl?.addEventListener("click", () => {
+  setWaitingRoomMobilePanel("right");
+});
+
 window.addEventListener("resize", () => {
+  syncWaitingRoomMobilePanelState();
   syncArenaPlayerBoxHeights();
   if (isInGameArena()) {
     renderArenaQuestionText();

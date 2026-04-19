@@ -408,6 +408,14 @@ button:hover {
     margin-left: 10px;
 }
 
+.waiting-mobile-panel-toggle {
+    display: none;
+}
+
+.waiting-mobile-panel-btn {
+    margin-top: 0;
+}
+
 .kifu-nav-btn {
     width: auto;
     min-height: 32px;
@@ -2772,6 +2780,31 @@ body.modal-open #arena-question-text .arena-question-line {
         margin: 4px 0 8px;
     }
 
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-mobile-panel-toggle {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        flex: 0 0 auto;
+        margin-bottom: 10px;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-mobile-panel-btn {
+        min-height: 38px;
+        padding: 8px 12px;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #475569;
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-mobile-panel-btn[aria-selected="true"] {
+        background: #0f766e;
+        border-color: #0f766e;
+        color: #ffffff;
+    }
+
     .waiting-room-header {
         flex-wrap: nowrap;
         align-items: flex-start;
@@ -2810,23 +2843,24 @@ body.modal-open #arena-question-text .arena-question-line {
         flex: 1 1 auto;
         min-height: 0;
         grid-template-columns: 1fr;
-        grid-template-rows: minmax(0, 1.05fr) minmax(0, 0.95fr);
-        gap: 10px;
+        grid-template-rows: minmax(0, 1fr);
+        gap: 0;
         overflow: hidden;
     }
 
     body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel,
     body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel {
+        display: flex;
         min-height: 0;
         overflow: hidden;
     }
 
-    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel {
-        order: 1;
+    body:has(#waiting-room-screen[data-mobile-panel="left"]:not([style*="none"])) .waiting-right-panel {
+        display: none;
     }
 
-    body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel {
-        order: 2;
+    body:has(#waiting-room-screen[data-mobile-panel="right"]:not([style*="none"])) .waiting-left-panel {
+        display: none;
     }
 
     body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel #room-list-box {
@@ -2895,7 +2929,9 @@ body.modal-open #arena-question-text .arena-question-line {
 
     body:has(#waiting-room-screen:not([style*="none"])) #participants-list {
         margin: 0;
-        max-height: 96px;
+        height: 132px;
+        min-height: 132px;
+        max-height: 132px;
         overflow-y: auto;
         padding-right: 4px;
     }
