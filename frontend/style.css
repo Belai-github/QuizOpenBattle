@@ -2596,7 +2596,7 @@ body.modal-open #arena-question-text .arena-question-line {
 }
 
 .arena-panel-toggle-btn-global .arena-panel-toggle-icon {
-    filter: brightness(0) saturate(100%) invert(79%) sepia(47%) saturate(600%) hue-rotate(38deg);
+    filter: brightness(0) saturate(100%) invert(72%) sepia(77%) saturate(638%) hue-rotate(358deg) brightness(101%) contrast(96%);
 }
 
 .arena-panel-toggle-btn-left .arena-panel-toggle-icon {
