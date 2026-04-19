@@ -2737,6 +2737,7 @@ function syncArenaPlayerBoxHeights() {
 
   if (!isInGameArena()) return;
   if (!window.matchMedia("(min-width: 768px)").matches) return;
+  if (window.matchMedia("(max-width: 991px)").matches) return;
 
   // 問題文が長い場合でも左右の参加者ボックスが追従するようにする。
   const targetHeight = Math.max(
