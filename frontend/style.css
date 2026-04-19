@@ -453,10 +453,6 @@ button:hover {
     display: block;
 }
 
-#open-kifu-list-btn .waiting-header-icon {
-    opacity: 0.72;
-}
-
 .waiting-header-icon-btn:disabled {
     opacity: 0.42;
     cursor: not-allowed;
