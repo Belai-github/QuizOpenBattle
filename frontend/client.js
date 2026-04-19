@@ -6517,6 +6517,9 @@ function renderArena(currentRoom) {
     questionerListEl.innerHTML = "";
     const questionerItemEl = document.createElement("li");
     questionerItemEl.className = "player-list-item questioner-list-item";
+    if (currentRoom.is_ai_mode) {
+      questionerItemEl.classList.add("questioner-list-item-static");
+    }
 
     const questionerNameEl = document.createElement("span");
     questionerNameEl.className = "player-list-item-name";
@@ -6534,11 +6537,13 @@ function renderArena(currentRoom) {
       questionerItemEl.appendChild(meTagEl);
     }
 
-    bindProfileTrigger(
-      questionerItemEl,
-      currentRoom.questioner_id,
-      questionerName,
-    );
+    if (!currentRoom.is_ai_mode) {
+      bindProfileTrigger(
+        questionerItemEl,
+        currentRoom.questioner_id,
+        questionerName,
+      );
+    }
     questionerListEl.appendChild(questionerItemEl);
   } else if (titleEl) {
     titleEl.textContent = `出題者: ${questionerName}${isMeQuestioner ? " (You)" : ""}`;
