@@ -3755,6 +3755,14 @@ body.modal-open #arena-question-text .arena-question-line {
         justify-content: center;
     }
 
+    #arena-lower-layout {
+        width: 1112px;
+        max-width: 1112px;
+        justify-self: center;
+        align-self: center;
+        margin-bottom: 12px;
+    }
+
     #arena-player-left {
         order: 1;
     }
