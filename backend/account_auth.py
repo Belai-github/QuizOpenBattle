@@ -48,6 +48,13 @@ ACCOUNT_SCHEMA_VERSION = 1
 CEREMONY_TTL_SECONDS = 300
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = str(os.getenv(name, "")).strip().lower()
+    if value == "":
+        return default
+    return value in {"1", "true", "yes", "on"}
+
+
 def sanitize_account_name(raw_value: str | None) -> str:
     return str(raw_value or "").strip()[:MAX_NICKNAME_LENGTH]
 
@@ -515,6 +522,14 @@ class AccountAuthManager:
         header_origin = str(request.headers.get("origin") or "").strip()
         if header_origin != "":
             return header_origin.rstrip("/")
+        scheme = self._resolve_request_scheme(request)
+        hostname = str(getattr(request.url, "hostname", "") or "").strip()
+        port = str(getattr(request.url, "port", "") or "").strip()
+        if hostname != "":
+            default_port = (scheme == "https" and port == "443") or (scheme == "http" and port == "80")
+            if port != "" and not default_port:
+                return f"{scheme}://{hostname}:{port}"
+            return f"{scheme}://{hostname}"
         return str(request.base_url).rstrip("/")
 
     def _resolve_rp_id(self, request: RequestLike) -> str:
@@ -525,6 +540,21 @@ class AccountAuthManager:
 
     def _resolve_rp_name(self) -> str:
         return str(os.getenv("QUIZ_WEBAUTHN_RP_NAME", "")).strip() or "QuizOpenBattle"
+
+    def _resolve_request_scheme(self, request: RequestLike) -> str:
+        if _env_flag("QUIZ_TRUST_PROXY_HEADERS", default=False):
+            forwarded_proto = str(request.headers.get("x-forwarded-proto") or "").strip().lower()
+            if forwarded_proto != "":
+                return forwarded_proto.split(",", 1)[0].strip() or "http"
+        return str(getattr(request.url, "scheme", "") or "http").strip().lower() or "http"
+
+    def _should_secure_session_cookie(self, request: RequestLike) -> bool:
+        secure_mode = str(os.getenv("QUIZ_SESSION_COOKIE_SECURE", "auto")).strip().lower()
+        if secure_mode in {"1", "true", "yes", "on", "always"}:
+            return True
+        if secure_mode in {"0", "false", "no", "off", "never"}:
+            return False
+        return self._resolve_request_scheme(request) == "https"
 
     def _purge_pending(self) -> None:
         now = time.time()
@@ -548,7 +578,7 @@ class AccountAuthManager:
             value=session_id,
             max_age=SESSION_MAX_AGE_SECONDS,
             httponly=True,
-            secure=(request.url.scheme == "https"),
+            secure=self._should_secure_session_cookie(request),
             samesite="lax",
             path="/",
         )

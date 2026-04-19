@@ -170,6 +170,7 @@ class DummyReconnectManager:
             }
         }
         self.nicknames = {"c1": "Alice", "owner1": "Owner"}
+        self.client_user_ids = {}
         self.reconnect_reservations = {}
         self.pending_disconnect_tasks = {}
 
@@ -415,6 +416,73 @@ class TestAccountStoreContracts(unittest.TestCase):
                 store._persist_locked()  # type: ignore[attr-defined]
 
             self.assertIsNone(store.get_session(session_id, touch=False))
+
+
+class DummyCookieRequest:
+    def __init__(self, scheme="http", headers=None, hostname="example.com", port=None):
+        self.headers = headers or {}
+        self.cookies = {}
+        self.base_url = f"{scheme}://{hostname}"
+        self.url = type(
+            "DummyUrl",
+            (),
+            {
+                "scheme": scheme,
+                "hostname": hostname,
+                "port": port,
+            },
+        )()
+
+
+class DummyCookieResponse:
+    def __init__(self):
+        self.cookies = []
+
+    def set_cookie(self, *args, **kwargs):
+        self.cookies.append(kwargs)
+
+    def delete_cookie(self, *args, **kwargs):
+        pass
+
+
+class TestAccountAuthSecurityContracts(unittest.TestCase):
+    def test_session_cookie_secure_uses_https_request_scheme(self):
+        manager = AccountAuthManager()
+        request = DummyCookieRequest(scheme="https")
+
+        with patch.dict("os.environ", {}, clear=False):
+            self.assertTrue(manager._should_secure_session_cookie(request))
+
+    def test_session_cookie_secure_trusts_forwarded_proto_when_enabled(self):
+        manager = AccountAuthManager()
+        request = DummyCookieRequest(
+            scheme="http",
+            headers={"x-forwarded-proto": "https"},
+        )
+
+        with patch.dict("os.environ", {"QUIZ_TRUST_PROXY_HEADERS": "1"}, clear=False):
+            self.assertTrue(manager._should_secure_session_cookie(request))
+
+    def test_session_cookie_secure_can_be_forced_with_env(self):
+        manager = AccountAuthManager()
+        request = DummyCookieRequest(scheme="http")
+
+        with patch.dict("os.environ", {"QUIZ_SESSION_COOKIE_SECURE": "always"}, clear=False):
+            self.assertTrue(manager._should_secure_session_cookie(request))
+
+    def test_set_session_cookie_applies_secure_flag_from_helper(self):
+        manager = AccountAuthManager()
+        request = DummyCookieRequest(
+            scheme="http",
+            headers={"x-forwarded-proto": "https"},
+        )
+        response = DummyCookieResponse()
+
+        with patch.dict("os.environ", {"QUIZ_TRUST_PROXY_HEADERS": "1"}, clear=False):
+            manager._set_session_cookie(response, "session-1", request)
+
+        self.assertEqual(len(response.cookies), 1)
+        self.assertTrue(response.cookies[0]["secure"])
 
 
 class TestKifuIdentityContracts(unittest.TestCase):

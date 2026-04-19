@@ -186,13 +186,14 @@ QUIZ_WEBAUTHN_ORIGIN=<YOUR_HTTPS_ORIGIN>
 QUIZ_WEBAUTHN_RP_ID=<YOUR_RP_ID>
 QUIZ_WEBAUTHN_RP_NAME=<YOUR_RP_NAME>
 QUIZ_WS_AUTH_SECRET=<YOUR_RANDOM_SECRET>
+QUIZ_SESSION_COOKIE_SECURE=always
 ```
 
 必要に応じて、追加の設定も行ってください。
 
 ```bash
 # 例
-QUIZ_COOKIE_SECURE=<0_OR_1>
+QUIZ_TRUST_PROXY_HEADERS=<0_OR_1>
 QUIZ_DIAG_API=<0_OR_1>
 
 # AI 出題機能を使う場合の設定例
@@ -218,6 +219,7 @@ QUIZ_DIAG_API=<0_OR_1>
 
 * 本番運用では HTTPS 環境を推奨します
 * WebAuthn を利用するため、`origin` と `rp_id` の設定は正しく一致させてください
+* TLS 終端プロキシ配下では、`QUIZ_SESSION_COOKIE_SECURE=always` と `QUIZ_TRUST_PROXY_HEADERS=1` の併用を推奨します
 * リバースプロキシ配下で運用する場合は、Cookie の `Secure` 設定や proxy headers の扱いを確認してください
 * AI 出題機能を有効にする場合は、別途 API キーやモデル設定が必要です
 
@@ -245,5 +247,4 @@ QUIZ_DIAG_API=<0_OR_1>
 `<YOUR_LICENSE>`
 
 詳細は [`LICENSE`](./LICENSE) を参照してください。
-
 
