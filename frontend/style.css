@@ -2821,11 +2821,11 @@ body.modal-open #arena-question-text .arena-question-line {
         overflow: hidden;
     }
 
-    body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel {
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel {
         order: 1;
     }
 
-    body:has(#waiting-room-screen:not([style*="none"])) .waiting-left-panel {
+    body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel {
         order: 2;
     }
 
