@@ -1,7 +1,7 @@
 import asyncio
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from backend.account_auth import AccountStore
 from backend.account_auth import AccountAuthManager
@@ -510,6 +510,123 @@ class TestKifuIdentityContracts(unittest.TestCase):
                 self.assertEqual(detail["your_role"], "participant")  # type: ignore[index]
             finally:
                 kifu_storage.KIFU_DIR = original_dir
+
+
+class TestAiFullOpenSettlementContracts(unittest.TestCase):
+    def test_ai_full_open_settlement_auto_judges_both_answers(self):
+        manager = QuizGameManager()
+        manager.broadcast_state = AsyncMock()
+        manager._broadcast_game_finished_message = AsyncMock()
+        manager._finalize_kifu_if_tracking = lambda *args, **kwargs: None
+        room = {
+            "game_state": "playing",
+            "is_ai_mode": True,
+            "ai_expected_answer": "富士山",
+            "left_participants": {"left-client"},
+            "right_participants": {"right-client"},
+            "spectators": set(),
+            "game": {
+                "full_open_settlement": {
+                    "state": "judging",
+                    "vote_id": "vote-1",
+                    "answers": {
+                    "team-left": "富士山",
+                    "team-right": "高尾山",
+                    },
+                }
+            }
+        }
+        manager.rooms["owner-1"] = room
+
+        with patch("backend.server.check_answer_async", side_effect=[True, False]):
+            asyncio.run(
+                manager._resolve_ai_full_open_settlement_judgement(
+                    "owner-1",
+                    room,
+                )
+            )
+
+        self.assertEqual(room["game_state"], "finished")
+        self.assertEqual(room["game"]["winner"], "team-left")
+        self.assertEqual(
+            room["game"]["full_open_settlement"]["judgements"],
+            {"team-left": True, "team-right": False},
+        )
+        manager._broadcast_game_finished_message.assert_awaited_once()
+
+    def test_ai_full_open_settlement_missing_expected_answer_notifies_and_stops(self):
+        manager = QuizGameManager()
+        manager._judge_full_open_settlement_impl = AsyncMock()
+        manager.broadcast_state = AsyncMock()
+        room = {
+            "game_state": "playing",
+            "is_ai_mode": True,
+            "ai_expected_answer": "",
+            "left_participants": {"left-client"},
+            "right_participants": {"right-client"},
+            "spectators": {"spec-client"},
+            "game": {
+                "full_open_settlement": {
+                    "state": "judging",
+                    "vote_id": "vote-2",
+                    "answers": {
+                        "team-left": "A",
+                        "team-right": "B",
+                    },
+                }
+            },
+        }
+
+        asyncio.run(
+            manager._resolve_ai_full_open_settlement_judgement(
+                "owner-1",
+                room,
+            )
+        )
+
+        manager._judge_full_open_settlement_impl.assert_not_awaited()
+        manager.broadcast_state.assert_awaited_once()
+
+
+class TestAiExpectedAnswerRevealContracts(unittest.TestCase):
+    def test_ai_room_broadcasts_expected_answer_after_game_finished_once(self):
+        manager = QuizGameManager()
+        manager.broadcast_state = AsyncMock()
+        room = {
+            "is_ai_mode": True,
+            "ai_expected_answer": "富士山",
+            "left_participants": {"left-client"},
+            "right_participants": {"right-client"},
+            "spectators": {"spectator-client"},
+        }
+
+        asyncio.run(
+            manager._broadcast_game_finished_message(
+                "owner-1",
+                room,
+                "先攻の勝利です。",
+            )
+        )
+
+        self.assertEqual(manager.broadcast_state.await_count, 2)
+        first_call = manager.broadcast_state.await_args_list[0]
+        second_call = manager.broadcast_state.await_args_list[1]
+        self.assertEqual(first_call.kwargs["event_type"], "game_finished")
+        self.assertEqual(second_call.kwargs["event_type"], "expected_answer_reveal")
+        self.assertEqual(
+            second_call.kwargs["event_message"],
+            "想定正解は「富士山」でした。",
+        )
+
+        asyncio.run(
+            manager._broadcast_game_finished_message(
+                "owner-1",
+                room,
+                "先攻の勝利です。",
+            )
+        )
+
+        self.assertEqual(manager.broadcast_state.await_count, 3)
 
 
 if __name__ == "__main__":

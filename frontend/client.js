@@ -249,6 +249,7 @@ const REPLAY_PROGRESS_EVENT_TYPES = new Set([
   "full_open_settlement_answer",
   "full_open_settlement_ready",
   "full_open_settlement_finished",
+  "expected_answer_reveal",
 ]);
 const ARENA_VOTE_EVENT_TYPES = new Set([
   "open_vote_request",
@@ -278,6 +279,7 @@ const ARENA_ALLOWED_EVENT_TYPES = new Set([
   "room_reconnected",
   "game_start",
   "game_finished",
+  "expected_answer_reveal",
   "question",
   "chat",
   "room_shuffle",
@@ -3093,6 +3095,11 @@ function canRequestIntentionalDraw() {
   if (!isInGameArena()) return false;
   if ((currentRoomGameState || "waiting") !== "playing") return false;
   if (isAnswerJudgementPending()) return false;
+  if (
+    String(currentGameState?.full_open_settlement?.state || "idle") !== "idle"
+  ) {
+    return false;
+  }
 
   if (currentRoomSnapshot?.role !== "participant") {
     return false;
@@ -3730,11 +3737,22 @@ function updateGameStateUI() {
   // ターン表示（ボックスを光らせる）
   const leftBox = document.getElementById("arena-player-left");
   const rightBox = document.getElementById("arena-player-right");
+  const fullOpenState = String(
+    currentGameState?.full_open_settlement?.state || "idle",
+  );
+  const shouldHighlightBothBoxes =
+    fullOpenState === "answering" || fullOpenState === "judging";
   if (leftBox) {
-    leftBox.classList.toggle("is-current-turn", currentTurn === "team-left");
+    leftBox.classList.toggle(
+      "is-current-turn",
+      shouldHighlightBothBoxes || currentTurn === "team-left",
+    );
   }
   if (rightBox) {
-    rightBox.classList.toggle("is-current-turn", currentTurn === "team-right");
+    rightBox.classList.toggle(
+      "is-current-turn",
+      shouldHighlightBothBoxes || currentTurn === "team-right",
+    );
   }
 
   updateArenaReplayResultBadges({ show: false, winner: null });

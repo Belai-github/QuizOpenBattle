@@ -539,6 +539,65 @@ class QuizGameManager:
                 event_room_id=owner_id,
             )
 
+    async def _resolve_ai_full_open_settlement_judgement(self, owner_id: str, room: dict):
+        full_open = self._get_full_open_settlement_state(room)
+        if not isinstance(full_open, dict):
+            return
+
+        if str(full_open.get("state") or "") != "judging":
+            return
+
+        expected_answer = str(room.get("ai_expected_answer", "")).strip()
+        if expected_answer == "":
+            private_map = {
+                target_id: "AI正誤判定に失敗しました。必要に応じて手動で判定してください。"
+                for target_id in self._room_member_ids(owner_id, room)
+            }
+            await self.broadcast_state(
+                public_info="AI正誤判定に失敗しました。",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
+            return
+
+        answers = dict(full_open.get("answers") or {})
+        left_answer_text = str(answers.get("team-left") or "").strip()
+        right_answer_text = str(answers.get("team-right") or "").strip()
+        if left_answer_text == "" or right_answer_text == "":
+            return
+
+        async def _judge_answer_text(answer_text: str) -> bool:
+            answer_judgement_result = check_answer_async(expected_answer, answer_text)
+            if asyncio.iscoroutine(answer_judgement_result):
+                return bool(await asyncio.wait_for(answer_judgement_result, timeout=12.0))
+            return bool(answer_judgement_result)
+
+        try:
+            left_is_correct, right_is_correct = await asyncio.gather(
+                _judge_answer_text(left_answer_text),
+                _judge_answer_text(right_answer_text),
+            )
+        except Exception:
+            private_map = {
+                target_id: "AI正誤判定に失敗しました。必要に応じて手動で判定してください。"
+                for target_id in self._room_member_ids(owner_id, room)
+            }
+            await self.broadcast_state(
+                public_info="AI正誤判定に失敗しました。",
+                private_map=private_map,
+                event_type="private_notice",
+                event_room_id=owner_id,
+            )
+            return
+
+        await self._judge_full_open_settlement_impl(
+            owner_id,
+            str(full_open.get("vote_id") or ""),
+            bool(left_is_correct),
+            bool(right_is_correct),
+        )
+
     async def broadcast_state(
         self,
         public_info: str,
@@ -888,6 +947,41 @@ class QuizGameManager:
     async def _broadcast_turn_changed_logs(self, owner_id: str, room: dict, message: str):
         await self._broadcast_team_log_message(owner_id, room, "turn_changed", message)
 
+    async def _broadcast_ai_expected_answer_reveal(self, owner_id: str, room: dict, recipient_ids: set[str] | None = None):
+        if not bool(room.get("is_ai_mode")):
+            return
+
+        if bool(room.get("ai_expected_answer_revealed")):
+            return
+
+        expected_answer = str(room.get("ai_expected_answer", "")).strip()
+        if expected_answer == "":
+            return
+
+        all_recipient_ids = (
+            set(recipient_ids)
+            if isinstance(recipient_ids, set)
+            else self._room_member_ids(owner_id, room)
+        )
+        if not all_recipient_ids:
+            return
+
+        room["ai_expected_answer_revealed"] = True
+        reveal_marker_id = f"{owner_id}:ai_expected_answer"
+        await self.broadcast_state(
+            public_info="",
+            event_type="expected_answer_reveal",
+            event_message=f"想定正解は「{expected_answer}」でした。",
+            event_chat_type="game-global",
+            event_room_id=owner_id,
+            event_recipient_ids=all_recipient_ids,
+            event_payload={
+                "expected_answer": expected_answer,
+                "log_marker_id": reveal_marker_id,
+                "event_id": reveal_marker_id,
+            },
+        )
+
     async def _broadcast_game_finished_message(self, owner_id: str, room: dict, message: str):
         """ゲーム終了ログをすべての参加者に1回だけ送信"""
         left_ids = set(room.get("left_participants", set()))
@@ -906,6 +1000,7 @@ class QuizGameManager:
             event_room_id=owner_id,
             event_recipient_ids=all_recipient_ids,
         )
+        await self._broadcast_ai_expected_answer_reveal(owner_id, room, all_recipient_ids)
 
     async def _resend_pending_votes_to_client(self, room_owner_id: str, client_id: str):
         room = self.rooms.get(room_owner_id)
@@ -1390,6 +1485,9 @@ class QuizGameManager:
                     "event_id": ready_marker_id,
                 },
             )
+
+            if room.get("is_ai_mode"):
+                await self._resolve_ai_full_open_settlement_judgement(owner_id, room)
             return
 
         if client_id in room["left_participants"]:
@@ -1582,6 +1680,26 @@ class QuizGameManager:
 
     async def _judge_full_open_settlement_impl(self, client_id: str, vote_id: str, left_is_correct: bool, right_is_correct: bool):
         ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is None:
+            owned_room = self.rooms.get(client_id)
+            if isinstance(owned_room, dict) and bool(owned_room.get("is_ai_mode")):
+                ctx = {
+                    "room_owner_id": client_id,
+                    "room": owned_room,
+                    "role": "owner",
+                    "chat_role": "questioner",
+                }
+        elif (
+            ctx.get("role") != "owner"
+            and str(ctx.get("room_owner_id") or "") == str(client_id or "")
+            and bool((ctx.get("room") or {}).get("is_ai_mode"))
+        ):
+            ctx = {
+                **ctx,
+                "role": "owner",
+                "chat_role": "questioner",
+            }
+
         if ctx is None:
             await self.send_private_info(client_id, "ゲーム部屋に参加していません。")
             return
@@ -2050,6 +2168,7 @@ class QuizGameManager:
                     room["ai_genre"] = str(normalized_payload.get("genre", "")).strip() or "一般常識"
                     room["ai_difficulty"] = difficulty
                     room["ai_expected_answer"] = str(quiz_payload.get("answer", "")).strip()
+                    room["ai_expected_answer_revealed"] = False
                     room["ai_model_id"] = model_id
 
                 await self.broadcast_state(

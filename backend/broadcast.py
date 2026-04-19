@@ -5,6 +5,7 @@ import time
 ARENA_PROGRESS_EVENT_TYPES = {
     "game_start",
     "game_finished",
+    "expected_answer_reveal",
     "question",
     "room_shuffle",
     "character_opened",
