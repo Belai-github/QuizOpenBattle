@@ -3,14 +3,14 @@
 > ブラウザで遊べる、リアルタイム対戦型のクイズゲーム。
 > ルームを作成し、出題・参加・観戦を行いながら、先攻・後攻に分かれて対戦できます。
 
-[![Demo](https://img.shields.io/badge/demo-<YOUR_DEMO_LABEL>-0f766e)](<YOUR_DEMO_URL>)
+[![Demo](https://img.shields.io/badge/demo-<YOUR_DEMO_LABEL>-0f766e)](YOUR_DEMO_URL)
 [![License](https://img.shields.io/badge/license-<YOUR_LICENSE>-2563eb)](./LICENSE)
 
 ## スクリーンショット
 
-| ロビー | アリーナ |
-|---|---|
-| ![Lobby](<YOUR_SCREENSHOT_LOBBY_PATH>) | ![Arena](<YOUR_SCREENSHOT_ARENA_PATH>) |
+| ロビー                               | アリーナ                             |
+| ------------------------------------ | ------------------------------------ |
+| ![Lobby](YOUR_SCREENSHOT_LOBBY_PATH) | ![Arena](YOUR_SCREENSHOT_ARENA_PATH) |
 
 ## 概要
 
@@ -217,34 +217,35 @@ QUIZ_DIAG_API=<0_OR_1>
 
 ## 開発メモ
 
-* 本番運用では HTTPS 環境を推奨します
-* WebAuthn を利用するため、`origin` と `rp_id` の設定は正しく一致させてください
-* TLS 終端プロキシ配下では、`QUIZ_SESSION_COOKIE_SECURE=always` と `QUIZ_TRUST_PROXY_HEADERS=1` の併用を推奨します
-* リバースプロキシ配下で運用する場合は、Cookie の `Secure` 設定や proxy headers の扱いを確認してください
-* AI 出題機能を有効にする場合は、別途 API キーやモデル設定が必要です
+- 本番運用では HTTPS 環境を推奨します
+- WebAuthn を利用するため、`origin` と `rp_id` の設定は正しく一致させてください
+- TLS 終端プロキシ配下では、`QUIZ_SESSION_COOKIE_SECURE=always` と `QUIZ_TRUST_PROXY_HEADERS=1` の併用を推奨します
+- リバースプロキシ配下で運用する場合は、Cookie の `Secure` 設定や proxy headers の扱いを確認してください
+- AI 出題機能を有効にする場合は、別途 API キーやモデル設定が必要です
 
 ---
 
 ## 既知の注意点
 
-* パスキー認証の利用には、対応ブラウザ・対応端末が必要です
-* 認証や Cookie の安全性は、アプリ本体だけでなく配信構成にも依存します
-* README のセットアップ例は、利用するホスティング環境に応じて調整が必要な場合があります
+- パスキー認証の利用には、対応ブラウザ・対応端末が必要です
+- 認証や Cookie の安全性は、アプリ本体だけでなく配信構成にも依存します
+- README のセットアップ例は、利用するホスティング環境に応じて調整が必要な場合があります
 
 ---
 
 ## 今後の予定
 
-* [ ] README に実際の画面スクリーンショットを追加
-* [ ] `RULES.md` を追加してルールを外出し
-* [ ] デプロイ手順を Render / ローカル向けに整理
-* [ ] ライセンス表記を確定
+- [ ] README に実際の画面スクリーンショットを追加
+- [ ] `RULES.md` を追加してルールを外出し
+- [ ] デプロイ手順を Render / ローカル向けに整理
+- [ ] ライセンス表記を確定
 
 ---
 
 ## ライセンス
 
-`<YOUR_LICENSE>`
-
+このリポジトリは MIT License の下で公開しています。
 詳細は [`LICENSE`](./LICENSE) を参照してください。
 
+一部のアイコンには Tabler Icons を使用しています。
+詳細は [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) を参照してください。
