@@ -2859,10 +2859,14 @@ body.modal-open #arena-question-text .arena-question-line {
         display: none;
     }
 
+    body:has(#waiting-room-screen[data-mobile-panel="right"]:not([style*="none"])) .waiting-participants-section {
+        display: none;
+    }
+
     body:has(#waiting-room-screen:not([style*="none"])) .waiting-right-panel #room-list-box {
         margin-top: 0;
         flex: 1 1 auto;
-        min-height: 0;
+        min-height: 150px;
         height: auto;
         max-height: none;
     }
@@ -3834,6 +3838,45 @@ body:has(#login-screen:not([style*="none"])) {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
+}
+
+@media (max-width: 767px) {
+    body:has(#login-screen:not([style*="none"])) {
+        justify-content: flex-start;
+        align-items: stretch;
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow: hidden;
+        padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+        gap: 10px;
+        box-sizing: border-box;
+    }
+
+    body:has(#login-screen[data-auth-state="loading"]:not([style*="none"])),
+    body:has(#login-screen[data-auth-state="authenticated"]:not([style*="none"])) {
+        justify-content: center;
+    }
+
+    body:has(#login-screen:not([style*="none"])) h1 {
+        margin: 0;
+        font-size: 1.28rem;
+        line-height: 1.1;
+        text-align: center;
+    }
+
+    body:has(#login-screen:not([style*="none"])) #login-screen {
+        flex: 0 0 auto;
+        margin: 0;
+        max-width: none;
+        overflow: visible;
+    }
+
+    body:has(#login-screen[data-auth-state="guest"]:not([style*="none"])) #login-screen {
+        max-height: calc(100dvh - 56px - 24px - env(safe-area-inset-bottom));
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+    }
 }
 
 #my-profile-card {

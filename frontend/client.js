@@ -3,7 +3,7 @@ let myClientId = null;
 let currentAccount = null;
 let isAuthBusy = false;
 let isServerWebAuthnReady = true;
-let waitingRoomMobilePanel = "right";
+let waitingRoomMobilePanel = "left";
 
 const confirmModal = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
@@ -7277,16 +7277,27 @@ function hydrateLobbyChatHistoryIfNeeded(history) {
     return;
   }
 
+  const scrollContainer = resolveLogScrollContainer(waitingLogEl);
+  const indicatorEl = ensureLogNewIndicator(scrollContainer);
+  const wasNearBottom = isLogNearBottom(scrollContainer);
+  const distanceFromBottom = scrollContainer
+    ? Math.max(
+        0,
+        scrollContainer.scrollHeight -
+          (scrollContainer.scrollTop + scrollContainer.clientHeight),
+      )
+    : 0;
+
   waitingLogEl.innerHTML = "";
-  sortedHistory.forEach((entry) => {
+  const fragment = document.createDocumentFragment();
+  sortedHistory.slice(-50).forEach((entry) => {
     const eventType = String(entry?.event_type || "").trim();
     const eventMessage = String(entry?.event_message || "").trim();
     if (!ARENA_ALLOWED_EVENT_TYPES.has(eventType) || eventMessage === "") {
       return;
     }
 
-    appendLogToContainer(
-      waitingLogEl,
+    const item = createEventLogItem(
       eventType,
       eventMessage,
       Number(entry?.timestamp || 0),
@@ -7295,7 +7306,33 @@ function hydrateLobbyChatHistoryIfNeeded(history) {
       Math.max(1, Number(entry?.event_revision || 1)),
       Math.max(0, Number(entry?.event_version || 0)),
     );
+    if (item) {
+      fragment.appendChild(item);
+    }
   });
+  waitingLogEl.appendChild(fragment);
+
+  if (!scrollContainer) {
+    return;
+  }
+
+  if (wasNearBottom) {
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    if (indicatorEl) {
+      indicatorEl.classList.add("hidden");
+    }
+    return;
+  }
+
+  scrollContainer.scrollTop = Math.max(
+    0,
+    scrollContainer.scrollHeight -
+      scrollContainer.clientHeight -
+      distanceFromBottom,
+  );
+  if (indicatorEl) {
+    indicatorEl.classList.remove("hidden");
+  }
 }
 
 async function fetchWebSocketTicket(clientId) {
@@ -8059,16 +8096,20 @@ function sendChatMessage(chatBoxEl) {
     }),
   );
 
-  // 送信直後は該当ログ欄を下端へ寄せる。
   const targetLogId =
     chatType === "lobby" ? "event-log" : `game-chat-log-${chatType}`;
   const targetLogEl = document.getElementById(targetLogId);
   const scrollContainer = resolveLogScrollContainer(targetLogEl);
   if (scrollContainer) {
-    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    const wasNearBottom = isLogNearBottom(scrollContainer);
     const indicatorEl = ensureLogNewIndicator(scrollContainer);
-    if (indicatorEl) {
-      indicatorEl.classList.add("hidden");
+    if (wasNearBottom) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      if (indicatorEl) {
+        indicatorEl.classList.add("hidden");
+      }
+    } else if (indicatorEl) {
+      indicatorEl.classList.remove("hidden");
     }
   }
 
