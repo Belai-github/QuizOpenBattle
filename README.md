@@ -3,14 +3,13 @@
 > ブラウザで遊べる、リアルタイム対戦型のクイズゲーム。
 > ルームを作成し、出題・参加・観戦を行いながら、先攻・後攻に分かれて対戦できます。
 
-[![Demo](https://img.shields.io/badge/demo-<YOUR_DEMO_LABEL>-0f766e)](YOUR_DEMO_URL)
-[![License](https://img.shields.io/badge/license-<YOUR_LICENSE>-2563eb)](./LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-2563eb)](./LICENSE)
 
 ## スクリーンショット
 
-| ロビー                               | アリーナ                             |
-| ------------------------------------ | ------------------------------------ |
-| ![Lobby](YOUR_SCREENSHOT_LOBBY_PATH) | ![Arena](YOUR_SCREENSHOT_ARENA_PATH) |
+| ロビー                          | アリーナ                        |
+| ------------------------------- | ------------------------------- |
+| ![Lobby](docs/images/LOBBY.png) | ![Arena](docs/images/ARENA.png) |
 
 ## 概要
 
