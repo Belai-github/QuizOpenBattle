@@ -6500,6 +6500,9 @@ function renderArena(currentRoom) {
     }
     if (roomMetaEl) {
       roomMetaEl.innerHTML = "";
+      if (titleEl) {
+        titleEl.appendChild(roomMetaEl);
+      }
     }
     currentArenaQuestionRawText = "";
     questionerViewMode = "all";
@@ -6544,6 +6547,10 @@ function renderArena(currentRoom) {
     questionerNameEl.className = "player-list-item-name";
     questionerNameEl.textContent = `出題者: ${questionerName}`;
     questionerItemEl.appendChild(questionerNameEl);
+
+    if (roomMetaEl) {
+      questionerItemEl.appendChild(roomMetaEl);
+    }
 
     if (isMeQuestioner && !currentRoom.is_ai_mode) {
       questionerItemEl.classList.add(

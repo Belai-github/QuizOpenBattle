@@ -24,6 +24,7 @@ body {
 }
 
 h1 {
+    display: none;
     margin: 0 0 16px;
     text-align: center;
     font-size: 1.6rem;
@@ -1807,9 +1808,13 @@ body.modal-open #arena-question-text .arena-question-line {
     list-style: none;
     margin: 0;
     padding: 0;
+    width: 100%;
 }
 
 .questioner-list-item {
+    align-items: center;
+    flex-wrap: wrap;
+    row-gap: 6px;
     border-color: #f5d06f;
     background: #fffbea;
 }
@@ -1837,7 +1842,11 @@ body.modal-open #arena-question-text .arena-question-line {
 #arena-room-meta {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
+    min-width: 0;
+    margin-left: 2px;
+    flex: 1 1 auto;
 }
 
 .arena-room-meta-chip {
@@ -2227,6 +2236,7 @@ body.modal-open #arena-question-text .arena-question-line {
 
 .player-list-item-name {
     min-width: 0;
+    flex: 0 1 auto;
     overflow-wrap: anywhere;
     word-break: break-word;
 }
@@ -3909,6 +3919,10 @@ body:has(#login-screen:not([style*="none"])) {
     justify-content: center;
     align-items: center;
     min-height: 100vh;
+}
+
+body:has(#login-screen:not([style*="none"])) h1 {
+    display: block;
 }
 
 @media (max-width: 767px) {
