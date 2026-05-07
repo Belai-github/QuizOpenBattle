@@ -118,6 +118,58 @@ class TestBroadcastContracts(unittest.TestCase):
         self.assertIsNone(resolve_arena_history_chat_type("chat", None))
 
 
+class TestAiQuestionAccessContracts(unittest.TestCase):
+    def test_guest_session_is_blocked(self):
+        manager = QuizGameManager()
+        manager.client_user_ids["guest-1"] = ""
+
+        access = manager.build_ai_question_access("guest-1")
+
+        self.assertFalse(access["allowed"])
+        self.assertEqual(access["reason_code"], "guest_session")
+
+    def test_logged_in_user_is_allowed_when_no_other_constraints(self):
+        manager = QuizGameManager()
+        manager.client_user_ids["user-1"] = "account-1"
+
+        access = manager.build_ai_question_access("user-1")
+
+        self.assertTrue(access["allowed"])
+        self.assertEqual(access["reason_code"], "ok")
+
+    def test_generation_in_progress_message_changes_for_owner(self):
+        manager = QuizGameManager()
+        manager.client_user_ids["user-1"] = "account-1"
+        manager.client_user_ids["user-2"] = "account-2"
+        manager.ai_question_generation_active = True
+        manager.ai_question_generation_owner_id = "user-1"
+
+        own_access = manager.build_ai_question_access("user-1")
+        other_access = manager.build_ai_question_access("user-2")
+
+        self.assertFalse(own_access["allowed"])
+        self.assertEqual(own_access["reason_code"], "generation_in_progress")
+        self.assertIn("生成中", own_access["message"])
+        self.assertFalse(other_access["allowed"])
+        self.assertEqual(other_access["reason_code"], "generation_in_progress")
+        self.assertIn("他のAI問題", other_access["message"])
+
+    def test_existing_ai_room_blocks_new_request(self):
+        manager = QuizGameManager()
+        manager.client_user_ids["user-1"] = "account-1"
+        manager.rooms["owner-1"] = {
+            "left_participants": set(),
+            "right_participants": set(),
+            "spectators": set(),
+            "is_ai_mode": True,
+        }
+
+        access = manager.build_ai_question_access("user-1")
+
+        self.assertFalse(access["allowed"])
+        self.assertEqual(access["reason_code"], "active_ai_room")
+
+
 class TestWebSocketSchemaContracts(unittest.TestCase):
     def test_vote_and_judge_boolean_strings_are_coerced(self):
         open_vote = validate_message(

@@ -122,6 +122,7 @@ from backend.game_logic import (
     resolve_client_room_context,
 )
 from backend.ai_logic import check_answer_async, generate_quiz_async, normalize_difficulty, normalize_model_id
+from backend.ai_permissions import resolve_ai_question_access
 from backend.storage.kifu_storage import (
     append_action,
     begin_kifu_record,
@@ -211,6 +212,9 @@ class QuizGameManager:
 
     def _has_active_ai_room(self):
         return any(bool(room.get("is_ai_mode")) for room in self.rooms.values())
+
+    def build_ai_question_access(self, client_id: str | None):
+        return resolve_ai_question_access(self, client_id)
 
     def _start_kifu_tracking(self, room_owner_id: str):
         room = self.rooms.get(room_owner_id)
@@ -2296,13 +2300,21 @@ class QuizGameManager:
             return
 
         if is_ai_mode:
-            async with self.ai_question_generation_lock:
-                if self.ai_question_generation_active:
-                    await self.send_private_info(player_id, "他のAI問題を生成中です。しばらく待ってから再試行してください。")
-                    return
+            ai_question_access = self.build_ai_question_access(player_id)
+            if not ai_question_access.get("allowed"):
+                await self.send_private_info(
+                    player_id,
+                    str(ai_question_access.get("message") or "AI出題は現在利用できません。"),
+                )
+                return
 
-                if self._has_active_ai_room():
-                    await self.send_private_info(player_id, "すでにAI出題部屋があるため、AI出題はできません。")
+            async with self.ai_question_generation_lock:
+                ai_question_access = self.build_ai_question_access(player_id)
+                if not ai_question_access.get("allowed"):
+                    await self.send_private_info(
+                        player_id,
+                        str(ai_question_access.get("message") or "AI出題は現在利用できません。"),
+                    )
                     return
 
                 self.ai_question_generation_active = True

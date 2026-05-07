@@ -216,6 +216,7 @@ let aiModelOptions = [];
 let aiModelOptionsById = new Map();
 let defaultAiModelId = "";
 let aiModelsLoaded = false;
+let currentAiQuestionAccess = null;
 const DEFAULT_AI_ACCURACY_RATE = 70;
 const MIN_AI_ACCURACY_RATE = 10;
 const ARENA_MASK_CHAR = "■";
@@ -648,15 +649,83 @@ function initializeAiAccuracyRateControl() {
   updateAiAccuracyRateDisplay(aiAccuracyRateRangeEl.value);
 }
 
-function updateAiQuestionButtonState(rooms = currentRoomsSnapshot) {
+function buildFallbackAiQuestionAccessState(rooms = currentRoomsSnapshot) {
   const hasActiveAiRoom =
     Array.isArray(rooms) && rooms.some((room) => Boolean(room?.is_ai_room));
   const guestSessionActive = isGuestSessionActive();
-  const shouldDisable =
-    guestSessionActive ||
-    aiQuestionRequestPending ||
-    aiQuestionGenerationActive ||
-    hasActiveAiRoom;
+
+  if (guestSessionActive) {
+    return {
+      allowed: false,
+      reasonCode: "guest_session",
+      message: "AI出題機能はログイン後に利用できます。",
+      title: "AI出題機能はログイン後に利用できます",
+    };
+  }
+
+  if (aiQuestionGenerationActive) {
+    const isOwnGeneration =
+      String(aiQuestionGenerationOwnerId || "") === String(myClientId || "");
+    return {
+      allowed: false,
+      reasonCode: "generation_in_progress",
+      message: isOwnGeneration
+        ? "AI問題を生成中です。完了するまでお待ちください。"
+        : "他のAI問題を生成中です。しばらく待ってから再試行してください。",
+      title: isOwnGeneration
+        ? "AI問題を生成中です"
+        : "他のAI問題を生成中です",
+    };
+  }
+
+  if (hasActiveAiRoom) {
+    return {
+      allowed: false,
+      reasonCode: "active_ai_room",
+      message: "すでにAI出題部屋があるため、AI出題はできません。",
+      title: "AI出題部屋があるため使用できません",
+    };
+  }
+
+  return {
+    allowed: true,
+    reasonCode: "ok",
+    message: "",
+    title: "",
+  };
+}
+
+function getAiQuestionAccessState(rooms = currentRoomsSnapshot) {
+  const fallbackState = buildFallbackAiQuestionAccessState(rooms);
+  if (!currentAiQuestionAccess || typeof currentAiQuestionAccess !== "object") {
+    return fallbackState;
+  }
+
+  return {
+    allowed:
+      typeof currentAiQuestionAccess.allowed === "boolean"
+        ? currentAiQuestionAccess.allowed
+        : fallbackState.allowed,
+    reasonCode:
+      String(currentAiQuestionAccess.reason_code || "").trim() ||
+      fallbackState.reasonCode,
+    message:
+      String(currentAiQuestionAccess.message || "").trim() ||
+      fallbackState.message,
+    title:
+      String(currentAiQuestionAccess.title || "").trim() || fallbackState.title,
+    costItemCode:
+      String(currentAiQuestionAccess.cost_item_code || "").trim() || null,
+    costAmount: Math.max(
+      0,
+      Number(currentAiQuestionAccess.cost_amount || 0) || 0,
+    ),
+  };
+}
+
+function updateAiQuestionButtonState(rooms = currentRoomsSnapshot) {
+  const accessState = getAiQuestionAccessState(rooms);
+  const shouldDisable = aiQuestionRequestPending || !accessState.allowed;
 
   if (aiQuestionBtnEl) {
     aiQuestionBtnEl.disabled = shouldDisable;
@@ -665,19 +734,10 @@ function updateAiQuestionButtonState(rooms = currentRoomsSnapshot) {
       aiQuestionRequestPending ? "true" : "false",
     );
 
-    if (guestSessionActive) {
-      aiQuestionBtnEl.title = "AI出題機能ははログイン後に利用できます";
-    } else if (aiQuestionRequestPending) {
+    if (aiQuestionRequestPending) {
       aiQuestionBtnEl.title = "AI出題を送信中です";
-    } else if (aiQuestionGenerationActive) {
-      aiQuestionBtnEl.title =
-        String(aiQuestionGenerationOwnerId || "") === String(myClientId || "")
-          ? "AI問題を生成中です"
-          : "他のAI問題を生成中です";
-    } else if (hasActiveAiRoom) {
-      aiQuestionBtnEl.title = "AI出題部屋があるため使用できません";
     } else {
-      aiQuestionBtnEl.title = "";
+      aiQuestionBtnEl.title = accessState.title || accessState.message || "";
     }
   }
 }
@@ -7851,6 +7911,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     });
     isConnecting = false;
     setAiQuestionLoading(false);
+    currentAiQuestionAccess = null;
     if (event.code === 1000) return;
 
     const friendlyMessage = getFriendlyConnectionErrorMessage(event);
@@ -7885,6 +7946,13 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     ) {
       aiQuestionGenerationOwnerId =
         data.ai_question_generation_owner_id || null;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(data, "ai_question_access") &&
+      data.ai_question_access &&
+      typeof data.ai_question_access === "object"
+    ) {
+      currentAiQuestionAccess = data.ai_question_access;
     }
 
     updateAiQuestionButtonState(currentRoomsSnapshot);
@@ -8246,8 +8314,11 @@ async function submitAiQuestion() {
   if (aiQuestionRequestPending) {
     return;
   }
-  if (isGuestSessionActive()) {
-    await showAlertModal("AI出題機能はログイン後に利用できます。");
+  const aiQuestionAccess = getAiQuestionAccessState();
+  if (!aiQuestionAccess.allowed) {
+    await showAlertModal(
+      aiQuestionAccess.message || "AI出題は現在利用できません。",
+    );
     return;
   }
   if (!ws || ws.readyState !== WebSocket.OPEN) {
