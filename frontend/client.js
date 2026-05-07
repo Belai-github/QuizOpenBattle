@@ -101,6 +101,12 @@ const arenaTeamRightNameInputEl = document.getElementById(
 );
 const arenaTeamLeftCountEl = document.getElementById("arena-team-left-count");
 const arenaTeamRightCountEl = document.getElementById("arena-team-right-count");
+const arenaTeamLeftYouBadgeEl = document.getElementById(
+  "arena-team-left-you-badge",
+);
+const arenaTeamRightYouBadgeEl = document.getElementById(
+  "arena-team-right-you-badge",
+);
 const arenaTeamLeftEditBtnEl = document.getElementById(
   "arena-team-left-edit-btn",
 );
@@ -6675,6 +6681,7 @@ function getArenaTeamCardElements(team) {
       nameEl: arenaTeamLeftNameEl,
       nameInputEl: arenaTeamLeftNameInputEl,
       countEl: arenaTeamLeftCountEl,
+      youBadgeEl: arenaTeamLeftYouBadgeEl,
       editBtnEl: arenaTeamLeftEditBtnEl,
       dropdownEl: document.getElementById("arena-team-left-dropdown"),
       listEl: document.getElementById("arena-player-left-list"),
@@ -6688,6 +6695,7 @@ function getArenaTeamCardElements(team) {
       nameEl: arenaTeamRightNameEl,
       nameInputEl: arenaTeamRightNameInputEl,
       countEl: arenaTeamRightCountEl,
+      youBadgeEl: arenaTeamRightYouBadgeEl,
       editBtnEl: arenaTeamRightEditBtnEl,
       dropdownEl: document.getElementById("arena-team-right-dropdown"),
       listEl: document.getElementById("arena-player-right-list"),
@@ -6955,12 +6963,19 @@ function syncArenaTeamCard(team, currentRoom) {
   const teamName = getArenaTeamName(currentRoom, team);
   const canEdit = canEditArenaTeamName(currentRoom, team);
   const isEditing = editingArenaTeamCard === team;
+  const isMyTeam = participants.some(
+    (participant) =>
+      String(participant?.client_id || "").trim() === String(myClientId || ""),
+  );
 
   if (elements.nameEl && !isEditing) {
     elements.nameEl.textContent = teamName;
   }
   if (elements.countEl) {
     elements.countEl.textContent = `${participants.length}人`;
+  }
+  if (elements.youBadgeEl) {
+    elements.youBadgeEl.classList.toggle("hidden", !isMyTeam);
   }
   if (elements.editBtnEl) {
     elements.editBtnEl.classList.toggle("hidden", !canEdit);

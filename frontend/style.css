@@ -2226,6 +2226,10 @@ body.modal-open #arena-question-text .arena-question-line {
 
 .arena-team-card-meta-row {
     margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
 }
 
 .arena-team-card-count {
@@ -2238,6 +2242,24 @@ body.modal-open #arena-question-text .arena-question-line {
     color: #475569;
     font-size: 0.72rem;
     font-weight: 700;
+}
+
+.arena-team-card-you-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #0f8a83;
+    color: #ffffff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.arena-team-card-you-badge.hidden {
+    display: none;
 }
 
 .arena-team-card-actions {
