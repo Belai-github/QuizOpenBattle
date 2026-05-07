@@ -2484,6 +2484,13 @@ class QuizGameManager:
             event_room_id=player_id,
         )
 
+        await self.broadcast_state(
+            public_info="",
+            event_type="question",
+            event_message=f"{actor_name} が部屋を作成しました",
+            event_chat_type="lobby",
+        )
+
         # AI出題では作成者を強制入室させない。必要なら room_entry で参加/観戦する。
         if not is_ai_mode:
             await self.send_private_info(player_id, "", target_screen="game_arena")
