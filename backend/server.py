@@ -5,7 +5,7 @@ import json
 import os
 import time
 import uuid
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple, cast
 
 from pydantic import ValidationError
 from backend.account_auth import AccountAuthManager
@@ -1504,15 +1504,16 @@ class QuizGameManager:
         return await swap_participant_team_handler(self, client_id, message)
 
     async def update_team_name(self, client_id: str, payload: UpdateTeamNameMessage | dict | None):
-        message = (
-            payload
-            if isinstance(payload, UpdateTeamNameMessage)
-            else UpdateTeamNameMessage(
+        if isinstance(payload, UpdateTeamNameMessage):
+            message = payload
+        else:
+            payload_dict = payload if isinstance(payload, dict) else {}
+            raw_team = str(payload_dict.get("team") or "").strip()
+            message = UpdateTeamNameMessage(
                 type="update_team_name",
-                team=str((payload or {}).get("team") or "").strip(),
-                team_name=str((payload or {}).get("team_name") or "").strip(),
+                team=cast(Literal["team-left", "team-right"], raw_team),
+                team_name=str(payload_dict.get("team_name") or "").strip(),
             )
-        )
         return await update_team_name_handler(self, client_id, message)
 
     async def open_character(self, client_id: str, payload: OpenCharacterMessage | int | None):
