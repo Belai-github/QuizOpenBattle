@@ -107,6 +107,11 @@ const arenaTeamLeftEditBtnEl = document.getElementById(
 const arenaTeamRightEditBtnEl = document.getElementById(
   "arena-team-right-edit-btn",
 );
+const arenaSpectatorBoxEl = document.getElementById("arena-spectator-box");
+const arenaSpectatorCountEl = document.getElementById("arena-spectator-count");
+const arenaSpectatorToggleBtnEl = document.getElementById(
+  "arena-spectator-toggle-btn",
+);
 const arenaMobileChatToolbarEl = document.querySelector(
   ".arena-mobile-chat-toolbar",
 );
@@ -249,6 +254,7 @@ let lastArenaTeamCardActivation = {
   team: "",
   timestamp: 0,
 };
+let isArenaSpectatorExpanded = false;
 const DEFAULT_AI_ACCURACY_RATE = 70;
 const MIN_AI_ACCURACY_RATE = 10;
 const ARENA_MASK_CHAR = "■";
@@ -6741,6 +6747,38 @@ function canEditArenaTeamName(currentRoom, team) {
   );
 }
 
+function isCompactArenaSpectatorMode() {
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+
+function syncArenaSpectatorBoxState(spectatorCount = null) {
+  const countValue =
+    spectatorCount == null
+      ? Array.isArray(currentRoomSnapshot?.spectators)
+        ? currentRoomSnapshot.spectators.length
+        : 0
+      : Number(spectatorCount) || 0;
+
+  if (arenaSpectatorCountEl) {
+    arenaSpectatorCountEl.textContent = `${countValue}人`;
+  }
+
+  if (!arenaSpectatorBoxEl || !arenaSpectatorToggleBtnEl) {
+    return;
+  }
+
+  const isCompactMode = isCompactArenaSpectatorMode() && isInGameArena();
+  const isExpanded = isCompactMode && isArenaSpectatorExpanded;
+  arenaSpectatorBoxEl.classList.toggle("is-compact", isCompactMode);
+  arenaSpectatorBoxEl.classList.toggle("is-expanded", isExpanded);
+  arenaSpectatorToggleBtnEl.classList.toggle("hidden", !isCompactMode);
+  arenaSpectatorToggleBtnEl.setAttribute("aria-expanded", String(isExpanded));
+  arenaSpectatorToggleBtnEl.setAttribute(
+    "aria-label",
+    isExpanded ? "観戦者一覧を閉じる" : "観戦者一覧を開く",
+  );
+}
+
 function syncArenaTeamCardPinState() {
   const shells = [
     ["team-left", arenaTeamLeftCardShellEl],
@@ -7549,6 +7587,7 @@ function renderArena(currentRoom) {
   if (!currentRoom) {
     cancelArenaTeamNameEdit();
     closePinnedArenaTeamCard();
+    isArenaSpectatorExpanded = false;
     if (questionerListEl) {
       questionerListEl.innerHTML = "";
       const emptyItemEl = document.createElement("li");
@@ -7583,6 +7622,7 @@ function renderArena(currentRoom) {
       team: "spectator",
       allowSwap: false,
     });
+    syncArenaSpectatorBoxState(0);
     updateArenaProgressAnnouncement();
     return;
   }
@@ -7713,6 +7753,9 @@ function renderArena(currentRoom) {
     team: "spectator",
     allowSwap: false,
   });
+  syncArenaSpectatorBoxState(
+    Array.isArray(currentRoom.spectators) ? currentRoom.spectators.length : 0,
+  );
   updateArenaProgressAnnouncement();
 }
 
@@ -9759,6 +9802,7 @@ window.addEventListener("resize", () => {
     renderArenaQuestionText();
     syncArenaLogsPresentation();
     updateArenaLogsButtonVisibility();
+    syncArenaSpectatorBoxState();
   }
   updateViewportDebugOverlay();
 });
@@ -9801,6 +9845,11 @@ arenaTeamLeftToggleBtnEl?.addEventListener("click", () => {
 
 arenaTeamRightToggleBtnEl?.addEventListener("click", () => {
   openArenaPanelPresentation("team-right");
+});
+
+arenaSpectatorToggleBtnEl?.addEventListener("click", () => {
+  isArenaSpectatorExpanded = !isArenaSpectatorExpanded;
+  syncArenaSpectatorBoxState();
 });
 
 closeRoomBtnEl?.addEventListener("click", () => {

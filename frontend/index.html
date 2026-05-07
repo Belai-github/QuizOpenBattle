@@ -328,7 +328,22 @@
 
         <div id="arena-lower-layout">
             <div id="arena-spectator-box">
-                <div class="arena-spectator-label">観戦者</div>
+                <div class="arena-spectator-header">
+                    <div class="arena-spectator-label">観戦者</div>
+                    <div class="arena-spectator-controls">
+                        <span id="arena-spectator-count" class="arena-spectator-count" aria-live="polite">0人</span>
+                        <button
+                            id="arena-spectator-toggle-btn"
+                            class="arena-spectator-toggle-btn"
+                            type="button"
+                            aria-expanded="false"
+                            aria-controls="arena-spectator-list"
+                            aria-label="観戦者一覧を開く"
+                        >
+                            <span class="arena-spectator-toggle-icon" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                </div>
                 <ul id="arena-spectator-list"></ul>
             </div>
 

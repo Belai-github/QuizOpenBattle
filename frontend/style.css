@@ -2846,6 +2846,102 @@ body.modal-open #arena-question-text .arena-question-line {
     gap: 8px;
 }
 
+.arena-spectator-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 28px;
+}
+
+.arena-spectator-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    min-height: 28px;
+    align-self: center;
+}
+
+.arena-spectator-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: rgba(248, 250, 252, 0.95);
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.arena-spectator-toggle-btn {
+    display: none;
+    width: 24px;
+    height: 24px;
+    min-height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: none;
+    flex: 0 0 24px;
+    align-self: center;
+    margin: 0;
+    vertical-align: middle;
+}
+
+.arena-spectator-toggle-btn.hidden {
+    display: none !important;
+}
+
+.arena-spectator-toggle-icon {
+    position: relative;
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+}
+
+.arena-spectator-toggle-icon::before,
+.arena-spectator-toggle-icon::after {
+    content: "";
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    box-sizing: border-box;
+}
+
+.arena-spectator-toggle-icon::before {
+    top: 0;
+    right: 0;
+    border-top: 2px solid currentColor;
+    border-right: 2px solid currentColor;
+}
+
+.arena-spectator-toggle-icon::after {
+    bottom: 0;
+    left: 0;
+    border-bottom: 2px solid currentColor;
+    border-left: 2px solid currentColor;
+}
+
+.arena-spectator-toggle-btn:hover,
+.arena-spectator-toggle-btn:focus-visible {
+    background: transparent;
+    outline: none;
+    color: #475569;
+}
+
 .arena-mobile-chat-toolbar {
     display: none;
 }
@@ -2992,7 +3088,7 @@ body.modal-open #arena-question-text .arena-question-line {
     color: #334155;
     font-size: 0.84rem;
     font-weight: 700;
-    margin-bottom: 8px;
+    margin-bottom: 0;
     line-height: 1;
     text-align: center;
     white-space: nowrap;
@@ -3550,17 +3646,68 @@ body.modal-open #arena-question-text .arena-question-line {
         width: 100%;
     }
 
+    body:has(#game-arena-screen:not([style*="none"])) .arena-spectator-header {
+        gap: 8px;
+    }
+
     body:has(#game-arena-screen:not([style*="none"])) .arena-spectator-label {
         min-height: 26px;
-        margin-bottom: 0;
         padding: 0 12px;
         font-size: 0.8rem;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-spectator-count {
+        min-height: 26px;
+        height: 26px;
+        padding: 0 10px;
+        font-size: 0.78rem;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) .arena-spectator-toggle-btn:not(.hidden) {
+        display: inline-flex;
     }
 
     body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-list {
         flex: 1 1 auto;
         min-height: 0;
         max-height: 84px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact {
+        min-height: 0;
+        padding: 8px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact:not(.is-expanded) {
+        gap: 0;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact:not(.is-expanded) #arena-spectator-list {
+        display: none;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact.is-expanded {
+        min-height: 176px;
+        max-height: 176px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact.is-expanded #arena-spectator-list {
+        display: flex;
+        max-height: 120px;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact.is-expanded .arena-spectator-toggle-icon::before {
+        border-top: none;
+        border-right: none;
+        border-bottom: 2px solid currentColor;
+        border-left: 2px solid currentColor;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact.is-expanded .arena-spectator-toggle-icon::after {
+        border-bottom: none;
+        border-left: none;
+        border-top: 2px solid currentColor;
+        border-right: 2px solid currentColor;
     }
 
     body:has(#game-arena-screen:not([style*="none"])) #arena-lower-layout>#arena-global-chat-box {
