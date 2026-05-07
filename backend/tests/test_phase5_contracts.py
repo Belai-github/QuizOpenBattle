@@ -25,6 +25,7 @@ from backend.storage.reconnect import (
 from backend.storage import kifu_storage
 from backend.server import QuizGameManager
 from backend.schemas import (
+    AnswerVoteResponseMessage,
     JudgeAnswerMessage,
     LegacyQuestionSubmissionMessage,
     OpenVoteResponseMessage,
@@ -513,6 +514,138 @@ class TestKifuIdentityContracts(unittest.TestCase):
 
 
 class TestAiFullOpenSettlementContracts(unittest.TestCase):
+    def test_full_open_answer_attempt_with_multiple_team_members_creates_unanimous_vote(self):
+        manager = QuizGameManager()
+        manager.broadcast_state = AsyncMock()
+        manager.send_private_info = AsyncMock()
+        manager.nicknames = {
+            "left-1": "先攻1",
+            "left-2": "先攻2",
+        }
+        room = {
+            "game_state": "playing",
+            "is_ai_mode": False,
+            "left_participants": {"left-1", "left-2"},
+            "right_participants": {"right-1"},
+            "spectators": set(),
+            "game": {
+                "game_status": "playing",
+                "full_open_settlement": {
+                    "state": "answering",
+                    "vote_id": "full-open-1",
+                    "submitted_teams": [],
+                    "answers": {
+                        "team-left": None,
+                        "team-right": None,
+                    },
+                    "judgements": {
+                        "team-left": None,
+                        "team-right": None,
+                    },
+                    "final_winner": None,
+                },
+            },
+        }
+        manager.rooms["owner-1"] = room
+
+        asyncio.run(manager.submit_answer_attempt("left-1", "東京"))
+
+        pending_vote = room.get("pending_answer_vote")
+        self.assertIsInstance(pending_vote, dict)
+        self.assertEqual(pending_vote["team"], "team-left")
+        self.assertEqual(pending_vote["answer_text"], "東京")
+        self.assertEqual(pending_vote["required_approvals"], 2)
+        self.assertTrue(pending_vote["full_open_settlement"])
+        self.assertEqual(pending_vote["full_open_vote_id"], "full-open-1")
+        self.assertEqual(
+            room["game"]["full_open_settlement"]["submitted_teams"],
+            [],
+        )
+        self.assertIsNone(room["game"]["full_open_settlement"]["answers"]["team-left"])
+        manager.broadcast_state.assert_awaited_once()
+        self.assertEqual(
+            manager.broadcast_state.await_args.kwargs["event_type"],
+            "answer_vote_request",
+        )
+
+    def test_full_open_answer_vote_approval_requires_unanimity_before_submission(self):
+        manager = QuizGameManager()
+        manager.broadcast_state = AsyncMock()
+        manager.send_private_info = AsyncMock()
+        manager.nicknames = {
+            "left-1": "先攻1",
+            "left-2": "先攻2",
+        }
+        room = {
+            "game_state": "playing",
+            "is_ai_mode": False,
+            "left_participants": {"left-1", "left-2"},
+            "right_participants": {"right-1"},
+            "spectators": {"spec-1"},
+            "game": {
+                "game_status": "playing",
+                "full_open_settlement": {
+                    "state": "answering",
+                    "vote_id": "full-open-2",
+                    "submitted_teams": [],
+                    "answers": {
+                        "team-left": None,
+                        "team-right": None,
+                    },
+                    "judgements": {
+                        "team-left": None,
+                        "team-right": None,
+                    },
+                    "final_winner": None,
+                },
+            },
+            "pending_answer_vote": {
+                "vote_id": "team-vote-1",
+                "requester_id": "left-1",
+                "team": "team-left",
+                "answer_text": "東京",
+                "voter_ids": {"left-1", "left-2"},
+                "approved_ids": {"left-1"},
+                "rejected_ids": set(),
+                "required_approvals": 2,
+                "status": "pending",
+                "full_open_settlement": True,
+                "full_open_vote_id": "full-open-2",
+            },
+        }
+        manager.rooms["owner-1"] = room
+
+        asyncio.run(
+            manager.respond_answer_vote(
+                "left-2",
+                AnswerVoteResponseMessage(
+                    type="answer_vote_response",
+                    vote_id="team-vote-1",
+                    approve=True,
+                ),
+            )
+        )
+
+        self.assertIsNone(room.get("pending_answer_vote"))
+        self.assertEqual(
+            room["game"]["full_open_settlement"]["submitted_teams"],
+            ["team-left"],
+        )
+        self.assertEqual(
+            room["game"]["full_open_settlement"]["answers"]["team-left"],
+            "東京",
+        )
+        self.assertEqual(
+            room["game"]["full_open_settlement"]["state"],
+            "answering",
+        )
+        event_types = [
+            call.kwargs.get("event_type")
+            for call in manager.broadcast_state.await_args_list
+        ]
+        self.assertIn("answer_vote_resolved", event_types)
+        self.assertIn("full_open_settlement_answer", event_types)
+
     def test_ai_full_open_settlement_auto_judges_both_answers(self):
         manager = QuizGameManager()
         manager.broadcast_state = AsyncMock()

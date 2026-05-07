@@ -3385,9 +3385,16 @@ async function submitArenaAnswer() {
 
   const teamParticipantCount = getCurrentTeamParticipantCount();
   const isProposalMode = teamParticipantCount > 1;
+  const isFullOpenAnswering =
+    String(currentGameState?.full_open_settlement?.state || "") ===
+    "answering";
   const confirmMessage = isProposalMode
-    ? `この内容で解答を提案しますか？\n\n${answerText}`
-    : `この内容で解答を送信しますか？\n\n${answerText}`;
+    ? isFullOpenAnswering
+      ? `この内容でフルオープン決着の解答を提案しますか？\n\n${answerText}`
+      : `この内容で解答を提案しますか？\n\n${answerText}`
+    : isFullOpenAnswering
+      ? `この内容でフルオープン決着の解答を送信しますか？\n\n${answerText}`
+      : `この内容で解答を送信しますか？\n\n${answerText}`;
   const okLabel = isProposalMode ? "提案する" : "送信する";
 
   const confirmed = await showConfirmModal(confirmMessage, {
@@ -8345,6 +8352,7 @@ async function handleAnswerVoteRequest(payload) {
   const answererName = String(payload?.answerer_name || "参加者");
   const answerText = String(payload?.answer_text || "");
   const totalVoters = Number(payload?.total_voters || 0);
+  const isFullOpenSettlement = Boolean(payload?.full_open_settlement);
   const isResend = payload?.resend === true;
 
   if (!voteId) return;
@@ -8358,9 +8366,12 @@ async function handleAnswerVoteRequest(payload) {
 
   const unanimityNote =
     totalVoters > 1 ? "\n（陣営全員のOKで送信されます）" : "";
+  const confirmSubject = isFullOpenSettlement
+    ? "この内容でフルオープン決着の解答を送信しますか？"
+    : "この内容で解答を送信しますか？";
 
   const confirmed = await showConfirmModal(
-    `${teamLabel} ${answererName} の解答案:\n${answerText}\n\nこの内容で解答を送信しますか？${unanimityNote}`,
+    `${teamLabel} ${answererName} の解答案:\n${answerText}\n\n${confirmSubject}${unanimityNote}`,
     {
       okLabel: "OK",
       cancelLabel: "キャンセル",

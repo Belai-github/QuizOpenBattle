@@ -393,6 +393,8 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
     answer_text = str(pending_vote.get("answer_text", "")).strip()
     requester_id = pending_vote.get("requester_id")
     requester_name = manager.nicknames.get(requester_id, "ゲスト")
+    is_full_open_settlement = bool(pending_vote.get("full_open_settlement"))
+    full_open_vote_id = str(pending_vote.get("full_open_vote_id") or "").strip()
 
     team_chat_recipients = set(voter_ids)
     team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
@@ -402,6 +404,67 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
     if approvals >= required:
         pending_vote["status"] = "approved"
         room["pending_answer_vote"] = None
+
+        if is_full_open_settlement:
+            result = await manager._finalize_full_open_settlement_answer(
+                owner_id,
+                room,
+                team,
+                answer_text,
+                str(requester_id or ""),
+                vote_id=full_open_vote_id,
+                proposed_by_vote=True,
+            )
+            if not result.get("ok"):
+                await manager.broadcast_state(
+                    public_info="",
+                    event_type="answer_vote_resolved",
+                    event_message="",
+                    event_chat_type=team,
+                    event_room_id=owner_id,
+                    event_recipient_ids=team_chat_recipients,
+                    event_payload={
+                        "vote_id": vote_id,
+                        "approved": False,
+                        "team": team,
+                        "reason": "full_open_finalize_failed",
+                        "full_open_settlement": True,
+                        "full_open_vote_id": full_open_vote_id,
+                        "log_marker_id": vote_id,
+                    },
+                )
+                notify_targets = set(pending_vote.get("approved_ids", set()))
+                if requester_id:
+                    notify_targets.add(requester_id)
+                private_map = {
+                    target_id: str(result.get("error") or "フルオープン決着の解答確定に失敗しました。")
+                    for target_id in notify_targets
+                }
+                await manager.broadcast_state(
+                    public_info="",
+                    private_map=private_map,
+                    event_type="private_notice",
+                    event_room_id=owner_id,
+                )
+                return
+
+            await manager.broadcast_state(
+                public_info="",
+                event_type="answer_vote_resolved",
+                event_message="",
+                event_chat_type=team,
+                event_room_id=owner_id,
+                event_recipient_ids=team_chat_recipients,
+                event_payload={
+                    "vote_id": vote_id,
+                    "approved": True,
+                    "team": team,
+                    "full_open_settlement": True,
+                    "full_open_vote_id": full_open_vote_id,
+                    "log_marker_id": vote_id,
+                },
+            )
+            return
 
         game = room.get("game") or {}
         if game.get("pending_answer_judgement") is not None:
@@ -417,6 +480,7 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
                     "approved": False,
                     "team": team,
                     "reason": "judgement_pending",
+                    "full_open_settlement": False,
                     "log_marker_id": vote_id,
                 },
             )
@@ -473,6 +537,7 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
                 "vote_id": vote_id,
                 "approved": True,
                 "team": team,
+                "full_open_settlement": False,
                 "log_marker_id": vote_id,
             },
         )
@@ -511,6 +576,8 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
                 "approved": False,
                 "team": team,
                 "reason": "rejected",
+                "full_open_settlement": is_full_open_settlement,
+                "full_open_vote_id": full_open_vote_id,
                 "log_marker_id": vote_id,
             },
         )

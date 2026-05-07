@@ -707,6 +707,107 @@ class QuizGameManager:
         state = game.get("full_open_settlement")
         return state if isinstance(state, dict) else None
 
+    async def _finalize_full_open_settlement_answer(
+        self,
+        owner_id: str,
+        room: dict,
+        team: str,
+        answer_text: str,
+        answerer_id: str,
+        *,
+        vote_id: str = "",
+        proposed_by_vote: bool = False,
+        acknowledgement_client_id: str | None = None,
+    ):
+        full_open_settlement = self._get_full_open_settlement_state(room)
+        if not isinstance(full_open_settlement, dict):
+            return {"ok": False, "error": "フルオープン決着の進行状態が見つかりません。"}
+
+        if str(full_open_settlement.get("state") or "").strip() != "answering":
+            return {"ok": False, "error": "現在はフルオープン決着の解答受付中ではありません。"}
+
+        active_vote_id = str(full_open_settlement.get("vote_id") or "").strip()
+        normalized_vote_id = str(vote_id or "").strip()
+        if normalized_vote_id and active_vote_id and normalized_vote_id != active_vote_id:
+            return {"ok": False, "error": "フルオープン決着の投票IDが一致しません。"}
+
+        submitted_teams = list(full_open_settlement.get("submitted_teams") or [])
+        if team in submitted_teams:
+            return {"ok": False, "error": "この陣営はすでに回答済みです。"}
+
+        team_label = self._team_label(team)
+        answers = dict(full_open_settlement.get("answers") or {})
+        answers[team] = answer_text
+        submitted_teams.append(team)
+
+        full_open_settlement["answers"] = answers
+        full_open_settlement["submitted_teams"] = submitted_teams
+
+        self._append_kifu_action(
+            owner_id,
+            "answer",
+            team,
+            answerer_id,
+            {
+                "answer_text": answer_text,
+                "full_open_settlement": True,
+                "vote_id": active_vote_id,
+                "proposed_by_vote": proposed_by_vote,
+            },
+        )
+
+        recipients = self._room_member_ids(owner_id, room)
+        if len(submitted_teams) < 2:
+            private_map = None
+            if acknowledgement_client_id:
+                private_map = {
+                    acknowledgement_client_id: f"{team_label}の回答を受け付けました。相手の回答を待っています。"
+                }
+            await self.broadcast_state(
+                public_info=f"{team_label}の回答が提出されました。",
+                private_map=private_map,
+                event_type="full_open_settlement_answer",
+                event_message=f"{team_label}の回答が提出されました。",
+                event_room_id=owner_id,
+                event_recipient_ids=recipients,
+                event_payload={
+                    "vote_id": active_vote_id,
+                    "submitted_team": team,
+                    "submitted_teams": submitted_teams,
+                    "answers": answers,
+                    "log_marker_id": active_vote_id,
+                },
+            )
+            return {"ok": True, "state": "answering"}
+
+        full_open_settlement["state"] = "judging"
+        left_answer_text = str(answers.get("team-left") or "")
+        right_answer_text = str(answers.get("team-right") or "")
+        ready_message = f"先攻の解答は「{left_answer_text}」、後攻の解答は「{right_answer_text}」でした。"
+        ready_marker_id = (
+            f"{active_vote_id}:ready" if active_vote_id else str(uuid.uuid4())
+        )
+        await self.broadcast_state(
+            public_info="フルオープン決着の両陣営の回答がそろいました。判定してください。",
+            event_type="full_open_settlement_ready",
+            event_message=ready_message,
+            event_chat_type="game-global",
+            event_room_id=owner_id,
+            event_recipient_ids=recipients,
+            event_payload={
+                "vote_id": active_vote_id,
+                "answers": answers,
+                "submitted_teams": submitted_teams,
+                "log_marker_id": ready_marker_id,
+                "event_id": ready_marker_id,
+            },
+        )
+
+        if room.get("is_ai_mode"):
+            await self._resolve_ai_full_open_settlement_judgement(owner_id, room)
+
+        return {"ok": True, "state": "judging"}
+
     def _format_answer_result_message(self, team_label: str, is_correct: bool):
         return format_answer_result_message(team_label, is_correct)
 
@@ -1072,6 +1173,8 @@ class QuizGameManager:
                             "answerer_name": requester_name,
                             "required_approvals": required_approvals,
                             "total_voters": total_voters,
+                            "full_open_settlement": bool(pending_answer_vote.get("full_open_settlement")),
+                            "full_open_vote_id": str(pending_answer_vote.get("full_open_vote_id") or ""),
                             "log_marker_id": vote_id,
                             "skip_history": True,
                             "resend": True,
@@ -1396,10 +1499,8 @@ class QuizGameManager:
         if full_open_state in {"answering", "judging"}:
             if client_id in room["left_participants"]:
                 team = "team-left"
-                team_label = "先攻"
             elif client_id in room["right_participants"]:
                 team = "team-right"
-                team_label = "後攻"
             else:
                 await self.send_private_info(client_id, "参加者のみアンサーできます。")
                 return
@@ -1425,69 +1526,67 @@ class QuizGameManager:
                 )
                 return
 
-            answers = dict(full_open_settlement.get("answers") or {})
-            answers[team] = text
-            if team not in submitted_teams:
-                submitted_teams.append(team)
-
-            full_open_settlement["answers"] = answers
-            full_open_settlement["submitted_teams"] = submitted_teams
-
-            self._append_kifu_action(
-                owner_id,
-                "answer",
-                team,
-                client_id,
-                {
-                    "answer_text": text,
-                    "full_open_settlement": True,
-                    "vote_id": str(full_open_settlement.get("vote_id") or ""),
-                },
-            )
-
-            recipients = self._room_member_ids(owner_id, room)
-            if len(submitted_teams) < 2:
-                await self.broadcast_state(
-                    public_info=f"{team_label}の回答が提出されました。",
-                    private_map={client_id: f"{team_label}の回答を受け付けました。相手の回答を待っています。"},
-                    event_type="full_open_settlement_answer",
-                    event_message=f"{team_label}の回答が提出されました。",
-                    event_room_id=owner_id,
-                    event_recipient_ids=recipients,
-                    event_payload={
-                        "vote_id": str(full_open_settlement.get("vote_id") or ""),
-                        "submitted_team": team,
-                        "submitted_teams": submitted_teams,
-                        "answers": answers,
-                        "log_marker_id": str(full_open_settlement.get("vote_id") or ""),
-                    },
-                )
+            voter_ids = self._get_team_participant_ids(room, team)
+            if not voter_ids:
+                await self.send_private_info(client_id, "投票対象の陣営参加者がいません。")
                 return
 
-            full_open_settlement["state"] = "judging"
-            left_answer_text = str(answers.get("team-left") or "")
-            right_answer_text = str(answers.get("team-right") or "")
-            ready_message = f"先攻の解答は「{left_answer_text}」、後攻の解答は「{right_answer_text}」でした。"
-            vote_marker_base = str(full_open_settlement.get("vote_id") or "").strip()
-            ready_marker_id = f"{vote_marker_base}:ready" if vote_marker_base else str(uuid.uuid4())
+            total_voters = len(voter_ids)
+            if total_voters <= 1:
+                result = await self._finalize_full_open_settlement_answer(
+                    owner_id,
+                    room,
+                    team,
+                    text,
+                    client_id,
+                    vote_id=str(full_open_settlement.get("vote_id") or ""),
+                    proposed_by_vote=False,
+                    acknowledgement_client_id=client_id,
+                )
+                if not result.get("ok"):
+                    await self.send_private_info(
+                        client_id,
+                        str(result.get("error") or "フルオープン決着の解答送信に失敗しました。"),
+                    )
+                return
+
+            nickname = self.nicknames.get(client_id, "ゲスト")
+            vote_id = str(uuid.uuid4())
+            room["pending_answer_vote"] = {
+                "vote_id": vote_id,
+                "requester_id": client_id,
+                "team": team,
+                "answer_text": text,
+                "voter_ids": voter_ids,
+                "approved_ids": {client_id},
+                "rejected_ids": set(),
+                "required_approvals": total_voters,
+                "status": "pending",
+                "full_open_settlement": True,
+                "full_open_vote_id": str(full_open_settlement.get("vote_id") or ""),
+            }
+
             await self.broadcast_state(
-                public_info="フルオープン決着の両陣営の回答がそろいました。判定してください。",
-                event_type="full_open_settlement_ready",
-                event_message=ready_message,
-                event_chat_type="game-global",
+                public_info="",
+                event_type="answer_vote_request",
+                event_message="",
+                event_chat_type=team,
                 event_room_id=owner_id,
-                event_recipient_ids=recipients,
+                event_recipient_ids=voter_ids - {client_id},
                 event_payload={
-                    "vote_id": str(full_open_settlement.get("vote_id") or ""),
-                    "answers": answers,
-                    "submitted_teams": submitted_teams,
-                    "log_marker_id": ready_marker_id,
-                    "event_id": ready_marker_id,
+                    "vote_id": vote_id,
+                    "team": team,
+                    "team_label": self._team_label(team),
+                    "answer_text": text,
+                    "answerer_name": nickname,
+                    "required_approvals": total_voters,
+                    "total_voters": total_voters,
+                    "full_open_settlement": True,
+                    "full_open_vote_id": str(full_open_settlement.get("vote_id") or ""),
+                    "log_marker_id": vote_id,
                 },
             )
-
-            if room.get("is_ai_mode"):
-                await self._resolve_ai_full_open_settlement_judgement(owner_id, room)
+            await self.send_private_info(client_id, "フルオープン決着の解答を提案しました。")
             return
 
         if client_id in room["left_participants"]:
