@@ -3557,6 +3557,9 @@ function getPendingDisconnectAnnouncementText() {
 function getArenaProgressAnnouncementText() {
   const roomState = currentRoomGameState || "waiting";
   const timeoutNotice = getPendingDisconnectAnnouncementText();
+  const fullOpenState = String(
+    currentGameState?.full_open_settlement?.state || "idle",
+  );
 
   let baseText = "";
 
@@ -3577,6 +3580,10 @@ function getArenaProgressAnnouncementText() {
       ? "作成者"
       : "出題者";
     baseText = `${waitingOwnerLabel}による開始を待っています...`;
+  } else if (fullOpenState === "answering") {
+    baseText = "フルオープン決着中です。両陣営の解答を待っています。";
+  } else if (fullOpenState === "judging") {
+    baseText = "フルオープン決着中です。判定を待っています。";
   } else {
     const currentTurnLabel = getTeamLabel(currentGameState?.current_turn_team);
     if (currentGameState?.is_judging_answer) {
