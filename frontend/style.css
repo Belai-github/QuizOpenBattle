@@ -1166,6 +1166,108 @@ body[data-app-mode="kifu"] .chat-compose {
     }
 }
 
+.arena-toast-layer {
+    position: fixed;
+    top: max(12px, calc(env(safe-area-inset-top) + 8px));
+    left: 50%;
+    z-index: 1600;
+    width: min(92vw, 440px);
+    pointer-events: auto;
+    opacity: 0;
+    transform: translate(-50%, -22px);
+    transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.arena-toast-layer.hidden {
+    display: none !important;
+}
+
+.arena-toast-layer.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.arena-toast-layer.is-hiding {
+    opacity: 0;
+    transform: translate(-50%, -18px);
+}
+
+.arena-toast-notification {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.34);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.94);
+    color: #f8fafc;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.28);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    text-align: left;
+    pointer-events: auto;
+}
+
+.arena-toast-notification.is-game-global {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #7c2d12;
+}
+
+.arena-toast-notification.is-game-global .arena-toast-title {
+    color: #b45309;
+}
+
+.arena-toast-notification.is-game-global .arena-toast-message {
+    color: #7c2d12;
+}
+
+.arena-toast-notification.is-team-left {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #7f1d1d;
+}
+
+.arena-toast-notification.is-team-left .arena-toast-title {
+    color: #b91c1c;
+}
+
+.arena-toast-notification.is-team-left .arena-toast-message {
+    color: #7f1d1d;
+}
+
+.arena-toast-notification.is-team-right {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e3a8a;
+}
+
+.arena-toast-notification.is-team-right .arena-toast-title {
+    color: #1d4ed8;
+}
+
+.arena-toast-notification.is-team-right .arena-toast-message {
+    color: #1e3a8a;
+}
+
+.arena-toast-title {
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    color: #bfdbfe;
+}
+
+.arena-toast-message {
+    width: 100%;
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #f8fafc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .chat-input {
     margin-top: 0;
     min-height: 48px;

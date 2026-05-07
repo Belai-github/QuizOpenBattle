@@ -68,6 +68,12 @@ const arenaTeamRightChatBoxEl = document.querySelector(
 );
 const arenaLogsModalEl = document.getElementById("arena-logs-modal");
 const arenaLogsModalSlotEl = document.getElementById("arena-logs-modal-slot");
+const arenaToastLayerEl = document.getElementById("arena-toast-layer");
+const arenaToastNotificationEl = document.getElementById(
+  "arena-toast-notification",
+);
+const arenaToastTitleEl = document.getElementById("arena-toast-title");
+const arenaToastMessageEl = document.getElementById("arena-toast-message");
 const arenaLogsUnreadBadgeEl = document.getElementById(
   "arena-logs-unread-badge",
 );
@@ -261,6 +267,11 @@ let lastArenaTeamCardActivation = {
   timestamp: 0,
 };
 let isArenaSpectatorExpanded = false;
+const pendingArenaToastNotifications = [];
+let activeArenaToastNotification = null;
+let activeArenaToastHideTimeoutId = 0;
+let activeArenaToastCleanupTimeoutId = 0;
+let lastArenaToastActivationAt = 0;
 const DEFAULT_AI_ACCURACY_RATE = 70;
 const MIN_AI_ACCURACY_RATE = 10;
 const ARENA_MASK_CHAR = "■";
@@ -3492,6 +3503,7 @@ function openArenaPanelPresentation(panelType) {
     arenaLogsModalEl?.showModal();
   }
   clearArenaUnreadState(panelType);
+  hideArenaToastNotification(true);
 }
 
 function syncArenaLogsPresentation() {
@@ -3512,10 +3524,12 @@ function syncArenaLogsPresentation() {
       restoreAllArenaChatBoxesToLayout();
     }
     refreshArenaUnreadBadges();
+    processArenaToastNotificationQueue();
     return;
   }
 
   closeArenaLogsPresentation(true);
+  hideArenaToastNotification(true);
   refreshArenaUnreadBadges();
 }
 
@@ -3524,6 +3538,174 @@ function getArenaUnreadBadgeElement(panelType) {
   if (panelType === "team-right") return arenaTeamRightUnreadBadgeEl;
   if (panelType === "game-global") return arenaLogsUnreadBadgeEl;
   return null;
+}
+
+function getArenaPanelLabel(panelType) {
+  if (panelType === "team-left") return "先攻チャット";
+  if (panelType === "team-right") return "後攻チャット";
+  if (panelType === "game-global") return "進行ログ・全体チャット";
+  return "";
+}
+
+function applyArenaToastVariant(panelType = "") {
+  if (!arenaToastNotificationEl) {
+    return;
+  }
+  arenaToastNotificationEl.classList.remove(
+    "is-team-left",
+    "is-team-right",
+    "is-game-global",
+  );
+  if (
+    panelType === "team-left" ||
+    panelType === "team-right" ||
+    panelType === "game-global"
+  ) {
+    arenaToastNotificationEl.classList.add(`is-${panelType}`);
+  }
+}
+
+function clearArenaToastTimeouts() {
+  if (activeArenaToastHideTimeoutId) {
+    window.clearTimeout(activeArenaToastHideTimeoutId);
+    activeArenaToastHideTimeoutId = 0;
+  }
+  if (activeArenaToastCleanupTimeoutId) {
+    window.clearTimeout(activeArenaToastCleanupTimeoutId);
+    activeArenaToastCleanupTimeoutId = 0;
+  }
+}
+
+function hideArenaToastNotification(immediate = false) {
+  clearArenaToastTimeouts();
+  activeArenaToastNotification = null;
+  if (!arenaToastLayerEl) {
+    processArenaToastNotificationQueue();
+    return;
+  }
+
+  const finalize = () => {
+    arenaToastLayerEl.classList.add("hidden");
+    arenaToastLayerEl.classList.remove("is-visible", "is-hiding");
+    if (arenaToastTitleEl) arenaToastTitleEl.textContent = "";
+    if (arenaToastMessageEl) arenaToastMessageEl.textContent = "";
+    applyArenaToastVariant("");
+    processArenaToastNotificationQueue();
+  };
+
+  if (immediate) {
+    finalize();
+    return;
+  }
+
+  arenaToastLayerEl.classList.remove("is-visible");
+  arenaToastLayerEl.classList.add("is-hiding");
+  activeArenaToastCleanupTimeoutId = window.setTimeout(finalize, 220);
+}
+
+function processArenaToastNotificationQueue() {
+  if (activeArenaToastNotification || !arenaToastLayerEl) {
+    return;
+  }
+  if (!isInGameArena() || !isMobileArenaLogsMode()) {
+    pendingArenaToastNotifications.length = 0;
+    clearArenaToastTimeouts();
+    activeArenaToastNotification = null;
+    arenaToastLayerEl.classList.add("hidden");
+    arenaToastLayerEl.classList.remove("is-visible", "is-hiding");
+    if (arenaToastTitleEl) arenaToastTitleEl.textContent = "";
+    if (arenaToastMessageEl) arenaToastMessageEl.textContent = "";
+    applyArenaToastVariant("");
+    return;
+  }
+
+  const nextNotification = pendingArenaToastNotifications.shift();
+  if (!nextNotification) {
+    return;
+  }
+
+  activeArenaToastNotification = nextNotification;
+  applyArenaToastVariant(nextNotification.panelType);
+  if (arenaToastTitleEl) {
+    arenaToastTitleEl.textContent = nextNotification.title;
+  }
+  if (arenaToastMessageEl) {
+    arenaToastMessageEl.textContent = nextNotification.message;
+  }
+
+  arenaToastLayerEl.classList.remove("hidden", "is-hiding");
+  requestAnimationFrame(() => {
+    arenaToastLayerEl.classList.add("is-visible");
+  });
+
+  activeArenaToastHideTimeoutId = window.setTimeout(() => {
+    hideArenaToastNotification(false);
+  }, 2600);
+}
+
+function queueArenaToastNotification(panelType, message) {
+  if (!isInGameArena() || !isMobileArenaLogsMode()) {
+    return;
+  }
+  if (
+    arenaLogsModalEl?.open &&
+    currentArenaModalPanelType === panelType
+  ) {
+    return;
+  }
+  const normalizedMessage = String(message || "").trim();
+  if (!normalizedMessage) {
+    return;
+  }
+  pendingArenaToastNotifications.push({
+    panelType,
+    title: getArenaPanelLabel(panelType),
+    message: normalizedMessage,
+  });
+  if (pendingArenaToastNotifications.length > 6) {
+    pendingArenaToastNotifications.splice(
+      0,
+      pendingArenaToastNotifications.length - 6,
+    );
+  }
+  processArenaToastNotificationQueue();
+}
+
+function openArenaPanelFromToastNotification(event = null) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+
+  const now = Date.now();
+  if (now - lastArenaToastActivationAt < 320) {
+    return;
+  }
+  lastArenaToastActivationAt = now;
+
+  const panelType = String(activeArenaToastNotification?.panelType || "").trim();
+  hideArenaToastNotification(true);
+  if (!panelType) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    openArenaPanelPresentation(panelType);
+  });
+}
+
+function resolveArenaToastPanelType(record) {
+  if (String(record?.eventType || "").trim() !== "chat") {
+    return "";
+  }
+
+  const chatType = String(record?.eventChatType || "").trim();
+  if (
+    chatType === "team-left" ||
+    chatType === "team-right" ||
+    chatType === "game-global"
+  ) {
+    return chatType;
+  }
+  return "";
 }
 
 function getArenaPanelTypeForLogElement(logEl) {
@@ -4475,6 +4657,7 @@ function showWaitingRoomScreen() {
   updateChatBoxVisibility();
   updateGuestModeControls();
   updateAiQuestionButtonState(currentRoomsSnapshot);
+  hideArenaToastNotification(true);
 }
 
 function showGameArenaScreen() {
@@ -4500,6 +4683,7 @@ function showGameArenaScreen() {
   updateAiQuestionButtonState(currentRoomsSnapshot);
 
   syncArenaLogsPresentation();
+  processArenaToastNotificationQueue();
 }
 
 function showKifuListScreen() {
@@ -8185,6 +8369,7 @@ function appendEventLog(
   }
 
   const displayMessage = getArenaDisplayedMessageForViewer(record);
+  const toastPanelType = resolveArenaToastPanelType(record);
 
   // チャット種別が指定されているイベントは、対応するゲーム内ログに流す。
   if (record.eventChatType && record.eventChatType !== "lobby") {
@@ -8285,6 +8470,9 @@ function appendEventLog(
         record.eventVersion,
       );
     }
+    if (toastPanelType) {
+      queueArenaToastNotification(toastPanelType, displayMessage);
+    }
     return;
   }
 
@@ -8324,6 +8512,9 @@ function appendEventLog(
         record.eventRevision,
         record.eventVersion,
       );
+    }
+    if (toastPanelType) {
+      queueArenaToastNotification(toastPanelType, displayMessage);
     }
     return;
   }
@@ -8389,6 +8580,9 @@ function appendEventLog(
           record.eventVersion,
         );
       }
+    }
+    if (toastPanelType) {
+      queueArenaToastNotification(toastPanelType, displayMessage);
     }
     return;
   }
@@ -9853,6 +10047,14 @@ document
   ?.addEventListener("click", () => {
     openArenaPanelPresentation("game-global");
   });
+
+arenaToastNotificationEl?.addEventListener("pointerup", (event) => {
+  openArenaPanelFromToastNotification(event);
+});
+
+arenaToastNotificationEl?.addEventListener("click", (event) => {
+  openArenaPanelFromToastNotification(event);
+});
 
 arenaTeamLeftToggleBtnEl?.addEventListener("click", () => {
   openArenaPanelPresentation("team-left");
