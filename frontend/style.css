@@ -2901,7 +2901,6 @@ body.modal-open #arena-question-text .arena-question-line {
 
 .arena-panel-toggle-btn:disabled .arena-panel-toggle-icon {
     opacity: 0.58;
-    filter: brightness(1.48) saturate(1.15);
 }
 
 .arena-logs-unread-badge {
@@ -4139,23 +4138,66 @@ body.modal-open #arena-question-text .arena-question-line {
 /* 768px - 991px: narrow desktop / tablet landscape */
 @media (min-width: 768px) and (max-width: 991px) {
     #arena-board-layout {
-        flex: 7 1 0;
-        gap: 10px;
+        flex: 0 0 auto;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+            "question question"
+            "left right";
+        grid-template-rows: auto auto;
+        gap: 12px;
         overflow: visible;
     }
 
+    #arena-question-board {
+        max-height: min(48vh, 460px);
+        min-height: 320px;
+        padding: 16px 18px 14px;
+        gap: 12px;
+    }
+
+    #arena-progress-announcement {
+        font-size: 0.98rem;
+        line-height: 1.26;
+    }
+
+    #arena-question-text {
+        font-size: clamp(2.02rem, 3.9vw, 2.8rem);
+        line-height: 1.2;
+    }
+
+    #arena-answer-box {
+        width: min(100%, 540px);
+        align-self: center;
+    }
+
     #arena-lower-layout {
-        flex: 6 1 0;
+        flex: 1 1 auto;
+        min-height: 0;
         margin-top: 10px;
         margin-bottom: 12px;
         gap: 10px;
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr);
     }
 
     #arena-spectator-box,
     #arena-global-chat-box {
         margin-top: 0;
-        height: auto;
+        height: 100%;
         min-height: 0;
+    }
+
+    #arena-spectator-box {
+        display: flex;
+        flex-direction: column;
+        align-self: stretch;
+        gap: 8px;
+    }
+
+    #arena-spectator-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
     }
 
     #arena-player-left,
@@ -4167,9 +4209,212 @@ body.modal-open #arena-question-text .arena-question-line {
 
     #arena-player-left,
     #arena-player-right {
+        padding: 10px;
         overflow: visible;
         position: relative;
         z-index: 8;
+    }
+
+    #arena-player-left>.chat-box,
+    #arena-player-right>.chat-box,
+    #arena-lower-layout>#arena-global-chat-box {
+        display: none !important;
+    }
+
+    #arena-logs-modal-slot>.chat-box {
+        display: flex !important;
+    }
+
+    .arena-mobile-chat-toolbar {
+        display: block;
+        flex: 0 0 auto;
+        margin-top: 10px;
+    }
+
+    .arena-mobile-chat-toolbar hr {
+        margin: 0 0 8px;
+    }
+
+    .arena-mobile-chat-toolbar-buttons {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: center;
+        gap: 12px;
+        justify-items: center;
+    }
+
+    #arena-logs-toggle-btn:not(.hidden) {
+        display: flex !important;
+    }
+
+    #arena-logs-modal {
+        border: none;
+        background: transparent;
+        min-width: 0;
+        min-height: 0;
+        max-width: none;
+        max-height: none;
+        margin: 0;
+        padding: 0;
+        overflow: visible;
+        box-sizing: border-box;
+    }
+
+    #arena-logs-modal[open] {
+        display: grid;
+        place-items: center;
+        width: 100vw;
+        width: 100dvw;
+        height: 100vh;
+        height: 100dvh;
+        padding: 12px;
+    }
+
+    #arena-logs-modal::backdrop {
+        background: rgba(15, 23, 42, 0.48);
+    }
+
+    .arena-logs-modal-shell {
+        width: min(720px, calc(100vw - 24px));
+        width: min(720px, calc(100dvw - 24px));
+        max-width: calc(100vw - 24px);
+        max-width: calc(100dvw - 24px);
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+        display: flex;
+    }
+
+    .arena-logs-modal-slot {
+        width: 100%;
+        height: auto;
+        display: flex;
+    }
+
+    #arena-logs-modal-slot>.chat-box {
+        margin: 0;
+        width: 100%;
+        height: auto;
+        max-width: none;
+        border-radius: 14px;
+        padding: 10px 10px 0;
+        align-self: center;
+        box-sizing: border-box;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] {
+        border: 1px solid #facc15;
+        background: #fff7cc;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] {
+        border: 1px solid #fca5a5;
+        background: #fff1f2;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] {
+        border: 1px solid #93c5fd;
+        background: #eff6ff;
+    }
+
+    #arena-logs-modal-slot>.chat-box .arena-chat-title {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] .arena-chat-title {
+        background: #fff7cc;
+        border-bottom: 1px solid #facc15;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] .arena-chat-title {
+        background: #fff1f2;
+        border-bottom: 1px solid #fca5a5;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] .arena-chat-title {
+        background: #eff6ff;
+        border-bottom: 1px solid #93c5fd;
+    }
+
+    #arena-logs-modal-slot>.chat-box .arena-panel-close-btn {
+        display: inline-flex !important;
+    }
+
+    #arena-logs-modal-slot>.chat-box .log-scroll-shell {
+        flex: 0 0 320px;
+        min-height: 320px;
+        max-height: 320px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] .chat-log {
+        background: #fef3c7;
+        min-height: 100%;
+        max-height: 100%;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] .chat-log {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        min-height: 100%;
+        max-height: 100%;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] .chat-log {
+        background: #dbeafe;
+        border-color: #93c5fd;
+        min-height: 100%;
+        max-height: 100%;
+    }
+
+    #arena-logs-modal-slot>.chat-box .chat-log {
+        height: 100%;
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    #arena-logs-modal-slot>.chat-box .chat-compose {
+        position: relative;
+        padding: 10px;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="game-global"] .chat-compose {
+        background: #fff7cc;
+        border-top: 1px solid #facc15;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-left"] .chat-compose {
+        background: #fff1f2;
+        border-top: 1px solid #fca5a5;
+    }
+
+    #arena-logs-modal-slot>.chat-box[data-chat-type="team-right"] .chat-compose {
+        background: #eff6ff;
+        border-top: 1px solid #93c5fd;
+    }
+
+    #arena-logs-modal-slot>.chat-box .chat-input {
+        width: 100%;
+        margin: 0;
+        padding-right: 46px;
+    }
+
+    #arena-logs-modal-slot>.chat-box .arena-chat-send-btn {
+        position: absolute;
+        right: 16px;
+        top: auto;
+        bottom: 22px;
+        transform: none;
+    }
+
+    #arena-logs-modal-slot>.chat-box .arena-chat-send-btn:hover {
+        transform: scale(1.1);
     }
 }
 

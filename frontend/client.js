@@ -3362,7 +3362,7 @@ function isInGameArena() {
 }
 
 function isMobileArenaLogsMode() {
-  return window.matchMedia("(max-width: 767px)").matches;
+  return window.matchMedia("(max-width: 991px)").matches;
 }
 
 function getArenaChatBoxForPanel(panelType) {
@@ -5941,7 +5941,7 @@ function updateArenaLogsButtonVisibility() {
   );
   setPanelButtonState(
     toggleBtn,
-    shouldShow && canOpenArenaPanel("game-global"),
+    shouldShow,
   );
   setPanelButtonState(
     arenaTeamRightToggleBtnEl,
@@ -7100,10 +7100,15 @@ function getArenaCharsPerLine() {
   );
   probeCharEl.remove();
 
-  return Math.max(
+  const calculatedCharsPerLine = Math.max(
     Math.floor(availableWidth / measuredCharWidth),
     ARENA_MIN_CHARS_PER_LINE,
   );
+  if (window.matchMedia("(min-width: 768px) and (max-width: 991px)").matches) {
+    return Math.min(calculatedCharsPerLine, 20);
+  }
+
+  return calculatedCharsPerLine;
 }
 
 function getArenaQuestionAvailableBounds() {
