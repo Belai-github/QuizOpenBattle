@@ -15,6 +15,13 @@ from backend.broadcast import (
     resolve_event_timestamp,
     resolve_log_marker_id,
 )
+from backend.game_logic import (
+    apply_create_question_room,
+    apply_join_room,
+    apply_shuffle_participants,
+    apply_update_team_name,
+    build_current_room_for_client,
+)
 from backend.events.identity import derive_event_identity
 from backend.storage.reconnect import (
     clear_room_pending_disconnect,
@@ -31,6 +38,7 @@ from backend.schemas import (
     OpenVoteResponseMessage,
     RoomEntryMessage,
     TurnEndVoteResponseMessage,
+    UpdateTeamNameMessage,
     validate_message,
 )
 
@@ -206,6 +214,81 @@ class TestWebSocketSchemaContracts(unittest.TestCase):
         )
 
         self.assertEqual(message.role, "spectator")
+
+    def test_update_team_name_message_validates(self):
+        message = validate_message(
+            UpdateTeamNameMessage,
+            {"type": "update_team_name", "team": "team-left", "team_name": "赤組"},
+        )
+
+        self.assertEqual(message.team, "team-left")
+        self.assertEqual(message.team_name, "赤組")
+
+
+class TestArenaTeamContracts(unittest.TestCase):
+    def test_team_editor_tracks_first_displayed_member_after_shuffle(self):
+        rooms = {}
+        nicknames = {
+            "owner-1": "出題者",
+            "user-1": "一番手",
+            "user-2": "二番手",
+            "user-3": "三番手",
+        }
+        create_result = apply_create_question_room(
+            rooms,
+            nicknames,
+            "owner-1",
+            {"question_text": "テスト問題"},
+        )
+        self.assertTrue(create_result["ok"])
+
+        room = rooms["owner-1"]
+        room["left_participants"] = {"user-1", "user-2"}
+        room["right_participants"] = {"user-3"}
+        room["left_participant_order"] = ["user-1", "user-2"]
+        room["right_participant_order"] = ["user-3"]
+
+        before_shuffle = build_current_room_for_client(rooms, nicknames, "user-1")
+        self.assertEqual(before_shuffle["left_team_editor_client_id"], "user-1")
+
+        with patch("backend.game_logic.random.shuffle", lambda seq: None), patch(
+            "backend.game_logic.random.choice",
+            return_value=True,
+        ):
+            shuffle_result = apply_shuffle_participants(rooms, "owner-1")
+
+        self.assertTrue(shuffle_result["ok"])
+        after_shuffle_left = build_current_room_for_client(rooms, nicknames, "user-1")
+        self.assertEqual(after_shuffle_left["left_participants"][0]["client_id"], "user-1")
+        self.assertEqual(after_shuffle_left["left_team_editor_client_id"], "user-1")
+
+    def test_only_first_displayed_member_can_update_team_name(self):
+        rooms = {}
+        nicknames = {
+            "owner-1": "出題者",
+            "user-1": "一番手",
+            "user-2": "二番手",
+        }
+        create_result = apply_create_question_room(
+            rooms,
+            nicknames,
+            "owner-1",
+            {"question_text": "テスト問題"},
+        )
+        self.assertTrue(create_result["ok"])
+
+        room = rooms["owner-1"]
+        room["left_participants"] = {"user-1", "user-2"}
+        room["left_participant_order"] = ["user-1", "user-2"]
+
+        denied = apply_update_team_name(rooms, "user-2", "team-left", "青組")
+        self.assertFalse(denied["ok"])
+
+        allowed = apply_update_team_name(rooms, "user-1", "team-left", "青組")
+        self.assertTrue(allowed["ok"])
+
+        current_room = build_current_room_for_client(rooms, nicknames, "user-1")
+        self.assertEqual(current_room["left_team_name"], "青組")
 
 
 class DummyReconnectManager:

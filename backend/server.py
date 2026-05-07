@@ -69,6 +69,7 @@ from backend.handlers.room_ops import (
     remove_client_from_all_rooms as remove_client_from_all_rooms_handler,
     shuffle_participants as shuffle_participants_handler,
     swap_participant_team as swap_participant_team_handler,
+    update_team_name as update_team_name_handler,
 )
 from backend.handlers.answering import (
     judge_answer as judge_answer_handler,
@@ -98,6 +99,7 @@ from backend.schemas import (
     StartGameMessage,
     SubmitAnswerMessage,
     SwapParticipantTeamMessage,
+    UpdateTeamNameMessage,
     TurnEndAttemptMessage,
     TurnEndVoteResponseMessage,
     dump_message,
@@ -159,6 +161,7 @@ MESSAGE_ROUTER: dict[str, MessageRoute] = {
     "start_game": MessageRoute(StartGameMessage, "start_game"),
     "shuffle_participants": MessageRoute(ShuffleParticipantsMessage, "shuffle_participants"),
     "swap_participant_team": MessageRoute(SwapParticipantTeamMessage, "swap_participant_team"),
+    "update_team_name": MessageRoute(UpdateTeamNameMessage, "update_team_name"),
     "open_character": MessageRoute(OpenCharacterMessage, "open_character"),
     "open_vote_request": MessageRoute(OpenVoteRequestMessage, "request_open_vote"),
     "open_vote_response": MessageRoute(OpenVoteResponseMessage, "respond_open_vote"),
@@ -286,11 +289,7 @@ class QuizGameManager:
         if isinstance(raw_forced_losses, set):
             forced_loss_user_ids = raw_forced_losses
         elif isinstance(raw_forced_losses, (list, tuple)):
-            forced_loss_user_ids = {
-                str(item or "").strip()
-                for item in raw_forced_losses
-                if str(item or "").strip() != ""
-            }
+            forced_loss_user_ids = {str(item or "").strip() for item in raw_forced_losses if str(item or "").strip() != ""}
             room["forced_loss_user_ids"] = forced_loss_user_ids
         else:
             forced_loss_user_ids = set()
@@ -299,16 +298,8 @@ class QuizGameManager:
         forced_loss_user_ids.add(resolved_user_id)
 
     def _collect_finished_room_team_user_ids(self, room_owner_id: str, room: dict) -> tuple[set[str], set[str]]:
-        team_left_user_ids = {
-            str(self.client_user_ids.get(client_id) or "").strip()
-            for client_id in set(room.get("left_participants", set()))
-            if str(self.client_user_ids.get(client_id) or "").strip() != ""
-        }
-        team_right_user_ids = {
-            str(self.client_user_ids.get(client_id) or "").strip()
-            for client_id in set(room.get("right_participants", set()))
-            if str(self.client_user_ids.get(client_id) or "").strip() != ""
-        }
+        team_left_user_ids = {str(self.client_user_ids.get(client_id) or "").strip() for client_id in set(room.get("left_participants", set())) if str(self.client_user_ids.get(client_id) or "").strip() != ""}
+        team_right_user_ids = {str(self.client_user_ids.get(client_id) or "").strip() for client_id in set(room.get("right_participants", set())) if str(self.client_user_ids.get(client_id) or "").strip() != ""}
 
         for reservation in self.reconnect_reservations.values():
             if not isinstance(reservation, dict):
@@ -345,17 +336,9 @@ class QuizGameManager:
         team_left_user_ids, team_right_user_ids = self._collect_finished_room_team_user_ids(room_owner_id, room)
         raw_forced_loss_user_ids = room.get("forced_loss_user_ids")
         if isinstance(raw_forced_loss_user_ids, set):
-            forced_loss_user_ids = {
-                str(user_id or "").strip()
-                for user_id in raw_forced_loss_user_ids
-                if str(user_id or "").strip() != ""
-            }
+            forced_loss_user_ids = {str(user_id or "").strip() for user_id in raw_forced_loss_user_ids if str(user_id or "").strip() != ""}
         elif isinstance(raw_forced_loss_user_ids, (list, tuple)):
-            forced_loss_user_ids = {
-                str(user_id or "").strip()
-                for user_id in raw_forced_loss_user_ids
-                if str(user_id or "").strip() != ""
-            }
+            forced_loss_user_ids = {str(user_id or "").strip() for user_id in raw_forced_loss_user_ids if str(user_id or "").strip() != ""}
         else:
             forced_loss_user_ids = set()
 
@@ -453,11 +436,7 @@ class QuizGameManager:
         raw_pending_votes = room.get("pending_answer_votes")
         if isinstance(raw_pending_votes, dict):
             for team, vote in raw_pending_votes.items():
-                if (
-                    team in {"team-left", "team-right"}
-                    and isinstance(vote, dict)
-                    and vote.get("status") == "pending"
-                ):
+                if team in {"team-left", "team-right"} and isinstance(vote, dict) and vote.get("status") == "pending":
                     pending_votes[team] = vote
             if pending_votes:
                 return pending_votes
@@ -658,10 +637,7 @@ class QuizGameManager:
 
         expected_answer = str(room.get("ai_expected_answer", "")).strip()
         if expected_answer == "":
-            private_map = {
-                target_id: "AI正誤判定に失敗しました。必要に応じて手動で判定してください。"
-                for target_id in self._room_member_ids(owner_id, room)
-            }
+            private_map = {target_id: "AI正誤判定に失敗しました。必要に応じて手動で判定してください。" for target_id in self._room_member_ids(owner_id, room)}
             await self.broadcast_state(
                 public_info="AI正誤判定に失敗しました。",
                 private_map=private_map,
@@ -688,10 +664,7 @@ class QuizGameManager:
                 _judge_answer_text(right_answer_text),
             )
         except Exception:
-            private_map = {
-                target_id: "AI正誤判定に失敗しました。必要に応じて手動で判定してください。"
-                for target_id in self._room_member_ids(owner_id, room)
-            }
+            private_map = {target_id: "AI正誤判定に失敗しました。必要に応じて手動で判定してください。" for target_id in self._room_member_ids(owner_id, room)}
             await self.broadcast_state(
                 public_info="AI正誤判定に失敗しました。",
                 private_map=private_map,
@@ -869,9 +842,7 @@ class QuizGameManager:
         if len(submitted_teams) < 2:
             private_map = None
             if acknowledgement_client_id:
-                private_map = {
-                    acknowledgement_client_id: f"{team_label}の回答を受け付けました。相手の回答を待っています。"
-                }
+                private_map = {acknowledgement_client_id: f"{team_label}の回答を受け付けました。相手の回答を待っています。"}
             await self.broadcast_state(
                 public_info=f"{team_label}の回答が提出されました。",
                 private_map=private_map,
@@ -893,9 +864,7 @@ class QuizGameManager:
         left_answer_text = str(answers.get("team-left") or "")
         right_answer_text = str(answers.get("team-right") or "")
         ready_message = f"先攻の解答は「{left_answer_text}」、後攻の解答は「{right_answer_text}」でした。"
-        ready_marker_id = (
-            f"{active_vote_id}:ready" if active_vote_id else str(uuid.uuid4())
-        )
+        ready_marker_id = f"{active_vote_id}:ready" if active_vote_id else str(uuid.uuid4())
         await self.broadcast_state(
             public_info="フルオープン決着の両陣営の回答がそろいました。判定してください。",
             event_type="full_open_settlement_ready",
@@ -1168,11 +1137,7 @@ class QuizGameManager:
         if expected_answer == "":
             return
 
-        all_recipient_ids = (
-            set(recipient_ids)
-            if isinstance(recipient_ids, set)
-            else self._room_member_ids(owner_id, room)
-        )
+        all_recipient_ids = set(recipient_ids) if isinstance(recipient_ids, set) else self._room_member_ids(owner_id, room)
         if not all_recipient_ids:
             return
 
@@ -1410,10 +1375,14 @@ class QuizGameManager:
         message = payload if isinstance(payload, AnswerVoteResponseMessage) else validate_message(AnswerVoteResponseMessage, payload)
         room_owner_id = self._resolve_room_owner_id_for_client(client_id)
         room = self.rooms.get(room_owner_id) if room_owner_id else None
-        pending_vote = self._get_pending_answer_vote(
-            room,
-            vote_id=str(message.vote_id or "").strip(),
-        ) if isinstance(room, dict) else None
+        pending_vote = (
+            self._get_pending_answer_vote(
+                room,
+                vote_id=str(message.vote_id or "").strip(),
+            )
+            if isinstance(room, dict)
+            else None
+        )
         team_lock = None
         if isinstance(pending_vote, dict) and bool(pending_vote.get("full_open_settlement")):
             team_lock = self._get_room_team_operation_lock(
@@ -1436,11 +1405,7 @@ class QuizGameManager:
             return await request_turn_end_attempt_handler(self, client_id, message)
 
     async def request_intentional_draw_vote(self, client_id: str, payload: IntentionalDrawVoteRequestMessage | None = None):
-        message = (
-            payload
-            if isinstance(payload, IntentionalDrawVoteRequestMessage)
-            else IntentionalDrawVoteRequestMessage(type="intentional_draw_vote_request")
-        )
+        message = payload if isinstance(payload, IntentionalDrawVoteRequestMessage) else IntentionalDrawVoteRequestMessage(type="intentional_draw_vote_request")
         room_owner_id = self._resolve_room_owner_id_for_client(client_id)
         lock = self._get_room_operation_lock(room_owner_id or "")
         if lock is None:
@@ -1449,11 +1414,7 @@ class QuizGameManager:
             return await request_intentional_draw_vote_handler(self, client_id, message)
 
     async def respond_intentional_draw_vote(self, client_id: str, payload: IntentionalDrawVoteResponseMessage | dict[str, Any]):
-        message = (
-            payload
-            if isinstance(payload, IntentionalDrawVoteResponseMessage)
-            else validate_message(IntentionalDrawVoteResponseMessage, payload)
-        )
+        message = payload if isinstance(payload, IntentionalDrawVoteResponseMessage) else validate_message(IntentionalDrawVoteResponseMessage, payload)
         room_owner_id = self._resolve_room_owner_id_for_client(client_id)
         lock = self._get_room_operation_lock(room_owner_id or "")
         if lock is None:
@@ -1539,12 +1500,20 @@ class QuizGameManager:
         return await shuffle_participants_handler(self, client_id)
 
     async def swap_participant_team(self, client_id: str, payload: SwapParticipantTeamMessage | str):
+        message = payload if isinstance(payload, SwapParticipantTeamMessage) else SwapParticipantTeamMessage(type="swap_participant_team", target_client_id=str(payload or "").strip())
+        return await swap_participant_team_handler(self, client_id, message)
+
+    async def update_team_name(self, client_id: str, payload: UpdateTeamNameMessage | dict | None):
         message = (
             payload
-            if isinstance(payload, SwapParticipantTeamMessage)
-            else SwapParticipantTeamMessage(type="swap_participant_team", target_client_id=str(payload or "").strip())
+            if isinstance(payload, UpdateTeamNameMessage)
+            else UpdateTeamNameMessage(
+                type="update_team_name",
+                team=str((payload or {}).get("team") or "").strip(),
+                team_name=str((payload or {}).get("team_name") or "").strip(),
+            )
         )
-        return await swap_participant_team_handler(self, client_id, message)
+        return await update_team_name_handler(self, client_id, message)
 
     async def open_character(self, client_id: str, payload: OpenCharacterMessage | int | None):
         """文字をオープンするアクション"""
@@ -1961,11 +1930,7 @@ class QuizGameManager:
                     "role": "owner",
                     "chat_role": "questioner",
                 }
-        elif (
-            ctx.get("role") != "owner"
-            and str(ctx.get("room_owner_id") or "") == str(client_id or "")
-            and bool((ctx.get("room") or {}).get("is_ai_mode"))
-        ):
+        elif ctx.get("role") != "owner" and str(ctx.get("room_owner_id") or "") == str(client_id or "") and bool((ctx.get("room") or {}).get("is_ai_mode")):
             ctx = {
                 **ctx,
                 "role": "owner",
@@ -2500,7 +2465,7 @@ class QuizGameManager:
         await self.broadcast_state(
             public_info="",
             event_type="question",
-            event_message=f"{actor_name} が部屋を作成しました",
+            event_message=f"{actor_name} が出題しました",
             event_chat_type="lobby",
         )
 

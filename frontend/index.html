@@ -177,7 +177,49 @@
                     </div>
                     <div class="arena-result-badge hidden" id="arena-result-badge-left" aria-live="polite"></div>
                 </div>
-                <ul id="arena-player-left-list"></ul>
+                <div id="arena-team-left-card-shell" class="arena-team-card-shell" data-team-card-shell="team-left">
+                    <div
+                        id="arena-team-left-card"
+                        class="arena-team-card"
+                        data-team-card="team-left"
+                        tabindex="0"
+                        role="button"
+                        aria-expanded="false"
+                        aria-controls="arena-team-left-dropdown"
+                    >
+                        <div class="arena-team-card-text">
+                            <div class="arena-team-card-title-row">
+                                <span class="arena-team-card-title">チーム：</span>
+                                <span id="arena-team-left-name" class="arena-team-card-name">先攻</span>
+                                <input
+                                    id="arena-team-left-name-input"
+                                    class="arena-team-card-input hidden"
+                                    type="text"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    aria-label="先攻のチーム名"
+                                >
+                            </div>
+                            <div class="arena-team-card-meta-row">
+                                <span id="arena-team-left-count" class="arena-team-card-count">0人</span>
+                            </div>
+                        </div>
+                        <div class="arena-team-card-actions">
+                            <button
+                                id="arena-team-left-edit-btn"
+                                type="button"
+                                class="arena-team-edit-btn hidden"
+                                aria-label="先攻のチーム名を編集"
+                            >
+                                <img src="img/edit.svg" alt="" class="arena-team-edit-icon">
+                            </button>
+                            <span class="arena-team-card-chevron" aria-hidden="true">▾</span>
+                        </div>
+                    </div>
+                    <div id="arena-team-left-dropdown" class="arena-team-dropdown" aria-hidden="true">
+                        <ul id="arena-player-left-list"></ul>
+                    </div>
+                </div>
 
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-left" data-visibility="team-left,questioner,spectator">
                     <div class="arena-chat-title">
@@ -223,7 +265,49 @@
                     </div>
                     <div class="arena-result-badge hidden" id="arena-result-badge-right" aria-live="polite"></div>
                 </div>
-                <ul id="arena-player-right-list"></ul>
+                <div id="arena-team-right-card-shell" class="arena-team-card-shell" data-team-card-shell="team-right">
+                    <div
+                        id="arena-team-right-card"
+                        class="arena-team-card"
+                        data-team-card="team-right"
+                        tabindex="0"
+                        role="button"
+                        aria-expanded="false"
+                        aria-controls="arena-team-right-dropdown"
+                    >
+                        <div class="arena-team-card-text">
+                            <div class="arena-team-card-title-row">
+                                <span class="arena-team-card-title">チーム：</span>
+                                <span id="arena-team-right-name" class="arena-team-card-name">後攻</span>
+                                <input
+                                    id="arena-team-right-name-input"
+                                    class="arena-team-card-input hidden"
+                                    type="text"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    aria-label="後攻のチーム名"
+                                >
+                            </div>
+                            <div class="arena-team-card-meta-row">
+                                <span id="arena-team-right-count" class="arena-team-card-count">0人</span>
+                            </div>
+                        </div>
+                        <div class="arena-team-card-actions">
+                            <button
+                                id="arena-team-right-edit-btn"
+                                type="button"
+                                class="arena-team-edit-btn hidden"
+                                aria-label="後攻のチーム名を編集"
+                            >
+                                <img src="img/edit.svg" alt="" class="arena-team-edit-icon">
+                            </button>
+                            <span class="arena-team-card-chevron" aria-hidden="true">▾</span>
+                        </div>
+                    </div>
+                    <div id="arena-team-right-dropdown" class="arena-team-dropdown" aria-hidden="true">
+                        <ul id="arena-player-right-list"></ul>
+                    </div>
+                </div>
 
                 <div class="chat-box hidden" data-chat-room="game" data-chat-type="team-right" data-visibility="team-right,questioner,spectator">
                     <div class="arena-chat-title">

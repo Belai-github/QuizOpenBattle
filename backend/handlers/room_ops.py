@@ -2,10 +2,16 @@ from backend.game_logic import (
     apply_join_room,
     apply_shuffle_participants,
     apply_swap_participant_team,
+    apply_update_team_name,
     remove_client_from_all_rooms as remove_client_from_all_rooms_logic,
     resolve_client_room_context,
 )
-from backend.schemas import CancelQuestionMessage, RoomEntryMessage, SwapParticipantTeamMessage
+from backend.schemas import (
+    CancelQuestionMessage,
+    RoomEntryMessage,
+    SwapParticipantTeamMessage,
+    UpdateTeamNameMessage,
+)
 
 
 async def cancel_question(manager, requester_id: str, payload: CancelQuestionMessage):
@@ -135,4 +141,37 @@ async def swap_participant_team(manager, client_id: str, payload: SwapParticipan
         event_type="room_shuffle",
         event_message=f"{actor_name} が {target_name} を {from_label}から{to_label} に入れ替えました",
         event_room_id=client_id,
+    )
+
+
+async def update_team_name(manager, client_id: str, payload: UpdateTeamNameMessage):
+    result = apply_update_team_name(
+        manager.rooms,
+        client_id,
+        payload.team,
+        payload.team_name,
+    )
+    if not result.get("ok"):
+        await manager.send_private_info(
+            client_id,
+            result.get("error", "チーム名の更新に失敗しました。"),
+        )
+        return
+
+    room_owner_id = str(result.get("room_owner_id") or "").strip()
+    team = str(result.get("team") or "")
+    team_name = str(result.get("team_name") or "").strip()
+    nickname = manager.nicknames.get(client_id, "ゲスト")
+    team_label = manager._team_label(team)
+
+    await manager.broadcast_state(
+        public_info="",
+        event_type="team_name_updated",
+        event_message=f"{nickname} が {team_label}のチーム名を「{team_name}」に変更しました",
+        event_room_id=room_owner_id,
+        event_payload={
+            "team": team,
+            "team_name": team_name,
+            "editor_client_id": client_id,
+        },
     )

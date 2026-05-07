@@ -56,6 +56,12 @@ class SwapParticipantTeamMessage(BaseMessage):
     target_client_id: str = ""
 
 
+class UpdateTeamNameMessage(BaseMessage):
+    type: Literal["update_team_name"]
+    team: Literal["team-left", "team-right"]
+    team_name: str = ""
+
+
 class OpenCharacterMessage(BaseMessage):
     type: Literal["open_character"]
     char_index: int | None = None

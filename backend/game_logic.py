@@ -6,6 +6,23 @@ import re
 
 QUESTION_MASK_CHAR = "■"
 QUESTION_TEXT_MAX_LENGTH = 100
+TEAM_NAME_MAX_LENGTH = 10
+TEAM_SET_FIELD_BY_KEY = {
+    "team-left": "left_participants",
+    "team-right": "right_participants",
+}
+TEAM_ORDER_FIELD_BY_KEY = {
+    "team-left": "left_participant_order",
+    "team-right": "right_participant_order",
+}
+TEAM_NAME_FIELD_BY_KEY = {
+    "team-left": "left_team_name",
+    "team-right": "right_team_name",
+}
+DEFAULT_TEAM_NAME_BY_KEY = {
+    "team-left": "先攻",
+    "team-right": "後攻",
+}
 
 
 def _normalize_log_marker_id(raw_value):
@@ -185,11 +202,112 @@ def _sync_room_game_state_with_game_status(room: dict):
         room["game_state"] = "playing"
 
 
+def _ensure_room_team_metadata(room: dict):
+    for team_key, set_field in TEAM_SET_FIELD_BY_KEY.items():
+        participants = room.setdefault(set_field, set())
+        if not isinstance(participants, set):
+            participants = set(participants or [])
+            room[set_field] = participants
+
+        order_field = TEAM_ORDER_FIELD_BY_KEY[team_key]
+        raw_order = room.get(order_field)
+        normalized_order = []
+        seen_ids = set()
+
+        if isinstance(raw_order, list):
+            for raw_client_id in raw_order:
+                client_id = str(raw_client_id or "").strip()
+                if client_id == "" or client_id not in participants or client_id in seen_ids:
+                    continue
+                normalized_order.append(client_id)
+                seen_ids.add(client_id)
+
+        for client_id in participants:
+            if client_id in seen_ids:
+                continue
+            normalized_order.append(client_id)
+            seen_ids.add(client_id)
+
+        room[order_field] = normalized_order
+
+        name_field = TEAM_NAME_FIELD_BY_KEY[team_key]
+        team_name = str(room.get(name_field) or "").strip()
+        room[name_field] = team_name or DEFAULT_TEAM_NAME_BY_KEY[team_key]
+
+
+def _get_ordered_team_participant_ids(room: dict, team_key: str):
+    _ensure_room_team_metadata(room)
+    order_field = TEAM_ORDER_FIELD_BY_KEY[team_key]
+    return list(room.get(order_field) or [])
+
+
+def _append_team_participant_in_order(room: dict, team_key: str, client_id: str):
+    normalized_client_id = str(client_id or "").strip()
+    if normalized_client_id == "":
+        return
+
+    _ensure_room_team_metadata(room)
+    order_field = TEAM_ORDER_FIELD_BY_KEY[team_key]
+    ordered_ids = room.get(order_field) or []
+    if normalized_client_id not in ordered_ids:
+        ordered_ids.append(normalized_client_id)
+
+
+def _remove_team_participant_from_order(room: dict, client_id: str):
+    normalized_client_id = str(client_id or "").strip()
+    if normalized_client_id == "":
+        return
+
+    _ensure_room_team_metadata(room)
+    for order_field in TEAM_ORDER_FIELD_BY_KEY.values():
+        ordered_ids = room.get(order_field) or []
+        room[order_field] = [
+            participant_id
+            for participant_id in ordered_ids
+            if participant_id != normalized_client_id
+        ]
+
+
+def _set_team_participant_order(room: dict, team_key: str, ordered_ids: list[str]):
+    _ensure_room_team_metadata(room)
+    participant_ids = room.get(TEAM_SET_FIELD_BY_KEY[team_key], set())
+    normalized_order = []
+    seen_ids = set()
+    for raw_client_id in ordered_ids:
+        client_id = str(raw_client_id or "").strip()
+        if client_id == "" or client_id not in participant_ids or client_id in seen_ids:
+            continue
+        normalized_order.append(client_id)
+        seen_ids.add(client_id)
+
+    for client_id in participant_ids:
+        if client_id in seen_ids:
+            continue
+        normalized_order.append(client_id)
+        seen_ids.add(client_id)
+
+    room[TEAM_ORDER_FIELD_BY_KEY[team_key]] = normalized_order
+
+
+def resolve_room_team_editor_client_id(room: dict, team_key: str):
+    ordered_ids = _get_ordered_team_participant_ids(room, team_key)
+    if not ordered_ids:
+        return ""
+    return str(ordered_ids[0] or "").strip()
+
+
+def resolve_room_team_name(room: dict, team_key: str):
+    _ensure_room_team_metadata(room)
+    return str(room.get(TEAM_NAME_FIELD_BY_KEY[team_key]) or DEFAULT_TEAM_NAME_BY_KEY[team_key]).strip()
+
+
 def remove_client_from_all_rooms(rooms: dict, client_id: str):
     for room in rooms.values():
+        _ensure_room_team_metadata(room)
         room["left_participants"].discard(client_id)
         room["right_participants"].discard(client_id)
         room["spectators"].discard(client_id)
+        _remove_team_participant_from_order(room, client_id)
         pending_disconnects = room.get("pending_disconnects")
         if isinstance(pending_disconnects, dict):
             pending_disconnects.pop(client_id, None)
@@ -244,6 +362,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
     chat_role = ctx["chat_role"]
 
     _sync_room_game_state_with_game_status(room)
+    _ensure_room_team_metadata(room)
 
     pending_disconnects_raw = room.get("pending_disconnects", {})
     now = time.time()
@@ -260,7 +379,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         return "ゲスト"
 
     left_participants = []
-    for pid in room["left_participants"]:
+    for pid in _get_ordered_team_participant_ids(room, "team-left"):
         left_participants.append(
             {
                 "client_id": pid,
@@ -269,7 +388,7 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         )
 
     right_participants = []
-    for pid in room["right_participants"]:
+    for pid in _get_ordered_team_participant_ids(room, "team-right"):
         right_participants.append(
             {
                 "client_id": pid,
@@ -475,6 +594,10 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
         "chat_role": chat_role,
         "left_participants": left_participants,
         "right_participants": right_participants,
+        "left_team_name": resolve_room_team_name(room, "team-left"),
+        "right_team_name": resolve_room_team_name(room, "team-right"),
+        "left_team_editor_client_id": resolve_room_team_editor_client_id(room, "team-left"),
+        "right_team_editor_client_id": resolve_room_team_editor_client_id(room, "team-right"),
         "spectators": spectators,
         "pending_disconnects": pending_disconnects,
         "arena_chat_history": arena_chat_history,
@@ -488,6 +611,7 @@ def apply_join_room(rooms: dict, client_id: str, room_owner_id: str, role: str):
     room = rooms.get(room_owner_id)
     if room is None:
         return {"ok": False, "error": "部屋が見つかりません。"}
+    _ensure_room_team_metadata(room)
 
     if client_id == room_owner_id and not room.get("is_ai_mode"):
         return {
@@ -519,8 +643,10 @@ def apply_join_room(rooms: dict, client_id: str, room_owner_id: str, role: str):
 
         if side == "left":
             room["left_participants"].add(client_id)
+            _append_team_participant_in_order(room, "team-left", client_id)
         else:
             room["right_participants"].add(client_id)
+            _append_team_participant_in_order(room, "team-right", client_id)
         role_name = "参加者"
     else:
         room["spectators"].add(client_id)
@@ -622,11 +748,15 @@ def apply_shuffle_participants(rooms: dict, client_id: str):
     room = rooms.get(client_id)
     if room is None:
         return {"ok": False, "error": "参加者シャッフルは出題者のみ実行できます。"}
+    _ensure_room_team_metadata(room)
 
     if room.get("game_state", "waiting") != "waiting":
         return {"ok": False, "error": "ゲーム開始後は参加者シャッフルできません。"}
 
-    participants = list(set(room["left_participants"]) | set(room["right_participants"]))
+    participants = _get_ordered_team_participant_ids(
+        room,
+        "team-left",
+    ) + _get_ordered_team_participant_ids(room, "team-right")
     if len(participants) < 2:
         return {"ok": False, "error": "参加者が2人以上いるときにシャッフルできます。"}
 
@@ -635,16 +765,22 @@ def apply_shuffle_participants(rooms: dict, client_id: str):
 
     new_left = set()
     new_right = set()
+    new_left_order = []
+    new_right_order = []
     for idx, pid in enumerate(participants, start=1):
         is_odd = idx % 2 == 1
         assign_left = is_odd if odd_to_left else not is_odd
         if assign_left:
             new_left.add(pid)
+            new_left_order.append(pid)
         else:
             new_right.add(pid)
+            new_right_order.append(pid)
 
     room["left_participants"] = new_left
     room["right_participants"] = new_right
+    _set_team_participant_order(room, "team-left", new_left_order)
+    _set_team_participant_order(room, "team-right", new_right_order)
     return {"ok": True, "questioner_name": room["questioner_name"]}
 
 
@@ -652,6 +788,7 @@ def apply_swap_participant_team(rooms: dict, client_id: str, target_client_id: s
     room = rooms.get(client_id)
     if room is None:
         return {"ok": False, "error": "参加者入れ替えは出題者のみ実行できます。"}
+    _ensure_room_team_metadata(room)
 
     if room.get("game_state", "waiting") != "waiting":
         return {"ok": False, "error": "ゲーム開始後は参加者入れ替えできません。"}
@@ -666,6 +803,8 @@ def apply_swap_participant_team(rooms: dict, client_id: str, target_client_id: s
     if target_id in left_participants:
         left_participants.discard(target_id)
         right_participants.add(target_id)
+        _remove_team_participant_from_order(room, target_id)
+        _append_team_participant_in_order(room, "team-right", target_id)
         return {
             "ok": True,
             "questioner_name": room["questioner_name"],
@@ -677,6 +816,8 @@ def apply_swap_participant_team(rooms: dict, client_id: str, target_client_id: s
     if target_id in right_participants:
         right_participants.discard(target_id)
         left_participants.add(target_id)
+        _remove_team_participant_from_order(room, target_id)
+        _append_team_participant_in_order(room, "team-left", target_id)
         return {
             "ok": True,
             "questioner_name": room["questioner_name"],
@@ -697,6 +838,7 @@ def apply_exit_room(rooms: dict, client_id: str):
             room["left_participants"].discard(client_id)
             room["right_participants"].discard(client_id)
             room["spectators"].discard(client_id)
+            _remove_team_participant_from_order(room, client_id)
             return {
                 "owner_closed": False,
                 "affected_client_ids": set(),
@@ -773,6 +915,10 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
         "game_state": "waiting",
         "left_participants": set(),
         "right_participants": set(),
+        "left_participant_order": [],
+        "right_participant_order": [],
+        "left_team_name": DEFAULT_TEAM_NAME_BY_KEY["team-left"],
+        "right_team_name": DEFAULT_TEAM_NAME_BY_KEY["team-right"],
         "spectators": set(),
         "forced_loss_user_ids": set(),
         "pending_disconnects": {},
@@ -784,6 +930,39 @@ def apply_create_question_room(rooms: dict, nicknames: dict, player_id: str, pay
 
     remove_client_from_all_rooms(rooms, player_id)
     return {"ok": True, "actor_name": actor_name}
+
+
+def apply_update_team_name(rooms: dict, client_id: str, team: str, team_name: str):
+    ctx = resolve_client_room_context(rooms, client_id)
+    if ctx is None:
+        return {"ok": False, "error": "ゲーム部屋に参加していません。"}
+
+    room = ctx["room"]
+    team_key = str(team or "").strip()
+    if team_key not in TEAM_SET_FIELD_BY_KEY:
+        return {"ok": False, "error": "更新対象のチームが不正です。"}
+
+    normalized_name = str(team_name or "").strip()
+    if normalized_name == "":
+        return {"ok": False, "error": "チーム名を入力してください。"}
+
+    if len(normalized_name) > TEAM_NAME_MAX_LENGTH:
+        return {
+            "ok": False,
+            "error": f"チーム名は{TEAM_NAME_MAX_LENGTH}文字以内で入力してください。",
+        }
+
+    editor_client_id = resolve_room_team_editor_client_id(room, team_key)
+    if editor_client_id == "" or editor_client_id != client_id:
+        return {"ok": False, "error": "チーム名を編集できるのは先頭の参加者のみです。"}
+
+    room[TEAM_NAME_FIELD_BY_KEY[team_key]] = normalized_name
+    return {
+        "ok": True,
+        "room_owner_id": ctx["room_owner_id"],
+        "team": team_key,
+        "team_name": normalized_name,
+    }
 
 
 def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: str | None, chat_type: str):

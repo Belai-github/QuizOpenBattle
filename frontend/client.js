@@ -83,6 +83,30 @@ const arenaTeamLeftToggleBtnEl = document.getElementById(
 const arenaTeamRightToggleBtnEl = document.getElementById(
   "arena-team-right-toggle-btn",
 );
+const arenaTeamLeftCardShellEl = document.getElementById(
+  "arena-team-left-card-shell",
+);
+const arenaTeamRightCardShellEl = document.getElementById(
+  "arena-team-right-card-shell",
+);
+const arenaTeamLeftCardEl = document.getElementById("arena-team-left-card");
+const arenaTeamRightCardEl = document.getElementById("arena-team-right-card");
+const arenaTeamLeftNameEl = document.getElementById("arena-team-left-name");
+const arenaTeamRightNameEl = document.getElementById("arena-team-right-name");
+const arenaTeamLeftNameInputEl = document.getElementById(
+  "arena-team-left-name-input",
+);
+const arenaTeamRightNameInputEl = document.getElementById(
+  "arena-team-right-name-input",
+);
+const arenaTeamLeftCountEl = document.getElementById("arena-team-left-count");
+const arenaTeamRightCountEl = document.getElementById("arena-team-right-count");
+const arenaTeamLeftEditBtnEl = document.getElementById(
+  "arena-team-left-edit-btn",
+);
+const arenaTeamRightEditBtnEl = document.getElementById(
+  "arena-team-right-edit-btn",
+);
 const arenaMobileChatToolbarEl = document.querySelector(
   ".arena-mobile-chat-toolbar",
 );
@@ -211,12 +235,20 @@ let fullOpenSettlementDraftJudgements = {
 const QUESTION_MAX_LENGTH = 100;
 const ANSWER_MAX_LENGTH = 100;
 const CHAT_MAX_LENGTH = 200;
+const TEAM_NAME_MAX_LENGTH = 10;
 const CHAT_MIN_INTERVAL_MS = 800;
 let aiModelOptions = [];
 let aiModelOptionsById = new Map();
 let defaultAiModelId = "";
 let aiModelsLoaded = false;
 let currentAiQuestionAccess = null;
+let pinnedArenaTeamCard = "";
+let editingArenaTeamCard = "";
+let pendingArenaTeamNameTeam = "";
+let lastArenaTeamCardActivation = {
+  team: "",
+  timestamp: 0,
+};
 const DEFAULT_AI_ACCURACY_RATE = 70;
 const MIN_AI_ACCURACY_RATE = 10;
 const ARENA_MASK_CHAR = "■";
@@ -6629,6 +6661,281 @@ function requestSwapParticipantTeam(targetClientId) {
   );
 }
 
+function getArenaTeamCardElements(team) {
+  if (team === "team-left") {
+    return {
+      shellEl: arenaTeamLeftCardShellEl,
+      cardEl: arenaTeamLeftCardEl,
+      nameEl: arenaTeamLeftNameEl,
+      nameInputEl: arenaTeamLeftNameInputEl,
+      countEl: arenaTeamLeftCountEl,
+      editBtnEl: arenaTeamLeftEditBtnEl,
+      dropdownEl: document.getElementById("arena-team-left-dropdown"),
+      listEl: document.getElementById("arena-player-left-list"),
+    };
+  }
+
+  if (team === "team-right") {
+    return {
+      shellEl: arenaTeamRightCardShellEl,
+      cardEl: arenaTeamRightCardEl,
+      nameEl: arenaTeamRightNameEl,
+      nameInputEl: arenaTeamRightNameInputEl,
+      countEl: arenaTeamRightCountEl,
+      editBtnEl: arenaTeamRightEditBtnEl,
+      dropdownEl: document.getElementById("arena-team-right-dropdown"),
+      listEl: document.getElementById("arena-player-right-list"),
+    };
+  }
+
+  return null;
+}
+
+function getArenaTeamParticipants(currentRoom, team) {
+  if (!currentRoom) {
+    return [];
+  }
+
+  if (team === "team-left") {
+    return Array.isArray(currentRoom.left_participants)
+      ? currentRoom.left_participants
+      : [];
+  }
+
+  if (team === "team-right") {
+    return Array.isArray(currentRoom.right_participants)
+      ? currentRoom.right_participants
+      : [];
+  }
+
+  return [];
+}
+
+function getArenaTeamName(currentRoom, team) {
+  if (team === "team-left") {
+    return String(currentRoom?.left_team_name || "先攻").trim() || "先攻";
+  }
+  if (team === "team-right") {
+    return String(currentRoom?.right_team_name || "後攻").trim() || "後攻";
+  }
+  return "";
+}
+
+function getArenaTeamEditorClientId(currentRoom, team) {
+  if (team === "team-left") {
+    return String(currentRoom?.left_team_editor_client_id || "").trim();
+  }
+  if (team === "team-right") {
+    return String(currentRoom?.right_team_editor_client_id || "").trim();
+  }
+  return "";
+}
+
+function canEditArenaTeamName(currentRoom, team) {
+  return (
+    String(currentRoom?.game_state || currentRoomGameState || "waiting") ===
+      "waiting" &&
+    String(myClientId || "") !== "" &&
+    String(getArenaTeamEditorClientId(currentRoom, team) || "") ===
+      String(myClientId || "")
+  );
+}
+
+function syncArenaTeamCardPinState() {
+  const shells = [
+    ["team-left", arenaTeamLeftCardShellEl],
+    ["team-right", arenaTeamRightCardShellEl],
+  ];
+
+  let hasPinnedCard = false;
+  shells.forEach(([team, shellEl]) => {
+    if (!shellEl) {
+      return;
+    }
+    const isPinned = pinnedArenaTeamCard === team;
+    shellEl.classList.toggle("is-pinned", isPinned);
+    shellEl.classList.toggle("is-editing", editingArenaTeamCard === team);
+    const dropdownEl = shellEl.querySelector(".arena-team-dropdown");
+    const cardEl = shellEl.querySelector(".arena-team-card");
+    if (dropdownEl) {
+      dropdownEl.setAttribute("aria-hidden", String(!isPinned));
+    }
+    if (cardEl) {
+      cardEl.setAttribute("aria-expanded", String(isPinned));
+    }
+    if (isPinned) {
+      hasPinnedCard = true;
+    }
+  });
+
+  document.body.dataset.arenaTeamCardPinned = hasPinnedCard ? "true" : "false";
+}
+
+function closePinnedArenaTeamCard() {
+  pinnedArenaTeamCard = "";
+  syncArenaTeamCardPinState();
+}
+
+function togglePinnedArenaTeamCard(team) {
+  if (editingArenaTeamCard) {
+    return;
+  }
+  pinnedArenaTeamCard = pinnedArenaTeamCard === team ? "" : team;
+  syncArenaTeamCardPinState();
+}
+
+function handleArenaTeamCardActivation(team, event) {
+  const targetEl = event?.target instanceof HTMLElement ? event.target : null;
+  if (
+    targetEl?.closest(".arena-team-edit-btn") ||
+    targetEl?.closest(".arena-team-card-input")
+  ) {
+    return;
+  }
+
+  const now = Date.now();
+  if (
+    lastArenaTeamCardActivation.team === team &&
+    now - Number(lastArenaTeamCardActivation.timestamp || 0) < 320
+  ) {
+    return;
+  }
+
+  lastArenaTeamCardActivation = {
+    team,
+    timestamp: now,
+  };
+
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  togglePinnedArenaTeamCard(team);
+}
+
+function cancelArenaTeamNameEdit(team = editingArenaTeamCard) {
+  const targetTeam = String(team || "").trim();
+  if (targetTeam !== "team-left" && targetTeam !== "team-right") {
+    return;
+  }
+
+  const elements = getArenaTeamCardElements(targetTeam);
+  if (!elements) {
+    return;
+  }
+
+  const currentName = getArenaTeamName(currentRoomSnapshot, targetTeam);
+  if (elements.nameInputEl) {
+    elements.nameInputEl.value = currentName;
+    elements.nameInputEl.classList.add("hidden");
+  }
+  if (elements.nameEl) {
+    elements.nameEl.textContent = currentName;
+    elements.nameEl.classList.remove("hidden");
+  }
+  editingArenaTeamCard = "";
+  pendingArenaTeamNameTeam = "";
+  syncArenaTeamCardPinState();
+}
+
+function startArenaTeamNameEdit(team) {
+  const targetTeam = String(team || "").trim();
+  if (!canEditArenaTeamName(currentRoomSnapshot, targetTeam)) {
+    return;
+  }
+
+  const elements = getArenaTeamCardElements(targetTeam);
+  if (!elements?.nameInputEl || !elements?.nameEl) {
+    return;
+  }
+
+  editingArenaTeamCard = targetTeam;
+  pinnedArenaTeamCard = targetTeam;
+  pendingArenaTeamNameTeam = "";
+  const currentName = getArenaTeamName(currentRoomSnapshot, targetTeam);
+  elements.nameInputEl.value = currentName;
+  elements.nameEl.classList.add("hidden");
+  elements.nameInputEl.classList.remove("hidden");
+  syncArenaTeamCardPinState();
+  elements.nameInputEl.focus();
+  elements.nameInputEl.select();
+}
+
+function requestUpdateTeamName(team, teamName) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    return false;
+  }
+
+  ws.send(
+    JSON.stringify({
+      type: "update_team_name",
+      team,
+      team_name: teamName,
+      timestamp: Date.now(),
+    }),
+  );
+  return true;
+}
+
+function submitArenaTeamNameEdit(team) {
+  const targetTeam = String(team || "").trim();
+  if (pendingArenaTeamNameTeam === targetTeam) {
+    return;
+  }
+
+  const elements = getArenaTeamCardElements(targetTeam);
+  if (!elements?.nameInputEl) {
+    return;
+  }
+
+  const nextName = String(elements.nameInputEl.value || "").trim();
+  if (nextName === "") {
+    void showAlertModal("チーム名を入力してください。");
+    return;
+  }
+  if (nextName.length > TEAM_NAME_MAX_LENGTH) {
+    void showAlertModal(`チーム名は${TEAM_NAME_MAX_LENGTH}文字以内で入力してください。`);
+    return;
+  }
+
+  pendingArenaTeamNameTeam = targetTeam;
+  const requested = requestUpdateTeamName(targetTeam, nextName);
+  pendingArenaTeamNameTeam = "";
+  if (!requested) {
+    void showAlertModal("サーバー接続後に更新できます。");
+    return;
+  }
+
+  cancelArenaTeamNameEdit(targetTeam);
+}
+
+function syncArenaTeamCard(team, currentRoom) {
+  const elements = getArenaTeamCardElements(team);
+  if (!elements) {
+    return;
+  }
+
+  const participants = getArenaTeamParticipants(currentRoom, team);
+  const teamName = getArenaTeamName(currentRoom, team);
+  const canEdit = canEditArenaTeamName(currentRoom, team);
+  const isEditing = editingArenaTeamCard === team;
+
+  if (elements.nameEl && !isEditing) {
+    elements.nameEl.textContent = teamName;
+  }
+  if (elements.countEl) {
+    elements.countEl.textContent = `${participants.length}人`;
+  }
+  if (elements.editBtnEl) {
+    elements.editBtnEl.classList.toggle("hidden", !canEdit);
+    elements.editBtnEl.disabled = !canEdit;
+  }
+  if (elements.shellEl) {
+    elements.shellEl.classList.toggle("can-edit", canEdit);
+  }
+  if (!canEdit && isEditing) {
+    cancelArenaTeamNameEdit(team);
+  }
+}
+
 function renderNameList(listEl, names, options = {}) {
   listEl.innerHTML = "";
   if (!Array.isArray(names) || names.length === 0) {
@@ -7235,6 +7542,8 @@ function renderArena(currentRoom) {
   const spectatorListEl = document.getElementById("arena-spectator-list");
 
   if (!currentRoom) {
+    cancelArenaTeamNameEdit();
+    closePinnedArenaTeamCard();
     if (questionerListEl) {
       questionerListEl.innerHTML = "";
       const emptyItemEl = document.createElement("li");
@@ -7260,6 +7569,9 @@ function renderArena(currentRoom) {
     setArenaQuestionOverflowState(questionEl, false);
     questionEl.textContent = "問題文を準備中...";
     updateQuestionVisibilityButton();
+    syncArenaTeamCard("team-left", null);
+    syncArenaTeamCard("team-right", null);
+    syncArenaTeamCardPinState();
     renderNameList(leftListEl, [], { team: "team-left", allowSwap: false });
     renderNameList(rightListEl, [], { team: "team-right", allowSwap: false });
     renderNameList(spectatorListEl, [], {
@@ -7381,6 +7693,9 @@ function renderArena(currentRoom) {
     : [];
 
   const canSwap = canSwapParticipantsInWaitingRoom();
+  syncArenaTeamCard("team-left", currentRoom);
+  syncArenaTeamCard("team-right", currentRoom);
+  syncArenaTeamCardPinState();
   renderNameList(leftListEl, leftPlayers, {
     team: "team-left",
     allowSwap: canSwap,
@@ -9375,6 +9690,63 @@ waitingPanelRightBtnEl?.addEventListener("click", () => {
   setWaitingRoomMobilePanel("right");
 });
 
+[
+  ["team-left", arenaTeamLeftCardEl],
+  ["team-right", arenaTeamRightCardEl],
+].forEach(([team, cardEl]) => {
+  cardEl?.addEventListener("pointerup", (event) => {
+    handleArenaTeamCardActivation(team, event);
+  });
+  cardEl?.addEventListener("click", (event) => {
+    handleArenaTeamCardActivation(team, event);
+  });
+  cardEl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    togglePinnedArenaTeamCard(team);
+  });
+});
+
+[
+  ["team-left", arenaTeamLeftEditBtnEl],
+  ["team-right", arenaTeamRightEditBtnEl],
+].forEach(([team, buttonEl]) => {
+  buttonEl?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    startArenaTeamNameEdit(team);
+  });
+});
+
+[
+  ["team-left", arenaTeamLeftNameInputEl],
+  ["team-right", arenaTeamRightNameInputEl],
+].forEach(([team, inputEl]) => {
+  inputEl?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  inputEl?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      submitArenaTeamNameEdit(team);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelArenaTeamNameEdit(team);
+    }
+  });
+  inputEl?.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      if (editingArenaTeamCard === team) {
+        cancelArenaTeamNameEdit(team);
+      }
+    }, 0);
+  });
+});
+
 window.addEventListener("resize", () => {
   syncWaitingRoomMobilePanelState();
   syncArenaPlayerBoxHeights();
@@ -9384,6 +9756,24 @@ window.addEventListener("resize", () => {
     updateArenaLogsButtonVisibility();
   }
   updateViewportDebugOverlay();
+});
+
+document.addEventListener("click", (event) => {
+  const targetEl = event.target instanceof HTMLElement ? event.target : null;
+  if (!targetEl) {
+    return;
+  }
+
+  const insideLeft = Boolean(targetEl.closest("#arena-team-left-card-shell"));
+  const insideRight = Boolean(targetEl.closest("#arena-team-right-card-shell"));
+  if (!insideLeft && !insideRight) {
+    if (editingArenaTeamCard) {
+      cancelArenaTeamNameEdit();
+    }
+    if (pinnedArenaTeamCard) {
+      closePinnedArenaTeamCard();
+    }
+  }
 });
 
 leaveGameArenaEl?.addEventListener("click", requestRoomExit);
