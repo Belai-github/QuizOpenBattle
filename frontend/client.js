@@ -10,6 +10,12 @@ const confirmMessageEl = document.getElementById("confirm-message");
 const confirmOkBtn = document.getElementById("confirm-ok-btn");
 const confirmCancelBtn = document.getElementById("confirm-cancel-btn");
 const confirmActionsEl = confirmModal.querySelector(".modal-actions");
+const voteConfirmModal = document.getElementById("vote-confirm-modal");
+const voteConfirmMessageEl = document.getElementById("vote-confirm-message");
+const voteConfirmOkBtn = document.getElementById("vote-confirm-ok-btn");
+const voteConfirmCancelBtn = document.getElementById(
+  "vote-confirm-cancel-btn",
+);
 const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
@@ -189,6 +195,11 @@ const handledOpenVoteIds = new Set();
 const handledAnswerVoteIds = new Set();
 const handledTurnEndVoteIds = new Set();
 const handledIntentionalDrawVoteIds = new Set();
+const pendingVotePromptMap = new Map();
+const pendingVotePromptQueue = [];
+let activeVotePromptKey = "";
+let activeVotePromptDismiss = null;
+let votePromptProcessingScheduled = false;
 let openVoteRequestPending = false;
 let turnEndRequestPending = false;
 let intentionalDrawVoteRequestPending = false;
@@ -1938,6 +1949,7 @@ function closeProfileModal() {
   }
   profileModalEl.close();
   updateArenaInteractionLock();
+  scheduleVotePromptProcessing();
 }
 
 async function fetchPublicProfile(clientId) {
@@ -2562,6 +2574,7 @@ function setArenaCharClickGuard() {
 function isAnyModalOpen() {
   const judgementModal = document.getElementById("answer-judgement-modal");
   if (confirmModal && confirmModal.open) return true;
+  if (voteConfirmModal && voteConfirmModal.open) return true;
   if (alertModal && alertModal.open) return true;
   if (profileModalEl && profileModalEl.open) return true;
   if (aiQuestionModalEl && aiQuestionModalEl.open) return true;
@@ -2929,6 +2942,7 @@ function closeArenaLogsPresentation(restoreLayout = true) {
   if (restoreLayout) {
     restoreAllArenaChatBoxesToLayout();
   }
+  scheduleVotePromptProcessing();
 }
 
 function openArenaPanelPresentation(panelType) {
@@ -5453,9 +5467,11 @@ async function requestCloseRoom(roomOwnerId) {
 
 function closeAllModals() {
   setArenaCharClickGuard();
+  dismissActiveVotePromptModal();
   alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
   if (alertModal.open) alertModal.close();
   if (confirmModal.open) confirmModal.close();
+  if (voteConfirmModal?.open) voteConfirmModal.close();
   closeArenaLogsPresentation();
   closeProfileModal();
   if (aiQuestionModalEl && aiQuestionModalEl.open) aiQuestionModalEl.close();
@@ -5465,6 +5481,7 @@ function closeAllModals() {
     judgementModal.classList.add("hidden");
   }
   updateArenaInteractionLock();
+  scheduleVotePromptProcessing();
 }
 
 function getWinnerAlertClass(message) {
@@ -5506,6 +5523,7 @@ function showAlertModal(message) {
       alertModal.removeEventListener("click", onBackdropClick);
       alertModal.removeEventListener("cancel", onCancel);
       updateArenaInteractionLock();
+      scheduleVotePromptProcessing();
       resolve();
     };
 
@@ -5595,6 +5613,7 @@ function showQuestionConfirmModal(questionText) {
       confirmModal.removeEventListener("cancel", onCancel);
       genreInputEl.removeEventListener("keydown", onGenreKeydown);
       updateArenaInteractionLock();
+      scheduleVotePromptProcessing();
       resolve(result);
     };
 
@@ -5683,6 +5702,7 @@ function showConfirmModal(message, options = {}) {
       confirmModal.removeEventListener("click", onBackdropClick);
       confirmModal.removeEventListener("cancel", onCancel);
       updateArenaInteractionLock();
+      scheduleVotePromptProcessing();
       resolve(result);
     };
 
@@ -5709,6 +5729,233 @@ function showConfirmModal(message, options = {}) {
     confirmModal.addEventListener("click", onBackdropClick);
     confirmModal.addEventListener("cancel", onCancel);
   });
+}
+
+function makeVotePromptKey(kind, voteId) {
+  return `${String(kind || "").trim()}:${String(voteId || "").trim()}`;
+}
+
+function getHandledVoteIdSet(kind) {
+  switch (String(kind || "").trim()) {
+    case "open":
+      return handledOpenVoteIds;
+    case "answer":
+      return handledAnswerVoteIds;
+    case "turn-end":
+      return handledTurnEndVoteIds;
+    case "intentional-draw":
+      return handledIntentionalDrawVoteIds;
+    default:
+      return null;
+  }
+}
+
+function removeVotePromptFromQueue(promptKey) {
+  const promptIndex = pendingVotePromptQueue.indexOf(promptKey);
+  if (promptIndex >= 0) {
+    pendingVotePromptQueue.splice(promptIndex, 1);
+  }
+}
+
+function isVotePromptBlockingModalOpen() {
+  const judgementModal = document.getElementById("answer-judgement-modal");
+  if (confirmModal?.open) return true;
+  if (alertModal?.open) return true;
+  if (profileModalEl?.open) return true;
+  if (aiQuestionModalEl?.open) return true;
+  if (rulebookModalEl?.open) return true;
+  if (arenaLogsModalEl?.open) return true;
+  if (fullOpenSettlementModalEl?.open) return true;
+  if (judgementModal && !judgementModal.classList.contains("hidden"))
+    return true;
+  return false;
+}
+
+function scheduleVotePromptProcessing() {
+  if (votePromptProcessingScheduled) return;
+  votePromptProcessingScheduled = true;
+  window.setTimeout(() => {
+    votePromptProcessingScheduled = false;
+    void processVotePromptQueue();
+  }, 0);
+}
+
+function enqueueVotePrompt(prompt) {
+  const promptKey = String(prompt?.key || "").trim();
+  if (promptKey === "") return;
+
+  const existingPrompt = pendingVotePromptMap.get(promptKey);
+  if (existingPrompt) {
+    Object.assign(existingPrompt, prompt);
+    if (prompt.isResend) {
+      existingPrompt.responded = false;
+    }
+  } else {
+    pendingVotePromptMap.set(promptKey, {
+      ...prompt,
+      responded: false,
+    });
+    pendingVotePromptQueue.push(promptKey);
+  }
+
+  const handledSet = getHandledVoteIdSet(prompt.kind);
+  handledSet?.add(prompt.voteId);
+  scheduleVotePromptProcessing();
+}
+
+function dismissActiveVotePromptModal() {
+  if (typeof activeVotePromptDismiss === "function") {
+    activeVotePromptDismiss("dismissed");
+    return true;
+  }
+  return false;
+}
+
+function clearVotePrompt(kind, voteId) {
+  const promptKey = makeVotePromptKey(kind, voteId);
+  pendingVotePromptMap.delete(promptKey);
+  removeVotePromptFromQueue(promptKey);
+  if (
+    activeVotePromptKey === promptKey &&
+    typeof activeVotePromptDismiss === "function"
+  ) {
+    activeVotePromptDismiss("resolved");
+  }
+  scheduleVotePromptProcessing();
+}
+
+function showVotePromptModal(prompt) {
+  return new Promise((resolve) => {
+    if (
+      !voteConfirmModal ||
+      !voteConfirmMessageEl ||
+      !voteConfirmOkBtn ||
+      !voteConfirmCancelBtn
+    ) {
+      resolve("dismissed");
+      return;
+    }
+
+    voteConfirmMessageEl.textContent = String(prompt?.message || "");
+    voteConfirmOkBtn.textContent = String(prompt?.okLabel || "OK");
+    voteConfirmCancelBtn.textContent = String(
+      prompt?.cancelLabel || "キャンセル",
+    );
+
+    if (!voteConfirmModal.open) {
+      voteConfirmModal.showModal();
+    }
+    voteConfirmOkBtn.focus();
+    setArenaCharClickGuard();
+    updateArenaInteractionLock();
+
+    const close = (result) => {
+      setArenaCharClickGuard();
+      if (voteConfirmModal.open) {
+        voteConfirmModal.close();
+      }
+      voteConfirmOkBtn.textContent = "OK";
+      voteConfirmCancelBtn.textContent = "キャンセル";
+      voteConfirmOkBtn.removeEventListener("click", onOk);
+      voteConfirmCancelBtn.removeEventListener("click", onCancelClick);
+      voteConfirmModal.removeEventListener("click", onBackdropClick);
+      voteConfirmModal.removeEventListener("cancel", onCancel);
+      if (activeVotePromptDismiss === closeWithReason) {
+        activeVotePromptDismiss = null;
+      }
+      updateArenaInteractionLock();
+      scheduleVotePromptProcessing();
+      resolve(result);
+    };
+
+    const closeWithReason = (reason) => close(reason);
+    const onOk = () => close(true);
+    const onCancelClick = () => close(false);
+    const onBackdropClick = (event) => {
+      if (event.target === voteConfirmModal) {
+        close(false);
+      }
+    };
+    const onCancel = (event) => {
+      event.preventDefault();
+      close(false);
+    };
+
+    activeVotePromptDismiss = closeWithReason;
+    voteConfirmOkBtn.addEventListener("click", onOk, { once: true });
+    voteConfirmCancelBtn.addEventListener("click", onCancelClick, {
+      once: true,
+    });
+    voteConfirmModal.addEventListener("click", onBackdropClick);
+    voteConfirmModal.addEventListener("cancel", onCancel);
+  });
+}
+
+function buildVotePromptDisconnectedMessage() {
+  return "投票送信に失敗しました。再接続後にもう一度対応してください。";
+}
+
+function buildVotePromptRetryMessage() {
+  return "投票送信に失敗しました。もう一度対応してください。";
+}
+
+async function processVotePromptQueue() {
+  if (activeVotePromptKey !== "") return;
+  if (isVotePromptBlockingModalOpen()) return;
+
+  while (
+    pendingVotePromptQueue.length > 0 &&
+    !pendingVotePromptMap.has(pendingVotePromptQueue[0])
+  ) {
+    pendingVotePromptQueue.shift();
+  }
+
+  const nextPromptKey = pendingVotePromptQueue.find((promptKey) => {
+    const prompt = pendingVotePromptMap.get(promptKey);
+    return Boolean(prompt && !prompt.responded);
+  });
+  if (!nextPromptKey) return;
+
+  const prompt = pendingVotePromptMap.get(nextPromptKey);
+  if (!prompt) {
+    removeVotePromptFromQueue(nextPromptKey);
+    return;
+  }
+
+  activeVotePromptKey = nextPromptKey;
+  const modalResult = await showVotePromptModal(prompt);
+  activeVotePromptKey = "";
+
+  const latestPrompt = pendingVotePromptMap.get(nextPromptKey);
+  if (!latestPrompt) {
+    return;
+  }
+
+  if (modalResult === "dismissed" || modalResult === "resolved") {
+    return;
+  }
+
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    latestPrompt.responded = false;
+    await showAlertModal(buildVotePromptDisconnectedMessage());
+    return;
+  }
+
+  try {
+    ws.send(
+      JSON.stringify({
+        type: latestPrompt.responseType,
+        vote_id: latestPrompt.voteId,
+        approve: Boolean(modalResult),
+        timestamp: Date.now(),
+      }),
+    );
+    latestPrompt.responded = true;
+    scheduleVotePromptProcessing();
+  } catch {
+    latestPrompt.responded = false;
+    await showAlertModal(buildVotePromptRetryMessage());
+  }
 }
 
 function setAiQuestionLoading(loading) {
@@ -5787,6 +6034,7 @@ function showAiGenreInputModal() {
       aiGenreInputEl.removeEventListener("keydown", onKeydown);
       aiAccuracyRateRangeEl.removeEventListener("input", onRateInput);
       updateArenaInteractionLock();
+      scheduleVotePromptProcessing();
       resolve(value);
     };
 
@@ -7789,24 +8037,28 @@ document.getElementById("join-btn").addEventListener("click", async () => {
       const resolvedVoteId = String(data.event_payload?.vote_id || "");
       if (resolvedVoteId !== "") {
         handledOpenVoteIds.delete(resolvedVoteId);
+        clearVotePrompt("open", resolvedVoteId);
       }
     }
     if (data.event_type === "answer_vote_resolved") {
       const resolvedVoteId = String(data.event_payload?.vote_id || "");
       if (resolvedVoteId !== "") {
         handledAnswerVoteIds.delete(resolvedVoteId);
+        clearVotePrompt("answer", resolvedVoteId);
       }
     }
     if (data.event_type === "turn_end_vote_resolved") {
       const resolvedVoteId = String(data.event_payload?.vote_id || "");
       if (resolvedVoteId !== "") {
         handledTurnEndVoteIds.delete(resolvedVoteId);
+        clearVotePrompt("turn-end", resolvedVoteId);
       }
     }
     if (data.event_type === "intentional_draw_vote_resolved") {
       const resolvedVoteId = String(data.event_payload?.vote_id || "");
       if (resolvedVoteId !== "") {
         handledIntentionalDrawVoteIds.delete(resolvedVoteId);
+        clearVotePrompt("intentional-draw", resolvedVoteId);
       }
     }
 
@@ -8304,45 +8556,18 @@ async function handleOpenVoteRequest(payload) {
   if (targetTeam !== "team-left" && targetTeam !== "team-right") return;
   if (userRole !== targetTeam) return;
   if (!voteId || !Number.isFinite(charIndex)) return;
-  if (isResend) {
-    handledOpenVoteIds.delete(voteId);
-  }
-  if (handledOpenVoteIds.has(voteId)) return;
-
-  handledOpenVoteIds.add(voteId);
-
   const majorityNote =
     totalVoters > 1 ? "\n（陣営の過半数OKで実行されます）" : "";
-
-  const confirmed = await showConfirmModal(
-    `${charIndex + 1}文字目をオープンしますか？${majorityNote}`,
-    {
-      okLabel: "OK",
-      cancelLabel: "キャンセル",
-    },
-  );
-
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    handledOpenVoteIds.delete(voteId);
-    await showAlertModal(
-      "投票送信に失敗しました。再接続後にもう一度回答してください。",
-    );
-    return;
-  }
-
-  try {
-    ws.send(
-      JSON.stringify({
-        type: "open_vote_response",
-        vote_id: voteId,
-        approve: Boolean(confirmed),
-        timestamp: Date.now(),
-      }),
-    );
-  } catch {
-    handledOpenVoteIds.delete(voteId);
-    await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
-  }
+  enqueueVotePrompt({
+    key: makeVotePromptKey("open", voteId),
+    kind: "open",
+    voteId,
+    responseType: "open_vote_response",
+    message: `${charIndex + 1}文字目をオープンしますか？${majorityNote}`,
+    okLabel: "OK",
+    cancelLabel: "キャンセル",
+    isResend,
+  });
 }
 
 async function handleAnswerVoteRequest(payload) {
@@ -8358,47 +8583,22 @@ async function handleAnswerVoteRequest(payload) {
   if (!voteId) return;
   if (isPlayerRole(userRole) && payloadTeam && payloadTeam !== userRole) return;
   if (!answerText) return;
-  if (isResend) {
-    handledAnswerVoteIds.delete(voteId);
-  }
-  if (handledAnswerVoteIds.has(voteId)) return;
-  handledAnswerVoteIds.add(voteId);
 
   const unanimityNote =
     totalVoters > 1 ? "\n（陣営全員のOKで送信されます）" : "";
   const confirmSubject = isFullOpenSettlement
     ? "この内容でフルオープン決着の解答を送信しますか？"
     : "この内容で解答を送信しますか？";
-
-  const confirmed = await showConfirmModal(
-    `${teamLabel} ${answererName} の解答案:\n${answerText}\n\n${confirmSubject}${unanimityNote}`,
-    {
-      okLabel: "OK",
-      cancelLabel: "キャンセル",
-    },
-  );
-
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    handledAnswerVoteIds.delete(voteId);
-    await showAlertModal(
-      "投票送信に失敗しました。再接続後にもう一度回答してください。",
-    );
-    return;
-  }
-
-  try {
-    ws.send(
-      JSON.stringify({
-        type: "answer_vote_response",
-        vote_id: voteId,
-        approve: Boolean(confirmed),
-        timestamp: Date.now(),
-      }),
-    );
-  } catch {
-    handledAnswerVoteIds.delete(voteId);
-    await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
-  }
+  enqueueVotePrompt({
+    key: makeVotePromptKey("answer", voteId),
+    kind: "answer",
+    voteId,
+    responseType: "answer_vote_response",
+    message: `${teamLabel} ${answererName} の解答案:\n${answerText}\n\n${confirmSubject}${unanimityNote}`,
+    okLabel: "OK",
+    cancelLabel: "キャンセル",
+    isResend,
+  });
 }
 
 async function handleTurnEndVoteRequest(payload) {
@@ -8407,44 +8607,18 @@ async function handleTurnEndVoteRequest(payload) {
   const totalVoters = Number(payload?.total_voters || 0);
   const isResend = payload?.resend === true;
   if (!voteId) return;
-  if (isResend) {
-    handledTurnEndVoteIds.delete(voteId);
-  }
-  if (handledTurnEndVoteIds.has(voteId)) return;
-
-  handledTurnEndVoteIds.add(voteId);
-
   const majorityNote =
     totalVoters > 1 ? "\n（陣営の過半数OKで実行されます）" : "";
-  const confirmed = await showConfirmModal(
-    `${teamLabel}陣営でターンエンドしますか？${majorityNote}`,
-    {
-      okLabel: "OK",
-      cancelLabel: "キャンセル",
-    },
-  );
-
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    handledTurnEndVoteIds.delete(voteId);
-    await showAlertModal(
-      "投票送信に失敗しました。再接続後にもう一度回答してください。",
-    );
-    return;
-  }
-
-  try {
-    ws.send(
-      JSON.stringify({
-        type: "turn_end_vote_response",
-        vote_id: voteId,
-        approve: Boolean(confirmed),
-        timestamp: Date.now(),
-      }),
-    );
-  } catch {
-    handledTurnEndVoteIds.delete(voteId);
-    await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
-  }
+  enqueueVotePrompt({
+    key: makeVotePromptKey("turn-end", voteId),
+    kind: "turn-end",
+    voteId,
+    responseType: "turn_end_vote_response",
+    message: `${teamLabel}陣営でターンエンドしますか？${majorityNote}`,
+    okLabel: "OK",
+    cancelLabel: "キャンセル",
+    isResend,
+  });
 }
 
 async function handleIntentionalDrawVoteRequest(payload) {
@@ -8453,42 +8627,18 @@ async function handleIntentionalDrawVoteRequest(payload) {
   const requesterName = String(payload?.requester_name || "参加者");
   const isResend = payload?.resend === true;
   if (!voteId) return;
-  if (isResend) {
-    handledIntentionalDrawVoteIds.delete(voteId);
-  }
-  if (handledIntentionalDrawVoteIds.has(voteId)) return;
-  handledIntentionalDrawVoteIds.add(voteId);
 
   const unanimityNote = totalVoters > 1 ? "\n（全員のOKで成立します）" : "";
-  const confirmed = await showConfirmModal(
-    `${requesterName}によりフルオープン決着が提案されました。\nフルオープン決着に同意しますか？${unanimityNote}`,
-    {
-      okLabel: "同意する",
-      cancelLabel: "同意しない",
-    },
-  );
-
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    handledIntentionalDrawVoteIds.delete(voteId);
-    await showAlertModal(
-      "投票送信に失敗しました。再接続後にもう一度回答してください。",
-    );
-    return;
-  }
-
-  try {
-    ws.send(
-      JSON.stringify({
-        type: "intentional_draw_vote_response",
-        vote_id: voteId,
-        approve: Boolean(confirmed),
-        timestamp: Date.now(),
-      }),
-    );
-  } catch {
-    handledIntentionalDrawVoteIds.delete(voteId);
-    await showAlertModal("投票送信に失敗しました。もう一度回答してください。");
-  }
+  enqueueVotePrompt({
+    key: makeVotePromptKey("intentional-draw", voteId),
+    kind: "intentional-draw",
+    voteId,
+    responseType: "intentional_draw_vote_response",
+    message: `${requesterName}によりフルオープン決着が提案されました。\nフルオープン決着に同意しますか？${unanimityNote}`,
+    okLabel: "同意する",
+    cancelLabel: "同意しない",
+    isResend,
+  });
 }
 
 async function handleAnswerJudgementRequest(payload) {
@@ -8889,6 +9039,7 @@ function closeRulebookModal() {
   }
   updateArenaInteractionLock();
   lastRulebookTriggerEl?.focus();
+  scheduleVotePromptProcessing();
 }
 
 function bindRulebookHandlers() {

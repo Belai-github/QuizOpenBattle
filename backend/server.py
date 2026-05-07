@@ -199,6 +199,8 @@ class QuizGameManager:
         self.lobby_chat_history = []
         self.lobby_chat_seq = 0
         self.active_kifu_by_room_owner = {}
+        self.room_operation_locks = {}
+        self.room_team_operation_locks = {}
         self.ai_question_generation_active = False
         self.ai_question_generation_owner_id = None
         self.ai_question_generation_lock = asyncio.Lock()
@@ -404,6 +406,108 @@ class QuizGameManager:
 
     def _room_member_ids(self, room_owner_id: str, room: dict) -> set[str]:
         return {room_owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
+
+    def _get_room_operation_lock(self, room_owner_id: str):
+        key = str(room_owner_id or "").strip()
+        if key == "":
+            return None
+        existing = self.room_operation_locks.get(key)
+        if existing is not None:
+            return existing
+        lock = asyncio.Lock()
+        self.room_operation_locks[key] = lock
+        return lock
+
+    def _get_room_team_operation_lock(self, room_owner_id: str, team: str):
+        owner_key = str(room_owner_id or "").strip()
+        team_key = str(team or "").strip()
+        if owner_key == "" or team_key not in {"team-left", "team-right"}:
+            return None
+        key = f"{owner_key}:{team_key}"
+        existing = self.room_team_operation_locks.get(key)
+        if existing is not None:
+            return existing
+        lock = asyncio.Lock()
+        self.room_team_operation_locks[key] = lock
+        return lock
+
+    def _resolve_room_owner_id_for_client(self, client_id: str):
+        ctx = resolve_client_room_context(self.rooms, client_id)
+        if ctx is not None:
+            room_owner_id = str(ctx.get("room_owner_id") or "").strip()
+            if room_owner_id != "":
+                return room_owner_id
+
+        owned_room = self.rooms.get(client_id)
+        if isinstance(owned_room, dict):
+            return str(client_id or "").strip() or None
+
+        return None
+
+    def _get_pending_answer_votes(self, room: dict):
+        pending_votes = {}
+        raw_pending_votes = room.get("pending_answer_votes")
+        if isinstance(raw_pending_votes, dict):
+            for team, vote in raw_pending_votes.items():
+                if (
+                    team in {"team-left", "team-right"}
+                    and isinstance(vote, dict)
+                    and vote.get("status") == "pending"
+                ):
+                    pending_votes[team] = vote
+            if pending_votes:
+                return pending_votes
+
+        legacy_vote = room.get("pending_answer_vote")
+        if isinstance(legacy_vote, dict) and legacy_vote.get("status") == "pending":
+            team = str(legacy_vote.get("team") or "").strip()
+            if team in {"team-left", "team-right"}:
+                pending_votes[team] = legacy_vote
+        return pending_votes
+
+    def _get_pending_answer_vote(
+        self,
+        room: dict,
+        *,
+        team: str | None = None,
+        vote_id: str | None = None,
+    ):
+        pending_votes = self._get_pending_answer_votes(room)
+        if team in {"team-left", "team-right"}:
+            vote = pending_votes.get(str(team))
+            if vote_id:
+                return vote if isinstance(vote, dict) and str(vote.get("vote_id") or "") == str(vote_id) else None
+            return vote
+
+        if vote_id:
+            for vote in pending_votes.values():
+                if str(vote.get("vote_id") or "") == str(vote_id):
+                    return vote
+            return None
+
+        for vote in pending_votes.values():
+            return vote
+        return None
+
+    def _has_pending_answer_vote(self, room: dict, *, team: str | None = None):
+        if team in {"team-left", "team-right"}:
+            return self._get_pending_answer_vote(room, team=team) is not None
+        return len(self._get_pending_answer_votes(room)) > 0
+
+    def _set_pending_answer_vote(self, room: dict, team: str, vote: dict | None):
+        if team not in {"team-left", "team-right"}:
+            return
+        pending_votes = dict(room.get("pending_answer_votes") or {})
+        if vote is None:
+            pending_votes.pop(team, None)
+        else:
+            pending_votes[team] = vote
+        room["pending_answer_votes"] = pending_votes
+        room["pending_answer_vote"] = None
+
+    def _clear_pending_answer_votes(self, room: dict):
+        room["pending_answer_votes"] = {}
+        room["pending_answer_vote"] = None
 
     async def _finalize_answer_judgement(self, owner_id: str, room: dict, team: str, answer_text: str, is_correct: bool):
         game = room.get("game") or {}
@@ -987,7 +1091,7 @@ class QuizGameManager:
         game["pending_answer_judgement"] = None
         room["game_state"] = "finished"
         room["pending_open_vote"] = None
-        room["pending_answer_vote"] = None
+        self._clear_pending_answer_votes(room)
         room["pending_turn_end_vote"] = None
         room["pending_intentional_draw_vote"] = None
 
@@ -1144,8 +1248,7 @@ class QuizGameManager:
                         },
                     )
 
-        pending_answer_vote = room.get("pending_answer_vote")
-        if isinstance(pending_answer_vote, dict) and pending_answer_vote.get("status") == "pending":
+        for pending_answer_vote in self._get_pending_answer_votes(room).values():
             voter_ids = set(pending_answer_vote.get("voter_ids", set()))
             approved_ids = set(pending_answer_vote.get("approved_ids", set()))
             rejected_ids = set(pending_answer_vote.get("rejected_ids", set()))
@@ -1282,19 +1385,50 @@ class QuizGameManager:
 
     async def request_open_vote(self, client_id: str, payload: OpenVoteRequestMessage | int | None):
         message = payload if isinstance(payload, OpenVoteRequestMessage) else OpenVoteRequestMessage(type="open_vote_request", char_index=payload)
-        return await request_open_vote_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        lock = self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await request_open_vote_handler(self, client_id, message)
+        async with lock:
+            return await request_open_vote_handler(self, client_id, message)
 
     async def respond_open_vote(self, client_id: str, payload: OpenVoteResponseMessage | dict[str, Any]):
         message = payload if isinstance(payload, OpenVoteResponseMessage) else validate_message(OpenVoteResponseMessage, payload)
-        return await respond_open_vote_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        lock = self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await respond_open_vote_handler(self, client_id, message)
+        async with lock:
+            return await respond_open_vote_handler(self, client_id, message)
 
     async def respond_answer_vote(self, client_id: str, payload: AnswerVoteResponseMessage | dict[str, Any]):
         message = payload if isinstance(payload, AnswerVoteResponseMessage) else validate_message(AnswerVoteResponseMessage, payload)
-        return await respond_answer_vote_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        room = self.rooms.get(room_owner_id) if room_owner_id else None
+        pending_vote = self._get_pending_answer_vote(
+            room,
+            vote_id=str(message.vote_id or "").strip(),
+        ) if isinstance(room, dict) else None
+        team_lock = None
+        if isinstance(pending_vote, dict) and bool(pending_vote.get("full_open_settlement")):
+            team_lock = self._get_room_team_operation_lock(
+                room_owner_id or "",
+                str(pending_vote.get("team") or "").strip(),
+            )
+        lock = team_lock or self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await respond_answer_vote_handler(self, client_id, message)
+        async with lock:
+            return await respond_answer_vote_handler(self, client_id, message)
 
     async def request_turn_end_attempt(self, client_id: str, payload: TurnEndAttemptMessage | None = None):
         message = payload if isinstance(payload, TurnEndAttemptMessage) else TurnEndAttemptMessage(type="turn_end_attempt")
-        return await request_turn_end_attempt_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        lock = self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await request_turn_end_attempt_handler(self, client_id, message)
+        async with lock:
+            return await request_turn_end_attempt_handler(self, client_id, message)
 
     async def request_intentional_draw_vote(self, client_id: str, payload: IntentionalDrawVoteRequestMessage | None = None):
         message = (
@@ -1302,7 +1436,12 @@ class QuizGameManager:
             if isinstance(payload, IntentionalDrawVoteRequestMessage)
             else IntentionalDrawVoteRequestMessage(type="intentional_draw_vote_request")
         )
-        return await request_intentional_draw_vote_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        lock = self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await request_intentional_draw_vote_handler(self, client_id, message)
+        async with lock:
+            return await request_intentional_draw_vote_handler(self, client_id, message)
 
     async def respond_intentional_draw_vote(self, client_id: str, payload: IntentionalDrawVoteResponseMessage | dict[str, Any]):
         message = (
@@ -1310,11 +1449,21 @@ class QuizGameManager:
             if isinstance(payload, IntentionalDrawVoteResponseMessage)
             else validate_message(IntentionalDrawVoteResponseMessage, payload)
         )
-        return await respond_intentional_draw_vote_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        lock = self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await respond_intentional_draw_vote_handler(self, client_id, message)
+        async with lock:
+            return await respond_intentional_draw_vote_handler(self, client_id, message)
 
     async def respond_turn_end_vote(self, client_id: str, payload: TurnEndVoteResponseMessage | dict[str, Any]):
         message = payload if isinstance(payload, TurnEndVoteResponseMessage) else validate_message(TurnEndVoteResponseMessage, payload)
-        return await respond_turn_end_vote_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        lock = self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await respond_turn_end_vote_handler(self, client_id, message)
+        async with lock:
+            return await respond_turn_end_vote_handler(self, client_id, message)
 
     async def send_private_info(
         self,
@@ -1451,7 +1600,21 @@ class QuizGameManager:
 
     async def submit_answer_attempt(self, client_id: str, payload: AnswerAttemptMessage | str):
         message = payload if isinstance(payload, AnswerAttemptMessage) else AnswerAttemptMessage(type="answer_attempt", answer_text=str(payload or ""))
-        return await submit_answer_attempt_handler(self, client_id, message)
+        room_owner_id = self._resolve_room_owner_id_for_client(client_id)
+        room = self.rooms.get(room_owner_id) if room_owner_id else None
+        team_lock = None
+        if isinstance(room, dict):
+            full_open = self._get_full_open_settlement_state(room)
+            full_open_state = str((full_open or {}).get("state") or "").strip()
+            if full_open_state in {"answering", "judging"}:
+                team = self._resolve_team_for_client(room, client_id)
+                if team in {"team-left", "team-right"}:
+                    team_lock = self._get_room_team_operation_lock(room_owner_id or "", team)
+        lock = team_lock or self._get_room_operation_lock(room_owner_id or "")
+        if lock is None:
+            return await submit_answer_attempt_handler(self, client_id, message)
+        async with lock:
+            return await submit_answer_attempt_handler(self, client_id, message)
 
     async def _submit_answer_attempt_impl(self, client_id: str, answer_text: str):
         """参加者が解答内容を提出するアクション"""
@@ -1470,11 +1633,6 @@ class QuizGameManager:
         game = room.get("game") or {}
         if game.get("pending_answer_judgement") is not None:
             await self.send_private_info(client_id, "現在、別の解答を正誤判定中です。")
-            return
-
-        pending_answer_vote = room.get("pending_answer_vote")
-        if pending_answer_vote and pending_answer_vote.get("status") == "pending":
-            await self.send_private_info(client_id, "現在、別のアンサー投票が進行中です。")
             return
 
         pending_turn_end_vote = room.get("pending_turn_end_vote")
@@ -1512,6 +1670,10 @@ class QuizGameManager:
             submitted_teams = list(full_open_settlement.get("submitted_teams") or [])
             if team in submitted_teams:
                 await self.send_private_info(client_id, "この陣営はすでに回答済みです。")
+                return
+
+            if self._has_pending_answer_vote(room, team=team):
+                await self.send_private_info(client_id, "現在、この陣営の別のアンサー投票が進行中です。")
                 return
 
             text = str(answer_text or "").strip()
@@ -1565,6 +1727,7 @@ class QuizGameManager:
                 "full_open_settlement": True,
                 "full_open_vote_id": str(full_open_settlement.get("vote_id") or ""),
             }
+            self._set_pending_answer_vote(room, team, room["pending_answer_vote"])
 
             await self.broadcast_state(
                 public_info="",
@@ -1587,6 +1750,10 @@ class QuizGameManager:
                 },
             )
             await self.send_private_info(client_id, "フルオープン決着の解答を提案しました。")
+            return
+
+        if self._has_pending_answer_vote(room):
+            await self.send_private_info(client_id, "現在、別のアンサー投票が進行中です。")
             return
 
         if client_id in room["left_participants"]:
@@ -1705,6 +1872,7 @@ class QuizGameManager:
             "required_approvals": required_approvals,
             "status": "pending",
         }
+        self._set_pending_answer_vote(room, team, room["pending_answer_vote"])
 
         event_recipient_ids = voter_ids - {client_id}
 
@@ -1852,7 +2020,7 @@ class QuizGameManager:
         game["pending_answer_judgement"] = None
         room["game_state"] = "finished"
         room["pending_open_vote"] = None
-        room["pending_answer_vote"] = None
+        self._clear_pending_answer_votes(room)
         room["pending_turn_end_vote"] = None
         room["pending_intentional_draw_vote"] = None
 

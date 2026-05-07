@@ -42,8 +42,7 @@ async def request_open_vote(manager, client_id: str, payload: OpenVoteRequestMes
         await manager.send_private_info(client_id, "正誤判定中は行動できません。")
         return
 
-    pending_answer_vote = room.get("pending_answer_vote")
-    if pending_answer_vote and pending_answer_vote.get("status") == "pending":
+    if manager._has_pending_answer_vote(room):
         await manager.send_private_info(client_id, "進行中のアンサー投票があります。")
         return
 
@@ -361,7 +360,7 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
 
     room = ctx["room"]
     owner_id = ctx["room_owner_id"]
-    pending_vote = room.get("pending_answer_vote")
+    pending_vote = manager._get_pending_answer_vote(room, vote_id=vote_id)
 
     if not pending_vote or pending_vote.get("status") != "pending":
         await manager.send_private_info(client_id, "進行中のアンサー投票がありません。")
@@ -403,7 +402,7 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
 
     if approvals >= required:
         pending_vote["status"] = "approved"
-        room["pending_answer_vote"] = None
+        manager._set_pending_answer_vote(room, team, None)
 
         if is_full_open_settlement:
             result = await manager._finalize_full_open_settlement_answer(
@@ -563,7 +562,7 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
     max_possible_approvals = approvals + (len(voter_ids) - approvals - rejections)
     if max_possible_approvals < required:
         pending_vote["status"] = "rejected"
-        room["pending_answer_vote"] = None
+        manager._set_pending_answer_vote(room, team, None)
         await manager.broadcast_state(
             public_info="",
             event_type="answer_vote_resolved",
@@ -623,8 +622,7 @@ async def request_turn_end_attempt(manager, client_id: str, payload: TurnEndAtte
         await manager.send_private_info(client_id, "文字オープン投票中はターンエンドできません。")
         return
 
-    pending_answer_vote = room.get("pending_answer_vote")
-    if pending_answer_vote and pending_answer_vote.get("status") == "pending":
+    if manager._has_pending_answer_vote(room):
         await manager.send_private_info(client_id, "アンサー投票中はターンエンドできません。")
         return
 
@@ -745,8 +743,7 @@ async def request_intentional_draw_vote(manager, client_id: str, payload: Intent
         await manager.send_private_info(client_id, "文字オープン投票中はフルオープン決着を提案できません。")
         return
 
-    pending_answer_vote = room.get("pending_answer_vote")
-    if pending_answer_vote and pending_answer_vote.get("status") == "pending":
+    if manager._has_pending_answer_vote(room):
         await manager.send_private_info(client_id, "アンサー投票中はフルオープン決着を提案できません。")
         return
 
@@ -860,7 +857,7 @@ async def respond_intentional_draw_vote(manager, client_id: str, payload: Intent
             },
         )
         room["pending_open_vote"] = None
-        room["pending_answer_vote"] = None
+        manager._clear_pending_answer_votes(room)
         room["pending_turn_end_vote"] = None
 
         await manager.broadcast_state(

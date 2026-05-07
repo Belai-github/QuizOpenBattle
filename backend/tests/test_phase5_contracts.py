@@ -550,7 +550,7 @@ class TestAiFullOpenSettlementContracts(unittest.TestCase):
 
         asyncio.run(manager.submit_answer_attempt("left-1", "東京"))
 
-        pending_vote = room.get("pending_answer_vote")
+        pending_vote = (room.get("pending_answer_votes") or {}).get("team-left")
         self.assertIsInstance(pending_vote, dict)
         self.assertEqual(pending_vote["team"], "team-left")
         self.assertEqual(pending_vote["answer_text"], "東京")
@@ -567,6 +567,51 @@ class TestAiFullOpenSettlementContracts(unittest.TestCase):
             manager.broadcast_state.await_args.kwargs["event_type"],
             "answer_vote_request",
         )
+
+    def test_full_open_answer_votes_can_exist_for_both_teams_at_once(self):
+        manager = QuizGameManager()
+        manager.broadcast_state = AsyncMock()
+        manager.send_private_info = AsyncMock()
+        manager.nicknames = {
+            "left-1": "先攻1",
+            "left-2": "先攻2",
+            "right-1": "後攻1",
+            "right-2": "後攻2",
+        }
+        room = {
+            "game_state": "playing",
+            "is_ai_mode": False,
+            "left_participants": {"left-1", "left-2"},
+            "right_participants": {"right-1", "right-2"},
+            "spectators": set(),
+            "game": {
+                "game_status": "playing",
+                "full_open_settlement": {
+                    "state": "answering",
+                    "vote_id": "full-open-both",
+                    "submitted_teams": [],
+                    "answers": {
+                        "team-left": None,
+                        "team-right": None,
+                    },
+                    "judgements": {
+                        "team-left": None,
+                        "team-right": None,
+                    },
+                    "final_winner": None,
+                },
+            },
+        }
+        manager.rooms["owner-1"] = room
+
+        asyncio.run(manager.submit_answer_attempt("left-1", "東京"))
+        asyncio.run(manager.submit_answer_attempt("right-1", "大阪"))
+
+        pending_votes = room.get("pending_answer_votes") or {}
+        self.assertIn("team-left", pending_votes)
+        self.assertIn("team-right", pending_votes)
+        self.assertEqual(pending_votes["team-left"]["answer_text"], "東京")
+        self.assertEqual(pending_votes["team-right"]["answer_text"], "大阪")
 
     def test_full_open_answer_vote_approval_requires_unanimity_before_submission(self):
         manager = QuizGameManager()
@@ -599,18 +644,20 @@ class TestAiFullOpenSettlementContracts(unittest.TestCase):
                     "final_winner": None,
                 },
             },
-            "pending_answer_vote": {
-                "vote_id": "team-vote-1",
-                "requester_id": "left-1",
-                "team": "team-left",
-                "answer_text": "東京",
-                "voter_ids": {"left-1", "left-2"},
-                "approved_ids": {"left-1"},
-                "rejected_ids": set(),
-                "required_approvals": 2,
-                "status": "pending",
-                "full_open_settlement": True,
-                "full_open_vote_id": "full-open-2",
+            "pending_answer_votes": {
+                "team-left": {
+                    "vote_id": "team-vote-1",
+                    "requester_id": "left-1",
+                    "team": "team-left",
+                    "answer_text": "東京",
+                    "voter_ids": {"left-1", "left-2"},
+                    "approved_ids": {"left-1"},
+                    "rejected_ids": set(),
+                    "required_approvals": 2,
+                    "status": "pending",
+                    "full_open_settlement": True,
+                    "full_open_vote_id": "full-open-2",
+                },
             },
         }
         manager.rooms["owner-1"] = room
@@ -626,7 +673,7 @@ class TestAiFullOpenSettlementContracts(unittest.TestCase):
             )
         )
 
-        self.assertIsNone(room.get("pending_answer_vote"))
+        self.assertEqual(room.get("pending_answer_votes"), {})
         self.assertEqual(
             room["game"]["full_open_settlement"]["submitted_teams"],
             ["team-left"],
