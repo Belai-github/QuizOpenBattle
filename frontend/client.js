@@ -251,6 +251,34 @@ const logScrollListenerBound = new WeakSet();
 const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
+const SEMITONE_RATIO = 2 ** (1 / 12);
+const TURN_CHANGE_SOUND_FILE_PATH =
+  "/game/sound/373586__sgossner__marimba-f5-marimba_hit_outrigger_g4_loud_01.wav";
+const TURN_CHANGE_SOUND_VOLUME = 0.19;
+const TURN_CHANGE_SOUND_NOTE_PATTERN = [
+  { semitones: -5, startDelay: 0, volumeScale: 0.94, sustainScale: 1.22 },
+  { semitones: 0, startDelay: 0.055, volumeScale: 0.98, sustainScale: 1 },
+  { semitones: 7, startDelay: 0.15, volumeScale: 0.8, sustainScale: 1 },
+];
+const CORRECT_SOUND_FILE_PATH =
+  "/game/sound/243701__ertfelda__correct.wav";
+const CORRECT_SOUND_FIRST_SEMITONES = 4;
+const CORRECT_SOUND_SECOND_SEMITONES = 0;
+const CORRECT_SOUND_FIRST_PLAYBACK_RATE =
+  SEMITONE_RATIO ** CORRECT_SOUND_FIRST_SEMITONES;
+const CORRECT_SOUND_SECOND_PLAYBACK_RATE =
+  SEMITONE_RATIO ** CORRECT_SOUND_SECOND_SEMITONES;
+const CORRECT_SOUND_VOLUME = 0.18;
+const WRONG_SOUND_FILE_PATH =
+  "/game/sound/650842__andreas__wrong-answer-buzzer.wav";
+const WRONG_SOUND_PLAYBACK_RATE = 1;
+const WRONG_SOUND_VOLUME = 0.1;
+let soundEffectsEnabled = true;
+let quizAudioContext = null;
+let quizAudioUnlocked = false;
+let quizAudioUnlockPromise = null;
+let audioUnlockListenersBound = false;
+const audioBufferCache = new Map();
 const REPLAY_PROGRESS_EVENT_TYPES = new Set([
   "character_opened",
   "answer_attempt",
@@ -647,6 +675,403 @@ function initializeAiAccuracyRateControl() {
   aiAccuracyRateRangeEl.step = "10";
   aiAccuracyRateRangeEl.value = String(DEFAULT_AI_ACCURACY_RATE);
   updateAiAccuracyRateDisplay(aiAccuracyRateRangeEl.value);
+}
+
+function getQuizAudioContext() {
+  return quizAudioContext;
+}
+
+function getQuizAudioContextClass() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.AudioContext || window.webkitAudioContext || null;
+}
+
+function ensureQuizAudioContextCreated() {
+  const AudioContextClass = getQuizAudioContextClass();
+  if (!AudioContextClass) {
+    return null;
+  }
+  if (!quizAudioContext) {
+    quizAudioContext = new AudioContextClass();
+  }
+  return quizAudioContext;
+}
+
+function primeQuizAudioContextFromGesture() {
+  const audioContext = ensureQuizAudioContextCreated();
+  if (!audioContext) {
+    return null;
+  }
+
+  if (quizAudioUnlockPromise) {
+    return quizAudioUnlockPromise;
+  }
+
+  try {
+    const silentGainNode = audioContext.createGain();
+    silentGainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+    silentGainNode.connect(audioContext.destination);
+
+    const silentOscillator = audioContext.createOscillator();
+    silentOscillator.type = "sine";
+    silentOscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+    silentOscillator.connect(silentGainNode);
+    silentOscillator.start(audioContext.currentTime);
+    silentOscillator.stop(audioContext.currentTime + 0.001);
+  } catch {
+    // no-op
+  }
+
+  const resumeResult =
+    audioContext.state === "suspended" ? audioContext.resume() : true;
+  quizAudioUnlockPromise = Promise.resolve(resumeResult)
+    .then(() => {
+      quizAudioUnlocked = audioContext.state === "running";
+      return quizAudioUnlocked;
+    })
+    .catch(() => {
+      quizAudioUnlocked = false;
+      quizAudioUnlockPromise = null;
+      return false;
+    });
+
+  return quizAudioUnlockPromise;
+}
+
+async function unlockQuizAudioContext() {
+  const unlockPromise = primeQuizAudioContextFromGesture();
+  if (!unlockPromise) {
+    return false;
+  }
+  const unlocked = await unlockPromise;
+  if (!unlocked) {
+    quizAudioUnlockPromise = null;
+  }
+  return unlocked;
+}
+
+async function ensureQuizAudioPlaybackReady() {
+  const audioContext = getQuizAudioContext();
+  if (!audioContext) {
+    return false;
+  }
+
+  if (quizAudioUnlocked && audioContext.state === "running") {
+    return true;
+  }
+
+  if (quizAudioUnlockPromise) {
+    const unlocked = await quizAudioUnlockPromise;
+    if (unlocked && audioContext.state === "running") {
+      quizAudioUnlocked = true;
+      return true;
+    }
+  }
+
+  if (audioContext.state === "running") {
+    quizAudioUnlocked = true;
+    return true;
+  }
+
+  return false;
+}
+
+async function loadAudioBuffer(sourceUrl) {
+  const normalizedSourceUrl = String(sourceUrl || "").trim();
+  if (normalizedSourceUrl === "") {
+    return null;
+  }
+
+  const cachedBuffer = audioBufferCache.get(normalizedSourceUrl);
+  if (cachedBuffer) {
+    return cachedBuffer;
+  }
+
+  const audioContext = getQuizAudioContext();
+  if (!audioContext) {
+    return null;
+  }
+
+  const response = await fetch(normalizedSourceUrl);
+  if (!response.ok) {
+    throw new Error(`audio_fetch_failed:${response.status}`);
+  }
+
+  const audioData = await response.arrayBuffer();
+  const decodedBuffer = await audioContext.decodeAudioData(audioData);
+  audioBufferCache.set(normalizedSourceUrl, decodedBuffer);
+  return decodedBuffer;
+}
+
+function playAudioBuffer(
+  buffer,
+  { playbackRate = 1, volume = 1, startDelay = 0, durationScale = 1 } = {},
+) {
+  const audioContext = getQuizAudioContext();
+  if (!audioContext || !buffer) {
+    return false;
+  }
+
+  const sourceNode = audioContext.createBufferSource();
+  const gainNode = audioContext.createGain();
+  sourceNode.buffer = buffer;
+  const startTime =
+    audioContext.currentTime + Math.max(0, Number(startDelay || 0) || 0);
+  sourceNode.playbackRate.setValueAtTime(
+    Math.max(0.25, Number(playbackRate || 1) || 1),
+    startTime,
+  );
+  gainNode.gain.setValueAtTime(
+    Math.max(0, Number(volume || 0) || 0),
+    startTime,
+  );
+
+  sourceNode.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  sourceNode.start(startTime);
+  const bufferDuration = Number(buffer.duration || 0);
+  const normalizedDurationScale = Math.max(
+    0.2,
+    Number(durationScale || 1) || 1,
+  );
+  if (bufferDuration > 0) {
+    sourceNode.stop(startTime + bufferDuration * normalizedDurationScale);
+  }
+  return true;
+}
+
+function bindAudioUnlockListeners() {
+  if (audioUnlockListenersBound || typeof document === "undefined") {
+    return;
+  }
+
+  audioUnlockListenersBound = true;
+  const unlockEvents = ["click", "keydown"];
+  const unlockHandler = () => {
+    unlockEvents.forEach((eventName) => {
+      document.removeEventListener(eventName, unlockHandler, true);
+    });
+    audioUnlockListenersBound = false;
+    primeQuizAudioContextFromGesture();
+  };
+
+  unlockEvents.forEach((eventName) => {
+    document.addEventListener(eventName, unlockHandler, {
+      capture: true,
+      passive: true,
+    });
+  });
+}
+
+async function playTurnChangeSoundEffect() {
+  if (!soundEffectsEnabled) {
+    return;
+  }
+
+  const unlocked = await ensureQuizAudioPlaybackReady();
+  if (!unlocked) {
+    return;
+  }
+
+  const audioContext = getQuizAudioContext();
+  if (!audioContext) {
+    return;
+  }
+
+  try {
+    const turnChangeSoundBuffer = await loadAudioBuffer(TURN_CHANGE_SOUND_FILE_PATH);
+    const played = TURN_CHANGE_SOUND_NOTE_PATTERN.map((note) =>
+      playAudioBuffer(turnChangeSoundBuffer, {
+        playbackRate: SEMITONE_RATIO ** Number(note.semitones || 0),
+        volume: TURN_CHANGE_SOUND_VOLUME * Number(note.volumeScale || 1),
+        startDelay: Number(note.startDelay || 0),
+        durationScale: Number(note.sustainScale || 1),
+      }),
+    );
+    if (played.some(Boolean)) {
+      return;
+    }
+  } catch (error) {
+    console.warn("Failed to play turn change sound file", error);
+  }
+
+  const now = audioContext.currentTime;
+  const masterGain = audioContext.createGain();
+  masterGain.gain.setValueAtTime(TURN_CHANGE_SOUND_VOLUME, now);
+  masterGain.connect(audioContext.destination);
+
+  const scheduleTone = (frequency, startOffset, duration, gainPeak) => {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    const startTime = now + startOffset;
+    const endTime = startTime + duration;
+
+    oscillator.type = "square";
+    oscillator.frequency.setValueAtTime(frequency, startTime);
+    gainNode.gain.setValueAtTime(0.0001, startTime);
+    gainNode.gain.exponentialRampToValueAtTime(gainPeak, startTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(masterGain);
+    oscillator.start(startTime);
+    oscillator.stop(endTime + 0.01);
+  };
+
+  scheduleTone(720, 0, 0.045, 0.3);
+  scheduleTone(1080, 0.065, 0.06, 0.22);
+}
+
+async function playCorrectAnswerSoundEffect() {
+  if (!soundEffectsEnabled) {
+    return;
+  }
+
+  const unlocked = await ensureQuizAudioPlaybackReady();
+  if (!unlocked) {
+    return;
+  }
+
+  const audioContext = getQuizAudioContext();
+  if (!audioContext) {
+    return;
+  }
+
+  try {
+    const correctSoundBuffer = await loadAudioBuffer(CORRECT_SOUND_FILE_PATH);
+    const playedFirst = playAudioBuffer(correctSoundBuffer, {
+      playbackRate: CORRECT_SOUND_FIRST_PLAYBACK_RATE,
+      volume: CORRECT_SOUND_VOLUME,
+      startDelay: 0,
+    });
+    const playedSecond = playAudioBuffer(correctSoundBuffer, {
+      playbackRate: CORRECT_SOUND_SECOND_PLAYBACK_RATE,
+      volume: CORRECT_SOUND_VOLUME * 0.94,
+      startDelay: 0.12,
+    });
+    if (playedFirst || playedSecond) {
+      return;
+    }
+  } catch (error) {
+    console.warn("Failed to play correct answer sound file", error);
+  }
+
+  const now = audioContext.currentTime;
+  const masterGain = audioContext.createGain();
+  masterGain.gain.setValueAtTime(0.11, now);
+  masterGain.connect(audioContext.destination);
+
+  const scheduleTone = (frequency, startOffset, duration, gainPeak) => {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    const startTime = now + startOffset;
+    const endTime = startTime + duration;
+
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(frequency, startTime);
+    gainNode.gain.setValueAtTime(0.0001, startTime);
+    gainNode.gain.exponentialRampToValueAtTime(gainPeak, startTime + 0.015);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(masterGain);
+    oscillator.start(startTime);
+    oscillator.stop(endTime + 0.02);
+  };
+
+  scheduleTone(1318, 0, 0.11, 0.3);
+  scheduleTone(1047, 0.18, 0.16, 0.28);
+}
+
+async function playWrongAnswerSoundEffect() {
+  if (!soundEffectsEnabled) {
+    return;
+  }
+
+  const unlocked = await ensureQuizAudioPlaybackReady();
+  if (!unlocked) {
+    return;
+  }
+
+  const audioContext = getQuizAudioContext();
+  if (!audioContext) {
+    return;
+  }
+
+  try {
+    const wrongSoundBuffer = await loadAudioBuffer(WRONG_SOUND_FILE_PATH);
+    if (
+      playAudioBuffer(wrongSoundBuffer, {
+        playbackRate: WRONG_SOUND_PLAYBACK_RATE,
+        volume: WRONG_SOUND_VOLUME,
+      })
+    ) {
+      return;
+    }
+  } catch (error) {
+    console.warn("Failed to play wrong answer sound file", error);
+  }
+
+  const now = audioContext.currentTime;
+  const masterGain = audioContext.createGain();
+  masterGain.gain.setValueAtTime(0.24, now);
+  masterGain.connect(audioContext.destination);
+
+  const scheduleBuzz = (frequency, startOffset, duration, gainPeak) => {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    const filterNode = audioContext.createBiquadFilter();
+    const startTime = now + startOffset;
+    const endTime = startTime + duration;
+
+    oscillator.type = "sawtooth";
+    oscillator.frequency.setValueAtTime(frequency, startTime);
+    filterNode.type = "lowpass";
+    filterNode.frequency.setValueAtTime(520, startTime);
+    gainNode.gain.setValueAtTime(0.0001, startTime);
+    gainNode.gain.exponentialRampToValueAtTime(gainPeak, startTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+    oscillator.connect(filterNode);
+    filterNode.connect(gainNode);
+    gainNode.connect(masterGain);
+    oscillator.start(startTime);
+    oscillator.stop(endTime + 0.02);
+  };
+
+  scheduleBuzz(140, 0, 0.16, 0.52);
+  scheduleBuzz(118, 0.18, 0.2, 0.48);
+}
+
+function resolveFullOpenSettlementViewerCorrectness(eventPayload) {
+  const leftIsCorrect = eventPayload?.left_is_correct;
+  const rightIsCorrect = eventPayload?.right_is_correct;
+
+  if (userRole === "team-left") {
+    return leftIsCorrect === true;
+  }
+
+  if (userRole === "team-right") {
+    return rightIsCorrect === true;
+  }
+
+  return leftIsCorrect === true || rightIsCorrect === true;
+}
+
+async function playFullOpenSettlementFinishedSoundEffect(eventPayload) {
+  const shouldPlayCorrect = resolveFullOpenSettlementViewerCorrectness(
+    eventPayload,
+  );
+
+  if (shouldPlayCorrect) {
+    await playCorrectAnswerSoundEffect();
+    return;
+  }
+
+  await playWrongAnswerSoundEffect();
 }
 
 function buildFallbackAiQuestionAccessState(rooms = currentRoomsSnapshot) {
@@ -7803,6 +8228,7 @@ function buildWebSocketUrl(clientId, wsTicket) {
 function bootstrapApp() {
   syncWaitingRoomMobilePanelState();
   updateAuthUi();
+  bindAudioUnlockListeners();
   void initializeAuthState();
 }
 
@@ -8081,6 +8507,25 @@ document.getElementById("join-btn").addEventListener("click", async () => {
       pendingArenaMode = null;
       updateArenaLeaveLabel("guest");
       showWaitingRoomScreen();
+    }
+
+    if (
+      data.event_type === "turn_changed" &&
+      isInGameArena() &&
+      String(currentRoomGameState || "") === "playing"
+    ) {
+      void playTurnChangeSoundEffect();
+    }
+    if (data.event_type === "answer_result" && isInGameArena()) {
+      const isCorrect = data.event_payload?.is_correct;
+      if (isCorrect === true) {
+        void playCorrectAnswerSoundEffect();
+      } else if (isCorrect === false) {
+        void playWrongAnswerSoundEffect();
+      }
+    }
+    if (data.event_type === "full_open_settlement_finished" && isInGameArena()) {
+      void playFullOpenSettlementFinishedSoundEffect(data.event_payload);
     }
 
     if (data.event_type === "game_finished") {

@@ -580,6 +580,7 @@ class QuizGameManager:
             self._format_answer_result_message(team_label, is_correct),
             event_payload={
                 "team": team,
+                "is_correct": bool(is_correct),
             },
         )
 
