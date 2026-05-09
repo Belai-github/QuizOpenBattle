@@ -9229,6 +9229,13 @@ document.getElementById("join-btn").addEventListener("click", async () => {
       (String(prevRoomState || "") !== "playing" ||
         String(prevChatRole || "") !== "team-left" ||
         !prevLeftCorrectWaiting);
+    const exitedLeftRevealWindowWhilePlaying =
+      String(prevRoomState || "") === "playing" &&
+      String(prevChatRole || "") === "team-left" &&
+      prevLeftCorrectWaiting &&
+      String(currentRoomGameState || "") === "playing" &&
+      String(userRole || "") === "team-left" &&
+      !Boolean(currentGameState?.left_correct_waiting);
     if (reachedGameFinished || reachedLeftRevealWindow) {
       enableArenaProgressChatFilter();
     }
@@ -9240,6 +9247,17 @@ document.getElementById("join-btn").addEventListener("click", async () => {
       debugArenaHistory("ws.onmessage rebuilt logs for left reveal window", {
         roomId: activeRoomId,
         reason: "left_correct_waiting_entered",
+      });
+    }
+
+    if (exitedLeftRevealWindowWhilePlaying && activeRoomId) {
+      // 許可フェーズで一時的に見えていた相手アンサー履歴を、
+      // 通常の可視範囲へ戻したスナップショットで洗い替える。
+      hydrateArenaChatHistoryIfNeeded(data.current_room);
+      renderArenaLogsForRoom(activeRoomId);
+      debugArenaHistory("ws.onmessage rebuilt logs after left reveal window ended", {
+        roomId: activeRoomId,
+        reason: "left_correct_waiting_exited",
       });
     }
 

@@ -703,6 +703,163 @@ class TestAiFullOpenSettlementContracts(unittest.TestCase):
             "answer_vote_request",
         )
 
+
+class TestArenaAnswerVisibilityContracts(unittest.TestCase):
+    def test_left_reveal_window_shows_opponent_answer_logs_to_team_left(self):
+        rooms = {}
+        nicknames = {
+            "owner-1": "出題者",
+            "left-1": "先攻",
+            "right-1": "後攻",
+        }
+        create_result = apply_create_question_room(
+            rooms,
+            nicknames,
+            "owner-1",
+            {"question_text": "テスト問題"},
+        )
+        self.assertTrue(create_result["ok"])
+
+        room = rooms["owner-1"]
+        room["game_state"] = "playing"
+        room["left_participants"] = {"left-1"}
+        room["right_participants"] = {"right-1"}
+        room["left_participant_order"] = ["left-1"]
+        room["right_participant_order"] = ["right-1"]
+        room["game"] = {
+            "game_status": "playing",
+            "left_correct_waiting": True,
+            "full_open_settlement": None,
+        }
+        room["arena_chat_history"] = [
+            {
+                "seq": 1,
+                "timestamp": 100,
+                "event_type": "answer_attempt",
+                "event_message": "後攻が「東京」と解答しました。",
+                "event_chat_type": "team-right",
+                "event_payload": {
+                    "team": "team-right",
+                    "answer_text": "東京",
+                },
+            }
+        ]
+
+        current_room = build_current_room_for_client(rooms, nicknames, "left-1")
+        self.assertEqual(len(current_room["arena_chat_history"]), 1)
+        self.assertEqual(
+            current_room["arena_chat_history"][0]["event_message"],
+            "後攻が「東京」と解答しました。",
+        )
+        self.assertEqual(
+            current_room["arena_chat_history"][0]["event_payload"]["answer_text"],
+            "東京",
+        )
+
+    def test_full_open_start_clears_left_reveal_window_and_hides_previous_opponent_answer_logs(self):
+        manager = QuizGameManager()
+        room = {
+            "game_state": "playing",
+            "questioner_id": "owner-1",
+            "questioner_name": "出題者",
+            "question_text": "テスト問題",
+            "yakumono_indexes": set(),
+            "left_participants": {"left-1"},
+            "right_participants": {"right-1"},
+            "left_participant_order": ["left-1"],
+            "right_participant_order": ["right-1"],
+            "left_team_name": "先攻",
+            "right_team_name": "後攻",
+            "spectators": set(),
+            "pending_disconnects": {},
+            "arena_chat_history": [
+                {
+                    "seq": 1,
+                    "timestamp": 100,
+                    "event_type": "answer_attempt",
+                    "event_message": "後攻が「東京」と解答しました。",
+                    "event_chat_type": "team-right",
+                    "event_payload": {
+                        "team": "team-right",
+                        "answer_text": "東京",
+                    },
+                }
+            ],
+            "pre_game_global_chat_history": [],
+            "is_ai_mode": False,
+            "game": {
+                "game_status": "playing",
+                "left_correct_waiting": True,
+                "team_left": {},
+                "team_right": {},
+            },
+        }
+        manager.rooms["owner-1"] = room
+        manager.nicknames = {
+            "owner-1": "出題者",
+            "left-1": "先攻",
+            "right-1": "後攻",
+        }
+
+        manager._start_full_open_settlement(room, "vote-1", "left-1")
+        self.assertFalse(room["game"]["left_correct_waiting"])
+
+        current_room = build_current_room_for_client(manager.rooms, manager.nicknames, "left-1")
+        self.assertEqual(current_room["game"]["full_open_settlement"]["state"], "answering")
+        self.assertEqual(current_room["arena_chat_history"], [])
+
+    def test_finished_reveal_still_shows_answer_text_after_match(self):
+        rooms = {}
+        nicknames = {
+            "owner-1": "出題者",
+            "left-1": "先攻",
+            "right-1": "後攻",
+        }
+        create_result = apply_create_question_room(
+            rooms,
+            nicknames,
+            "owner-1",
+            {"question_text": "テスト問題"},
+        )
+        self.assertTrue(create_result["ok"])
+
+        room = rooms["owner-1"]
+        room["game_state"] = "finished"
+        room["left_participants"] = {"left-1"}
+        room["right_participants"] = {"right-1"}
+        room["left_participant_order"] = ["left-1"]
+        room["right_participant_order"] = ["right-1"]
+        room["game"] = {
+            "game_status": "finished",
+            "left_correct_waiting": False,
+            "full_open_settlement": None,
+        }
+        room["arena_chat_history"] = [
+            {
+                "seq": 1,
+                "timestamp": 100,
+                "event_type": "answer_vote_resolved",
+                "event_message": "後攻が「東京」と解答し、可決されました。",
+                "event_chat_type": "team-right",
+                "event_payload": {
+                    "team": "team-right",
+                    "answer_text": "東京",
+                    "reveal_phase": "finished",
+                },
+            }
+        ]
+
+        current_room = build_current_room_for_client(rooms, nicknames, "left-1")
+        self.assertEqual(len(current_room["arena_chat_history"]), 1)
+        self.assertEqual(
+            current_room["arena_chat_history"][0]["event_message"],
+            "後攻が「東京」と解答し、可決されました。",
+        )
+        self.assertEqual(
+            current_room["arena_chat_history"][0]["event_payload"]["answer_text"],
+            "東京",
+        )
+
     def test_full_open_answer_votes_can_exist_for_both_teams_at_once(self):
         manager = QuizGameManager()
         manager.broadcast_state = AsyncMock()

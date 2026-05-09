@@ -767,6 +767,9 @@ class QuizGameManager:
         team_right["bonus_action_points"] = 0
         game["team_left"] = team_left
         game["team_right"] = team_right
+        # 先攻正解後の特例可視は通常対戦の最終ターン専用。
+        # フルオープン決着へ移行した時点で必ず解除する。
+        game["left_correct_waiting"] = False
 
         game["full_open_settlement"] = {
             "state": "answering",
