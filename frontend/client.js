@@ -8225,7 +8225,45 @@ function appendLogToContainer(
 
   const scrollContainer = resolveLogScrollContainer(logEl);
   const wasNearBottom = isLogNearBottom(scrollContainer);
+  const distanceFromBottom = scrollContainer
+    ? Math.max(
+        0,
+        scrollContainer.scrollHeight -
+          (scrollContainer.scrollTop + scrollContainer.clientHeight),
+      )
+    : 0;
   const indicatorEl = ensureLogNewIndicator(scrollContainer);
+
+  const restoreScrollPositionIfNeeded = () => {
+    const applyScrollRestore = () => {
+      if (!scrollContainer) {
+        return;
+      }
+
+      if (wasNearBottom) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        if (indicatorEl) {
+          indicatorEl.classList.add("hidden");
+        }
+        return;
+      }
+
+      scrollContainer.scrollTop = Math.max(
+        0,
+        scrollContainer.scrollHeight -
+          scrollContainer.clientHeight -
+          distanceFromBottom,
+      );
+      if (indicatorEl) {
+        indicatorEl.classList.remove("hidden");
+      }
+    };
+
+    applyScrollRestore();
+    window.requestAnimationFrame(() => {
+      applyScrollRestore();
+    });
+  };
 
   if (eventId) {
     const existingItem = logEl.querySelector(
@@ -8260,6 +8298,7 @@ function appendLogToContainer(
         if (logEl.classList.contains("chat-log")) {
           applyChatLogFilterToItem(newItem, getChatLogFilterState(logEl));
         }
+        restoreScrollPositionIfNeeded();
       }
       return;
     }
@@ -8290,6 +8329,7 @@ function appendLogToContainer(
         if (logEl.classList.contains("chat-log")) {
           applyChatLogFilterToItem(newItem, getChatLogFilterState(logEl));
         }
+        restoreScrollPositionIfNeeded();
       }
       return;
     }
@@ -8317,21 +8357,7 @@ function appendLogToContainer(
     logEl.removeChild(logEl.firstChild);
   }
 
-  if (!scrollContainer) {
-    return;
-  }
-
-  if (wasNearBottom) {
-    scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    if (indicatorEl) {
-      indicatorEl.classList.add("hidden");
-    }
-    return;
-  }
-
-  if (indicatorEl) {
-    indicatorEl.classList.remove("hidden");
-  }
+  restoreScrollPositionIfNeeded();
 }
 
 function appendEventLog(
