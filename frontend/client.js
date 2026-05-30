@@ -5,6 +5,13 @@ let isAuthBusy = false;
 let isServerWebAuthnReady = true;
 let waitingRoomMobilePanel = "left";
 
+function resolveAppAssetUrl(relativePath) {
+  const normalizedPath = String(window.location.pathname || "/");
+  const basePath = normalizedPath.endsWith("/") ? normalizedPath : `${normalizedPath}/`;
+  const baseUrl = `${window.location.origin}${basePath}`;
+  return new URL(String(relativePath || "").replace(/^\/+/, ""), baseUrl).toString();
+}
+
 const confirmModal = document.getElementById("confirm-modal");
 const confirmMessageEl = document.getElementById("confirm-message");
 const confirmOkBtn = document.getElementById("confirm-ok-btn");
@@ -308,7 +315,7 @@ const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
 const SEMITONE_RATIO = 2 ** (1 / 12);
 const TURN_CHANGE_SOUND_FILE_PATH =
-  "/game/sound/373586__sgossner__marimba-f5-marimba_hit_outrigger_g4_loud_01.wav";
+  resolveAppAssetUrl("sound/373586__sgossner__marimba-f5-marimba_hit_outrigger_g4_loud_01.wav");
 const TURN_CHANGE_SOUND_VOLUME = 0.19;
 const TURN_CHANGE_SOUND_NOTE_PATTERN = [
   { semitones: -5, startDelay: 0, volumeScale: 0.94, sustainScale: 1.22 },
@@ -316,7 +323,7 @@ const TURN_CHANGE_SOUND_NOTE_PATTERN = [
   { semitones: 7, startDelay: 0.15, volumeScale: 0.8, sustainScale: 1 },
 ];
 const CORRECT_SOUND_FILE_PATH =
-  "/game/sound/243701__ertfelda__correct.wav";
+  resolveAppAssetUrl("sound/243701__ertfelda__correct.wav");
 const CORRECT_SOUND_FIRST_SEMITONES = 4;
 const CORRECT_SOUND_SECOND_SEMITONES = 0;
 const CORRECT_SOUND_FIRST_PLAYBACK_RATE =
@@ -325,7 +332,7 @@ const CORRECT_SOUND_SECOND_PLAYBACK_RATE =
   SEMITONE_RATIO ** CORRECT_SOUND_SECOND_SEMITONES;
 const CORRECT_SOUND_VOLUME = 0.18;
 const WRONG_SOUND_FILE_PATH =
-  "/game/sound/650842__andreas__wrong-answer-buzzer.wav";
+  resolveAppAssetUrl("sound/650842__andreas__wrong-answer-buzzer.wav");
 const WRONG_SOUND_PLAYBACK_RATE = 1;
 const WRONG_SOUND_VOLUME = 0.1;
 let soundEffectsEnabled = true;

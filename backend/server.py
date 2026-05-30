@@ -10,6 +10,19 @@ from typing import Any, Literal, NamedTuple, cast
 from pydantic import ValidationError
 from backend.account_auth import AccountAuthManager
 from backend.auth import WebSocketAuthManager, is_valid_client_id, sanitize_nickname
+from backend.config import (
+    AI_ANSWER_JUDGEMENT_TIMEOUT_SECONDS,
+    AI_QUIZ_GENERATION_TIMEOUT_SECONDS,
+    ANSWER_MAX_LENGTH,
+    CHAT_MAX_LENGTH,
+    CHAT_MIN_INTERVAL_SECONDS,
+    CHAT_RATE_WINDOW_MAX_MESSAGES,
+    CHAT_RATE_WINDOW_SECONDS,
+    DISCONNECT_GRACE_SECONDS,
+    GAME_FRONTEND_MOUNT_PATH,
+    MAX_CONNECTIONS,
+    RECONNECT_RESERVATION_SECONDS,
+)
 from backend.events.formatting import (
     format_answer_attempt_message,
     format_answer_result_message,
@@ -135,7 +148,7 @@ from backend.storage.kifu_storage import (
 
 app = FastAPI()
 
-app.mount("/game", StaticFiles(directory="frontend", html=True), name="frontend")
+app.mount(GAME_FRONTEND_MOUNT_PATH, StaticFiles(directory="frontend", html=True), name="frontend")
 
 
 QUIZ_DIAG_API_ENABLED = os.getenv("QUIZ_DIAG_API", "").strip() == "1"
@@ -190,14 +203,14 @@ class QuizGameManager:
         self.rooms = {}
         self.reconnect_reservations = {}
         self.pending_disconnect_tasks = {}
-        self.MAX_CONNECTIONS = 10
-        self.RECONNECT_RESERVATION_SECONDS = 120
-        self.DISCONNECT_GRACE_SECONDS = 30
-        self.CHAT_MAX_LENGTH = 200
-        self.ANSWER_MAX_LENGTH = 100
-        self.CHAT_MIN_INTERVAL_SECONDS = 0.8
-        self.CHAT_RATE_WINDOW_SECONDS = 10.0
-        self.CHAT_RATE_WINDOW_MAX_MESSAGES = 5
+        self.MAX_CONNECTIONS = MAX_CONNECTIONS
+        self.RECONNECT_RESERVATION_SECONDS = RECONNECT_RESERVATION_SECONDS
+        self.DISCONNECT_GRACE_SECONDS = DISCONNECT_GRACE_SECONDS
+        self.CHAT_MAX_LENGTH = CHAT_MAX_LENGTH
+        self.ANSWER_MAX_LENGTH = ANSWER_MAX_LENGTH
+        self.CHAT_MIN_INTERVAL_SECONDS = CHAT_MIN_INTERVAL_SECONDS
+        self.CHAT_RATE_WINDOW_SECONDS = CHAT_RATE_WINDOW_SECONDS
+        self.CHAT_RATE_WINDOW_MAX_MESSAGES = CHAT_RATE_WINDOW_MAX_MESSAGES
         self.chat_message_history = {}
         self.chat_last_message = {}
         self.lobby_chat_history = []
@@ -603,7 +616,7 @@ class QuizGameManager:
         try:
             answer_judgement_result = check_answer_async(expected_answer, answer_text)
             if asyncio.iscoroutine(answer_judgement_result):
-                is_correct = await asyncio.wait_for(answer_judgement_result, timeout=12.0)
+                is_correct = await asyncio.wait_for(answer_judgement_result, timeout=AI_ANSWER_JUDGEMENT_TIMEOUT_SECONDS)
             else:
                 is_correct = bool(answer_judgement_result)
         except Exception:
@@ -655,7 +668,7 @@ class QuizGameManager:
         async def _judge_answer_text(answer_text: str) -> bool:
             answer_judgement_result = check_answer_async(expected_answer, answer_text)
             if asyncio.iscoroutine(answer_judgement_result):
-                return bool(await asyncio.wait_for(answer_judgement_result, timeout=12.0))
+                return bool(await asyncio.wait_for(answer_judgement_result, timeout=AI_ANSWER_JUDGEMENT_TIMEOUT_SECONDS))
             return bool(answer_judgement_result)
 
         try:
@@ -2309,7 +2322,7 @@ class QuizGameManager:
             quiz_data = None
             genre = str(normalized_payload.get("genre", "")).strip() or "一般常識"
             difficulty = normalize_difficulty(normalized_payload.get("accuracy_rate", normalized_payload.get("difficulty", None)))
-            generation_timeout = 100.0
+            generation_timeout = AI_QUIZ_GENERATION_TIMEOUT_SECONDS
             try:
                 try:
                     quiz_generation_result = generate_quiz_async(genre, model_id=model_id, difficulty=difficulty)

@@ -8,6 +8,12 @@ from typing import Any
 from openai import AsyncOpenAI
 from google import genai
 from dotenv import load_dotenv
+from backend.config import (
+    ANSWER_JUDGEMENT_TEMPERATURE,
+    DEFAULT_QUIZ_DIFFICULTY,
+    MAX_QUIZ_DIFFICULTY,
+    QUIZ_GENERATION_TEMPERATURE,
+)
 
 try:
     from backend.prompt import (
@@ -55,10 +61,6 @@ openai_client = AsyncOpenAI()
 
 AVAILABLE_MODEL_IDS = (*get_available_model_ids(),)
 DEFAULT_MODEL_ID = get_default_model_id()
-QUIZ_GENERATION_TEMPERATURE = 1.2
-ANSWER_JUDGEMENT_TEMPERATURE = 0.0
-DEFAULT_QUIZ_DIFFICULTY = 70
-MAX_QUIZ_DIFFICULTY = 100
 ANSWER_JUDGEMENT_CACHE_VERSION = DEFAULT_PROMPT_VERSION
 
 

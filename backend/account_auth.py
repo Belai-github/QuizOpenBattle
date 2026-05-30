@@ -38,14 +38,18 @@ if not TYPE_CHECKING:
                 self.status_code = status_code
                 self.detail = detail
 
-from backend.auth import MAX_NICKNAME_LENGTH, is_valid_client_id
+from backend.auth import is_valid_client_id
+from backend.config import (
+    ACCOUNT_SCHEMA_VERSION,
+    ACCOUNT_STORE_PATH,
+    CEREMONY_TTL_SECONDS,
+    DEFAULT_SESSION_MAX_AGE_SECONDS,
+    MAX_NICKNAME_LENGTH,
+    SESSION_COOKIE_NAME,
+)
 
 
-SESSION_COOKIE_NAME = "quiz_session"
-SESSION_MAX_AGE_SECONDS = int(os.getenv("QUIZ_SESSION_MAX_AGE_SECONDS", str(60 * 60 * 24 * 180)))
-ACCOUNT_STORE_PATH = os.path.join(os.path.dirname(__file__), "storage", "data", "auth_state.json")
-ACCOUNT_SCHEMA_VERSION = 1
-CEREMONY_TTL_SECONDS = 300
+SESSION_MAX_AGE_SECONDS = int(os.getenv("QUIZ_SESSION_MAX_AGE_SECONDS", str(DEFAULT_SESSION_MAX_AGE_SECONDS)))
 
 
 def _env_flag(name: str, default: bool = False) -> bool:

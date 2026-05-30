@@ -7,10 +7,15 @@ import re
 import secrets
 import time
 
+from backend.config import (
+    CLIENT_ID_MAX_LENGTH,
+    CLIENT_ID_MIN_LENGTH,
+    GUEST_NICKNAME_PREFIX,
+    MAX_NICKNAME_LENGTH,
+    WEBSOCKET_TICKET_TTL_SECONDS,
+)
 
-CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
-MAX_NICKNAME_LENGTH = 24
-GUEST_NICKNAME_PREFIX = "ゲスト-"
+CLIENT_ID_PATTERN = re.compile(rf"^[A-Za-z0-9_-]{{{CLIENT_ID_MIN_LENGTH},{CLIENT_ID_MAX_LENGTH}}}$")
 
 
 def sanitize_nickname(raw_value: str | None) -> str:
@@ -47,7 +52,7 @@ class WebSocketAuthManager:
             self._secret = secrets.token_bytes(32)
             print("警告: QUIZ_WS_AUTH_SECRET 未設定のため、再起動ごとに WebSocket 認証鍵が再生成されます。")
 
-        self.ticket_ttl_seconds = 45
+        self.ticket_ttl_seconds = WEBSOCKET_TICKET_TTL_SECONDS
         self.used_ticket_nonces = {}
 
     def _purge_expired_nonces(self):

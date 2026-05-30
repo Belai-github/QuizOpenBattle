@@ -3,26 +3,15 @@ import time
 import unicodedata
 import re
 
-
-QUESTION_MASK_CHAR = "■"
-QUESTION_TEXT_MAX_LENGTH = 100
-TEAM_NAME_MAX_LENGTH = 10
-TEAM_SET_FIELD_BY_KEY = {
-    "team-left": "left_participants",
-    "team-right": "right_participants",
-}
-TEAM_ORDER_FIELD_BY_KEY = {
-    "team-left": "left_participant_order",
-    "team-right": "right_participant_order",
-}
-TEAM_NAME_FIELD_BY_KEY = {
-    "team-left": "left_team_name",
-    "team-right": "right_team_name",
-}
-DEFAULT_TEAM_NAME_BY_KEY = {
-    "team-left": "先攻",
-    "team-right": "後攻",
-}
+from backend.config import (
+    DEFAULT_TEAM_NAME_BY_KEY,
+    QUESTION_MASK_CHAR,
+    QUESTION_TEXT_MAX_LENGTH,
+    TEAM_NAME_FIELD_BY_KEY,
+    TEAM_NAME_MAX_LENGTH,
+    TEAM_ORDER_FIELD_BY_KEY,
+    TEAM_SET_FIELD_BY_KEY,
+)
 
 
 def _normalize_log_marker_id(raw_value):
