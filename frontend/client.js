@@ -4,6 +4,9 @@ let currentAccount = null;
 let isAuthBusy = false;
 let isServerWebAuthnReady = true;
 let waitingRoomMobilePanel = "left";
+let currentTransferCode = null;
+let currentTransferPending = null;
+let activeTransferApprovalPromptId = "";
 
 function resolveAppAssetUrl(relativePath) {
   const normalizedPath = String(window.location.pathname || "/");
@@ -26,6 +29,22 @@ const voteConfirmCancelBtn = document.getElementById(
 const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
+const transferCodeModalEl = document.getElementById("transfer-code-modal");
+const transferCodeModalStatusEl = document.getElementById(
+  "transfer-code-modal-status",
+);
+const transferCodeModalValueEl = document.getElementById(
+  "transfer-code-modal-value",
+);
+const transferCodeModalExpiryEl = document.getElementById(
+  "transfer-code-modal-expiry",
+);
+const transferCodeModalRegenerateBtnEl = document.getElementById(
+  "transfer-code-modal-regenerate-btn",
+);
+const transferCodeModalCloseBtnEl = document.getElementById(
+  "transfer-code-modal-close-btn",
+);
 const profileModalEl = document.getElementById("profile-modal");
 const profileModalKickerEl = document.getElementById("profile-modal-kicker");
 const profileModalTitleEl = document.getElementById("profile-modal-title");
@@ -198,13 +217,29 @@ const rulebookTabButtonEls = document.querySelectorAll(".rulebook-tab-btn");
 const rulebookPanelEls = document.querySelectorAll(".rulebook-panel");
 const authStatusTextEl = document.getElementById("auth-status-text");
 const authStatsTextEl = document.getElementById("auth-stats-text");
+const authTransferPendingPanelEl = document.getElementById(
+  "auth-transfer-pending-panel",
+);
+const authTransferPendingTextEl = document.getElementById(
+  "auth-transfer-pending-text",
+);
+const authTransferCancelBtnEl = document.getElementById(
+  "auth-transfer-cancel-btn",
+);
 const authSignedInLabelEl = document.querySelector(
   "#auth-signed-in-panel .auth-signed-in-label",
 );
 const registerBtnEl = document.getElementById("register-btn");
 const loginPasskeyBtnEl = document.getElementById("login-passkey-btn");
+const transferCodeInputEl = document.getElementById("transfer-code-input");
+const transferCodeLoginBtnEl = document.getElementById(
+  "transfer-code-login-btn",
+);
 const logoutBtnEl = document.getElementById("logout-btn");
 const joinBtnEl = document.getElementById("join-btn");
+const issueTransferCodeBtnEl = document.getElementById(
+  "issue-transfer-code-btn",
+);
 const guestJoinFieldEl = document.getElementById("guest-join-field");
 const guestNicknameInputEl = document.getElementById("guest-nickname");
 const loginScreenEl = document.getElementById("login-screen");
@@ -2236,6 +2271,16 @@ function getOrCreatePersistentClientId() {
   return clientId;
 }
 
+function replacePersistentClientId(nextClientId) {
+  const resolvedClientId = String(nextClientId || "").trim();
+  if (resolvedClientId === "") {
+    return "";
+  }
+  localStorage.setItem("quiz_client_id", resolvedClientId);
+  myClientId = resolvedClientId;
+  return resolvedClientId;
+}
+
 function isWebAuthnSupported() {
   return Boolean(window.PublicKeyCredential && navigator.credentials);
 }
@@ -2679,11 +2724,17 @@ function updateAuthUi() {
     !nicknameInputEl ||
     !authStatusTextEl ||
     !authStatsTextEl ||
+    !authTransferPendingPanelEl ||
+    !authTransferPendingTextEl ||
+    !authTransferCancelBtnEl ||
     !authSignedInLabelEl ||
     !registerBtnEl ||
     !loginPasskeyBtnEl ||
+    !transferCodeInputEl ||
+    !transferCodeLoginBtnEl ||
     !logoutBtnEl ||
     !joinBtnEl ||
+    !issueTransferCodeBtnEl ||
     !guestJoinFieldEl ||
     !guestNicknameInputEl ||
     !loginScreenEl ||
@@ -2704,6 +2755,7 @@ function updateAuthUi() {
     loginHeroCardEl.classList.add("hidden");
     authSignedOutPanelEl.classList.add("hidden");
     authSignedInPanelEl.classList.add("hidden");
+    authTransferPendingPanelEl.classList.add("hidden");
     authLoadingPanelEl.classList.remove("hidden");
     authProfileCardEl.classList.add("hidden");
     document.getElementById("my-name").textContent = "";
@@ -2711,6 +2763,22 @@ function updateAuthUi() {
   }
 
   authLoadingPanelEl.classList.add("hidden");
+
+  if (currentTransferPending) {
+    loginScreenEl.dataset.authState = "transfer-pending";
+    loginHeroCardEl.classList.add("hidden");
+    authSignedOutPanelEl.classList.add("hidden");
+    authSignedInPanelEl.classList.add("hidden");
+    authTransferPendingPanelEl.classList.remove("hidden");
+    authTransferPendingTextEl.textContent =
+      "別のデバイスで引き継ぎを承認してください。承認後、この端末でログインが完了します。";
+    authTransferCancelBtnEl.disabled = isAuthBusy;
+    authProfileCardEl.classList.add("hidden");
+    document.getElementById("my-name").textContent = "";
+    return;
+  }
+
+  authTransferPendingPanelEl.classList.add("hidden");
 
   if (currentAccount) {
     loginScreenEl.dataset.authState = "authenticated";
@@ -2737,6 +2805,8 @@ function updateAuthUi() {
     guestNicknameInputEl.disabled = true;
     joinBtnEl.textContent = "ゲームに参加";
     joinBtnEl.disabled = isAuthBusy;
+    issueTransferCodeBtnEl.classList.remove("hidden");
+    issueTransferCodeBtnEl.disabled = isAuthBusy;
     authSupportNoteEl.textContent =
       "ログイン状態はこのブラウザに保持されます。別タブの同時参加はできません。";
     authCreateHelpEl.textContent =
@@ -2761,8 +2831,11 @@ function updateAuthUi() {
     isAuthBusy || !isWebAuthnSupported() || !isServerWebAuthnReady;
   loginPasskeyBtnEl.disabled =
     isAuthBusy || !isWebAuthnSupported() || !isServerWebAuthnReady;
+  transferCodeInputEl.disabled = isAuthBusy;
+  transferCodeLoginBtnEl.disabled = isAuthBusy;
   logoutBtnEl.classList.add("hidden");
   logoutBtnEl.disabled = true;
+  issueTransferCodeBtnEl.classList.add("hidden");
   authProfileNameEl.textContent = "-";
   authProfileCardEl.classList.add("hidden");
   guestJoinFieldEl.classList.remove("hidden");
@@ -2827,7 +2900,19 @@ async function fetchJsonOrThrow(path, init = {}) {
   if (!response.ok) {
     const error = new Error(`request_failed:${response.status}`);
     error.status = response.status;
-    error.detail = String(payload?.detail || "").trim();
+    error.payload = payload;
+    if (typeof payload?.detail === "string") {
+      error.detail = String(payload.detail || "").trim();
+    } else if (
+      payload?.detail &&
+      typeof payload.detail === "object" &&
+      typeof payload.detail.code === "string"
+    ) {
+      error.detail = String(payload.detail.code || "").trim();
+      error.detailPayload = payload.detail;
+    } else {
+      error.detail = "";
+    }
     throw error;
   }
 
@@ -2838,8 +2923,217 @@ async function refreshAuthState() {
   const payload = await fetchJsonOrThrow("/api/me");
   isServerWebAuthnReady = payload?.webauthn_ready !== false;
   currentAccount = payload?.authenticated ? payload.user || null : null;
+  if (!currentAccount) {
+    currentTransferCode = null;
+  }
   updateAuthUi();
   return currentAccount;
+}
+
+function formatTransferTimestamp(timestampMs) {
+  const timeValue = Number(timestampMs || 0);
+  if (!Number.isFinite(timeValue) || timeValue <= 0) {
+    return "";
+  }
+  return new Date(timeValue).toLocaleString("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function isTransferCodeAvailable(transferCode = currentTransferCode) {
+  const expiresAt = Number(transferCode?.expires_at || 0);
+  return (
+    Boolean(transferCode?.formatted_code) &&
+    Number.isFinite(expiresAt) &&
+    expiresAt > Date.now()
+  );
+}
+
+function renderTransferCodeModalContent() {
+  if (
+    !transferCodeModalStatusEl ||
+    !transferCodeModalValueEl ||
+    !transferCodeModalExpiryEl
+  ) {
+    return;
+  }
+
+  const hasCode = Boolean(currentTransferCode?.formatted_code);
+  const isAvailable = isTransferCodeAvailable();
+  const expiresAtText =
+    formatTransferTimestamp(currentTransferCode?.expires_at) || "未発行";
+
+  transferCodeModalStatusEl.classList.toggle(
+    "is-expired",
+    hasCode && !isAvailable,
+  );
+  transferCodeModalValueEl.textContent = hasCode
+    ? currentTransferCode.formatted_code
+    : "---- ----";
+
+  if (!hasCode) {
+    transferCodeModalStatusEl.textContent =
+      "引き継ぎコードをまだ発行していません。再発行ボタンから新しいコードを作成してください。";
+    transferCodeModalExpiryEl.textContent = "有効期限: 未発行";
+    return;
+  }
+
+  if (!isAvailable) {
+    transferCodeModalStatusEl.textContent =
+      "この引き継ぎコードは有効期限が切れています。再発行して新しいコードを利用してください。";
+    transferCodeModalExpiryEl.textContent = `期限切れ: ${expiresAtText}`;
+    return;
+  }
+
+  transferCodeModalStatusEl.textContent =
+    "別デバイスのログイン画面で8桁コードを入力してください。";
+  transferCodeModalExpiryEl.textContent = `有効期限: ${expiresAtText}`;
+}
+
+function showTransferCodeModal() {
+  if (!transferCodeModalEl) {
+    return;
+  }
+  renderTransferCodeModalContent();
+  if (!transferCodeModalEl.open) {
+    transferCodeModalEl.showModal();
+  }
+  transferCodeModalCloseBtnEl?.focus();
+  updateArenaInteractionLock();
+}
+
+function closeTransferCodeModal() {
+  if (!transferCodeModalEl?.open) {
+    return;
+  }
+  transferCodeModalEl.close();
+  updateArenaInteractionLock();
+  scheduleVotePromptProcessing();
+}
+
+function resetTransferPendingState() {
+  currentTransferPending = null;
+  updateAuthUi();
+}
+
+async function fetchPendingTransferApprovals() {
+  if (!currentAccount) {
+    return [];
+  }
+  const payload = await fetchJsonOrThrow("/api/auth/transfer/inbox");
+  if (!Array.isArray(payload?.requests)) {
+    return [];
+  }
+  return payload.requests;
+}
+
+async function promptTransferApprovalIfNeeded() {
+  if (!currentAccount || activeTransferApprovalPromptId !== "") {
+    return;
+  }
+
+  let requests = [];
+  try {
+    requests = await fetchPendingTransferApprovals();
+  } catch {
+    return;
+  }
+
+  const request = requests[0];
+  if (!request?.transfer_id) {
+    return;
+  }
+
+  activeTransferApprovalPromptId = String(request.transfer_id);
+  const requestedAtText = formatTransferTimestamp(request.requested_at);
+  const deviceSummary = [request.device_name, request.browser_name]
+    .filter((value) => String(value || "").trim() !== "")
+    .join(" / ");
+  const shouldApprove = await showConfirmModal(
+    `別デバイスからアカウント引き継ぎ要求が届いています。\n\n端末: ${deviceSummary || "不明"}\n要求時刻: ${requestedAtText || "不明"}\n\n承認しますか？`,
+    {
+      okLabel: "承認",
+      cancelLabel: "拒否",
+    },
+  );
+
+  try {
+    await fetchJsonOrThrow(
+      shouldApprove
+        ? "/api/auth/transfer/approve"
+        : "/api/auth/transfer/reject",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transfer_id: activeTransferApprovalPromptId,
+        }),
+      },
+    );
+  } catch {
+    await showAlertModal("引き継ぎ要求の処理に失敗しました。再度お試しください。");
+  } finally {
+    activeTransferApprovalPromptId = "";
+  }
+}
+
+async function pollTransferPendingStatus() {
+  if (!currentTransferPending?.transfer_id || !currentTransferPending?.target_nonce) {
+    return;
+  }
+
+  const payload = await fetchJsonOrThrow("/api/auth/transfer/status", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      transfer_id: currentTransferPending.transfer_id,
+      target_nonce: currentTransferPending.target_nonce,
+    }),
+  });
+
+  const status = String(payload?.status || "");
+  if (status === "pending_approval" || status === "issued") {
+    return;
+  }
+
+  if (status === "approved") {
+    const clientId = getOrCreatePersistentClientId();
+    const finalizePayload = await fetchJsonOrThrow("/api/auth/transfer/finalize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        transfer_id: currentTransferPending.transfer_id,
+        target_nonce: currentTransferPending.target_nonce,
+        client_id: clientId,
+      }),
+    });
+    currentAccount = finalizePayload?.user || null;
+    resetTransferPendingState();
+    updateAuthUi();
+    await ensureLinkedClientId();
+    await showAlertModal("引き継ぎが完了しました。ゲームに参加できます。");
+    return;
+  }
+
+  resetTransferPendingState();
+  if (status === "rejected") {
+    await showAlertModal("別デバイスで引き継ぎが拒否されました。");
+    return;
+  }
+  if (status === "expired") {
+    await showAlertModal("引き継ぎコードの有効期限が切れました。もう一度やり直してください。");
+    return;
+  }
+  await showAlertModal("引き継ぎ要求を完了できませんでした。もう一度やり直してください。");
 }
 
 async function ensureLinkedClientId() {
@@ -2878,6 +3172,21 @@ function getAuthErrorMessage(error, fallbackMessage) {
   }
   if (detail === "client_id_owned_by_other_user") {
     return "このブラウザIDは別アカウントに紐付いています。別ブラウザで試すか、既存アカウントでログインしてください。";
+  }
+  if (detail === "client_id_rotation_required") {
+    return "このブラウザは別アカウントに紐付いています。ブラウザIDを切り替えて引き継ぐ必要があります。";
+  }
+  if (detail === "invalid_transfer_code" || detail === "transfer_not_found") {
+    return "引き継ぎコードが見つかりません。8桁コードを確認してください。";
+  }
+  if (detail === "transfer_attempts_exhausted") {
+    return "引き継ぎコードの試行回数上限に達しました。新しいコードを発行してください。";
+  }
+  if (detail === "transfer_unavailable" || detail === "transfer_not_ready") {
+    return "この引き継ぎコードは現在利用できません。新しいコードで再試行してください。";
+  }
+  if (detail === "client_id_mismatch") {
+    return "引き継ぎ先のブラウザIDが一致しません。もう一度やり直してください。";
   }
   if (detail === "registration_verification_failed") {
     return "パスキー登録の検証に失敗しました。もう一度やり直してください。";
@@ -3003,6 +3312,113 @@ async function runPasskeyLogin() {
   }
 }
 
+async function issueAccountTransferCode() {
+  if (isAuthBusy || !currentAccount) return;
+  setAuthBusy(true);
+  try {
+    const payload = await fetchJsonOrThrow("/api/auth/transfer/start", {
+      method: "POST",
+    });
+    currentTransferCode = {
+      transfer_id: String(payload?.transfer_id || ""),
+      code: String(payload?.code || ""),
+      formatted_code: String(payload?.formatted_code || payload?.code || ""),
+      expires_at: Number(payload?.expires_at || 0),
+    };
+    updateAuthUi();
+    showTransferCodeModal();
+  } catch (error) {
+    await showAlertModal(
+      getAuthErrorMessage(
+        error,
+        "引き継ぎコードの発行に失敗しました。時間をおいて再試行してください。",
+      ),
+    );
+  } finally {
+    setAuthBusy(false);
+    updateAuthUi();
+  }
+}
+
+async function openTransferCodeFlow() {
+  if (!currentAccount || isAuthBusy) return;
+
+  if (currentTransferCode?.formatted_code) {
+    showTransferCodeModal();
+    return;
+  }
+
+  await issueAccountTransferCode();
+}
+
+async function runTransferCodeLogin(allowClientIdRotation = true) {
+  if (isAuthBusy) return;
+
+  const code = transferCodeInputEl?.value?.trim() || "";
+  if (code === "") {
+    await showAlertModal("引き継ぎコードを入力してください。");
+    return;
+  }
+
+  const clientId = getOrCreatePersistentClientId();
+  setAuthBusy(true);
+  try {
+    const payload = await fetchJsonOrThrow("/api/auth/transfer/submit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        code,
+        client_id: clientId,
+      }),
+    });
+    currentTransferPending = {
+      transfer_id: String(payload?.transfer_id || ""),
+      target_nonce: String(payload?.target_nonce || ""),
+      expires_at: Number(payload?.expires_at || 0),
+    };
+    if (transferCodeInputEl) {
+      transferCodeInputEl.value = "";
+    }
+    updateAuthUi();
+  } catch (error) {
+    if (
+      allowClientIdRotation &&
+      error?.detail === "client_id_rotation_required"
+    ) {
+      const replacementClientId = String(
+        error?.detailPayload?.replacement_client_id || "",
+      ).trim();
+      if (replacementClientId !== "") {
+        const shouldRotate = await showConfirmModal(
+          "このブラウザは別アカウントに紐付いています。\n\nブラウザIDを切り替えて、このアカウントへ引き継ぎますか？\n切り替えると、このブラウザで以前のアカウントとして見えていた棋譜や戦績は表示されなくなります。",
+          {
+            okLabel: "切り替えて続行",
+            cancelLabel: "キャンセル",
+          },
+        );
+        if (shouldRotate) {
+          replacePersistentClientId(replacementClientId);
+          setAuthBusy(false);
+          updateAuthUi();
+          await runTransferCodeLogin(false);
+          return;
+        }
+      }
+    }
+    await showAlertModal(
+      getAuthErrorMessage(
+        error,
+        "引き継ぎコードでのログインに失敗しました。時間をおいて再試行してください。",
+      ),
+    );
+  } finally {
+    setAuthBusy(false);
+    updateAuthUi();
+  }
+}
+
 async function logoutCurrentAccount() {
   if (isAuthBusy) return;
   const shouldProceed =
@@ -3123,6 +3539,7 @@ function isAnyModalOpen() {
   if (confirmModal && confirmModal.open) return true;
   if (voteConfirmModal && voteConfirmModal.open) return true;
   if (alertModal && alertModal.open) return true;
+  if (transferCodeModalEl && transferCodeModalEl.open) return true;
   if (profileModalEl && profileModalEl.open) return true;
   if (aiQuestionModalEl && aiQuestionModalEl.open) return true;
   if (rulebookModalEl && rulebookModalEl.open) return true;
@@ -6190,6 +6607,7 @@ function closeAllModals() {
   dismissActiveVotePromptModal();
   alertMessageEl.classList.remove("alert-winner-left", "alert-winner-right");
   if (alertModal.open) alertModal.close();
+  if (transferCodeModalEl?.open) transferCodeModalEl.close();
   if (confirmModal.open) confirmModal.close();
   if (voteConfirmModal?.open) voteConfirmModal.close();
   closeArenaLogsPresentation();
@@ -8850,6 +9268,21 @@ window.setInterval(() => {
   updateArenaProgressAnnouncement();
 }, 1000);
 
+window.setInterval(() => {
+  if (document.hidden) {
+    return;
+  }
+  if (transferCodeModalEl?.open) {
+    renderTransferCodeModalContent();
+  }
+  if (currentTransferPending) {
+    void pollTransferPendingStatus().catch(() => {});
+  }
+  if (currentAccount) {
+    void promptTransferApprovalIfNeeded().catch(() => {});
+  }
+}, 2500);
+
 // 「ゲームに参加」ボタンを押したときの処理
 document.getElementById("join-btn").addEventListener("click", async () => {
   if (isConnecting) {
@@ -9321,12 +9754,49 @@ guestNicknameInputEl?.addEventListener("keydown", (event) => {
   joinBtnEl?.click();
 });
 
+transferCodeInputEl?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.isComposing) return;
+  event.preventDefault();
+  transferCodeLoginBtnEl?.click();
+});
+
 registerBtnEl?.addEventListener("click", () => {
   void runPasskeyRegistration();
 });
 
 loginPasskeyBtnEl?.addEventListener("click", () => {
   void runPasskeyLogin();
+});
+
+transferCodeLoginBtnEl?.addEventListener("click", () => {
+  void runTransferCodeLogin();
+});
+
+issueTransferCodeBtnEl?.addEventListener("click", () => {
+  void openTransferCodeFlow();
+});
+
+transferCodeModalRegenerateBtnEl?.addEventListener("click", () => {
+  void issueAccountTransferCode();
+});
+
+transferCodeModalCloseBtnEl?.addEventListener("click", () => {
+  closeTransferCodeModal();
+});
+
+transferCodeModalEl?.addEventListener("click", (event) => {
+  if (event.target === transferCodeModalEl) {
+    closeTransferCodeModal();
+  }
+});
+
+transferCodeModalEl?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeTransferCodeModal();
+});
+
+authTransferCancelBtnEl?.addEventListener("click", () => {
+  resetTransferPendingState();
 });
 
 logoutBtnEl?.addEventListener("click", () => {

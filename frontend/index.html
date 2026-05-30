@@ -18,6 +18,12 @@
             <p id="auth-loading-text">ログイン状態を確認しています...</p>
         </div>
 
+        <div id="auth-transfer-pending-panel" class="auth-status-card hidden">
+            <p class="auth-signed-in-label">承認待ち</p>
+            <p id="auth-transfer-pending-text">別のデバイスで引き継ぎを承認してください。</p>
+            <button id="auth-transfer-cancel-btn" type="button" class="secondary-action-btn">承認待ちをやめる</button>
+        </div>
+
         <div class="login-hero-card">
             <p class="login-eyebrow">Passkey Account</p>
             <h2 class="login-title">ログインしてゲームに参加</h2>
@@ -40,6 +46,12 @@
                 <h3>ログイン</h3>
                 <p class="auth-flow-text">登録済みのパスキーを使って、この端末のアカウントへ戻ります。</p>
                 <button id="login-passkey-btn" type="button" class="secondary-action-btn">パスキーでログイン</button>
+                <div class="auth-transfer-login-block">
+                    <label for="transfer-code-input" class="auth-label">引き継ぎコード</label>
+                    <input type="text" id="transfer-code-input" inputmode="numeric" autocomplete="one-time-code" placeholder="8桁コードを入力">
+                    <p class="auth-inline-note">ログイン中の別デバイスで発行した引き継ぎコードを入力します。</p>
+                    <button id="transfer-code-login-btn" type="button" class="secondary-action-btn">引き継ぎコードでログイン</button>
+                </div>
             </section>
         </div>
 
@@ -60,7 +72,10 @@
             </div>
             <div class="auth-join-actions">
                 <button id="join-btn" disabled>ゲームに参加</button>
-                <button id="logout-btn" type="button" class="text-action-btn hidden">ログアウト</button>
+                <div class="auth-secondary-actions">
+                    <button id="issue-transfer-code-btn" type="button" class="secondary-action-btn">アカウント引き継ぎコードを発行</button>
+                    <button id="logout-btn" type="button" class="text-action-btn hidden">ログアウト</button>
+                </div>
             </div>
         </div>
     </div>
@@ -454,6 +469,19 @@
             <p id="alert-message"></p>
             <div class="modal-actions single">
                 <button id="alert-ok-btn" type="button">OK</button>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="transfer-code-modal" class="modal transfer-code-modal" aria-labelledby="transfer-code-modal-title">
+        <div class="modal-card transfer-code-modal-card">
+            <h2 id="transfer-code-modal-title">アカウント引き継ぎコード</h2>
+            <p id="transfer-code-modal-status" class="transfer-code-modal-status">別デバイスのログイン画面で8桁コードを入力してください。</p>
+            <p id="transfer-code-modal-value" class="transfer-code-modal-value">0000 0000</p>
+            <p id="transfer-code-modal-expiry" class="auth-inline-note">有効期限: -</p>
+            <div class="modal-actions">
+                <button id="transfer-code-modal-regenerate-btn" type="button" class="secondary-action-btn">再発行</button>
+                <button id="transfer-code-modal-close-btn" type="button">閉じる</button>
             </div>
         </div>
     </dialog>

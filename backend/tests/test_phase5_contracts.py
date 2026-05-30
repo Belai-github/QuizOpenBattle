@@ -621,6 +621,197 @@ class TestAccountAuthSecurityContracts(unittest.TestCase):
         self.assertTrue(response.cookies[0]["secure"])
 
 
+class TestAccountTransferContracts(unittest.TestCase):
+    def test_transfer_flow_approves_and_finalizes_new_device_session(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            user = store.create_user(
+                display_name="Alice",
+                user_handle_b64="YWxpY2U",
+                credential_id="cred-alice",
+                public_key_b64="pub-alice",
+                sign_count=0,
+            )
+            store.link_client_id(user["user_id"], "Client_12345")
+            source_session_id = store.create_session(user["user_id"], "Client_12345")
+
+            manager = AccountAuthManager(store)
+
+            source_request = DummyCookieRequest(
+                scheme="https",
+                hostname="example.com",
+                headers={
+                    "user-agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36"
+                    )
+                },
+            )
+            source_request.cookies["quiz_session"] = source_session_id
+
+            start_payload = manager.start_account_transfer(source_request)
+            self.assertRegex(start_payload["code"], r"^\d{8}$")
+            self.assertIn(" ", start_payload["formatted_code"])
+
+            target_request = DummyCookieRequest(
+                scheme="https",
+                hostname="example.com",
+                headers={
+                    "user-agent": (
+                        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+                        "AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+                    )
+                },
+            )
+
+            submit_payload = manager.submit_account_transfer_code(
+                start_payload["code"],
+                "Client_67890",
+                target_request,
+            )
+            self.assertEqual(submit_payload["status"], "pending_approval")
+
+            approvals = manager.list_pending_account_transfer_approvals(source_request)
+            self.assertEqual(len(approvals), 1)
+            self.assertEqual(approvals[0].browser_name, "Safari")
+            self.assertEqual(approvals[0].device_name, "iPhone")
+
+            manager.approve_account_transfer(submit_payload["transfer_id"], source_request)
+
+            status_payload = manager.get_account_transfer_status(
+                submit_payload["transfer_id"],
+                submit_payload["target_nonce"],
+            )
+            self.assertEqual(status_payload["status"], "approved")
+            self.assertEqual(status_payload["browser_name"], "Chrome")
+            self.assertEqual(status_payload["device_name"], "Windows")
+
+            target_response = DummyCookieResponse()
+            finalized_user = manager.finalize_account_transfer(
+                submit_payload["transfer_id"],
+                submit_payload["target_nonce"],
+                "Client_67890",
+                target_request,
+                target_response,
+            )
+            self.assertEqual(finalized_user["user_id"], user["user_id"])
+            self.assertEqual(store.resolve_user_id_for_client_id("Client_67890"), user["user_id"])
+            self.assertEqual(len(target_response.cookies), 1)
+            self.assertEqual(target_response.cookies[0]["key"], "quiz_session")
+
+    def test_transfer_submit_requests_client_id_rotation_when_bound_to_other_user(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            owner = store.create_user(
+                display_name="Owner",
+                user_handle_b64="b3duZXI",
+                credential_id="cred-owner",
+                public_key_b64="pub-owner",
+                sign_count=0,
+            )
+            other = store.create_user(
+                display_name="Other",
+                user_handle_b64="b3RoZXI",
+                credential_id="cred-other",
+                public_key_b64="pub-other",
+                sign_count=0,
+            )
+            store.link_client_id(owner["user_id"], "Client_owner")
+            store.link_client_id(other["user_id"], "Client_other")
+            session_id = store.create_session(owner["user_id"], "Client_owner")
+
+            manager = AccountAuthManager(store)
+            request = DummyCookieRequest(headers={"user-agent": "Mozilla/5.0 Chrome/136.0.0.0"})
+            request.cookies["quiz_session"] = session_id
+            transfer = manager.start_account_transfer(request)
+
+            with self.assertRaises(Exception) as exc:
+                manager.submit_account_transfer_code(
+                    transfer["code"],
+                    "Client_other",
+                    DummyCookieRequest(headers={"user-agent": "Mozilla/5.0 iPhone"}),
+                )
+
+            detail = getattr(exc.exception, "detail", {})
+            self.assertIsInstance(detail, dict)
+            self.assertEqual(detail.get("code"), "client_id_rotation_required")
+            self.assertRegex(str(detail.get("replacement_client_id") or ""), r"^[0-9a-f-]{36}$")
+
+
+class TestSingleActiveRoomParticipationContracts(unittest.TestCase):
+    def test_same_user_can_be_logged_in_on_multiple_clients_but_join_room_is_blocked(self):
+        manager = QuizGameManager()
+        manager.send_private_info = AsyncMock()
+        manager.account_auth_manager = AccountAuthManager()
+        same_user_id = "user-1"
+        manager.client_user_ids["client-a"] = same_user_id
+        manager.client_user_ids["client-b"] = same_user_id
+        manager.nicknames["client-a"] = "ユーザーA"
+        manager.nicknames["client-b"] = "ユーザーA"
+        manager.rooms["owner-1"] = {
+            "questioner_name": "出題者",
+            "left_participants": {"client-a"},
+            "right_participants": set(),
+            "spectators": set(),
+            "pending_disconnects": {},
+            "game_state": "waiting",
+            "is_ai_mode": False,
+        }
+
+        asyncio.run(
+            manager.process_question(
+                "client-b",
+                {"type": "question_submission", "question_text": "別端末出題"},
+            )
+        )
+
+        manager.send_private_info.assert_awaited()
+        self.assertEqual(
+            manager.send_private_info.await_args.args[1],
+            "この部屋には別のデバイスで参加中です。先に退室してください。",
+        )
+        self.assertNotIn("client-b", manager.rooms)
+
+    def test_same_user_join_room_is_blocked_while_other_device_is_spectating(self):
+        manager = QuizGameManager()
+        manager.send_private_info = AsyncMock()
+        manager.nicknames["client-a"] = "ユーザーA"
+        manager.nicknames["client-b"] = "ユーザーA"
+        same_user_id = "user-1"
+        manager.client_user_ids["client-a"] = same_user_id
+        manager.client_user_ids["client-b"] = same_user_id
+        manager.rooms["owner-1"] = {
+            "questioner_name": "出題者",
+            "left_participants": set(),
+            "right_participants": set(),
+            "spectators": {"client-a"},
+            "pending_disconnects": {},
+            "game_state": "playing",
+            "is_ai_mode": False,
+        }
+
+        from backend.handlers.room_ops import join_room
+
+        asyncio.run(
+            join_room(
+                manager,
+                "client-b",
+                RoomEntryMessage(
+                    type="room_entry",
+                    room_owner_id="owner-1",
+                    role="spectator",
+                ),
+            )
+        )
+
+        manager.send_private_info.assert_awaited()
+        self.assertEqual(
+            manager.send_private_info.await_args.args[1],
+            "この部屋には別のデバイスで参加中です。先に退室してください。",
+        )
+        self.assertNotIn("client-b", manager.rooms["owner-1"]["spectators"])
+
+
 class TestKifuIdentityContracts(unittest.TestCase):
     def test_list_kifu_for_identity_accepts_legacy_client_links(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -407,6 +407,71 @@ class QuizGameManager:
     def _room_member_ids(self, room_owner_id: str, room: dict) -> set[str]:
         return {room_owner_id} | set(room.get("left_participants", set())) | set(room.get("right_participants", set())) | set(room.get("spectators", set()))
 
+    def _resolve_known_user_id_for_client(self, client_id: str) -> str:
+        resolved_client_id = str(client_id or "").strip()
+        if resolved_client_id == "":
+            return ""
+
+        user_id = str(self.client_user_ids.get(resolved_client_id) or "").strip()
+        if user_id != "":
+            return user_id
+
+        if self.account_auth_manager is not None:
+            owner_id = self.account_auth_manager.store.resolve_user_id_for_client_id(resolved_client_id)
+            if isinstance(owner_id, str):
+                return owner_id.strip()
+
+        return ""
+
+    def _find_room_participation_conflict(self, current_client_id: str, user_id: str):
+        resolved_client_id = str(current_client_id or "").strip()
+        resolved_user_id = str(user_id or "").strip()
+        if resolved_user_id == "":
+            return None
+
+        for room_owner_id, room in self.rooms.items():
+            owner_user_id = self._resolve_known_user_id_for_client(room_owner_id)
+            if owner_user_id == resolved_user_id and room_owner_id != resolved_client_id:
+                return {
+                    "room_owner_id": str(room_owner_id or ""),
+                    "role": "owner",
+                    "blocking_client_id": str(room_owner_id or ""),
+                }
+
+            for role_name, client_ids in (
+                ("participant", set(room.get("left_participants", set()))),
+                ("participant", set(room.get("right_participants", set()))),
+                ("spectator", set(room.get("spectators", set()))),
+            ):
+                for candidate_client_id in client_ids:
+                    candidate_id = str(candidate_client_id or "").strip()
+                    if candidate_id == "" or candidate_id == resolved_client_id:
+                        continue
+                    if self._resolve_known_user_id_for_client(candidate_id) != resolved_user_id:
+                        continue
+                    return {
+                        "room_owner_id": str(room_owner_id or ""),
+                        "role": role_name,
+                        "blocking_client_id": candidate_id,
+                    }
+
+        for candidate_client_id, reservation in self.reconnect_reservations.items():
+            candidate_id = str(candidate_client_id or "").strip()
+            if candidate_id == "" or candidate_id == resolved_client_id:
+                continue
+            if not isinstance(reservation, dict):
+                continue
+            reservation_user_id = str(reservation.get("user_id") or self._resolve_known_user_id_for_client(candidate_id)).strip()
+            if reservation_user_id != resolved_user_id:
+                continue
+            return {
+                "room_owner_id": str(reservation.get("room_owner_id") or ""),
+                "role": str(reservation.get("kind") or "participant"),
+                "blocking_client_id": candidate_id,
+            }
+
+        return None
+
     def _get_room_operation_lock(self, room_owner_id: str):
         key = str(room_owner_id or "").strip()
         if key == "":
@@ -2069,6 +2134,15 @@ class QuizGameManager:
             print(f"接続拒否（満員）: {client_id}")
             return False
 
+        same_user_connected_elsewhere = (
+            str(user_id or "").strip() != ""
+            and any(
+                str(other_user_id or "").strip() == str(user_id or "").strip()
+                and str(other_client_id or "").strip() != str(client_id or "").strip()
+                for other_client_id, other_user_id in self.client_user_ids.items()
+            )
+        )
+
         await websocket.accept()
 
         self.active_connections[client_id] = websocket
@@ -2082,10 +2156,18 @@ class QuizGameManager:
         print(f"プレイヤー接続: {nickname} ({client_id}) (現在: {len(self.active_connections)}人)")
 
         await self.broadcast_state(
-            public_info=f"{nickname} が参加しました",
+            public_info=(
+                f"{nickname}が別デバイスからログインしました"
+                if same_user_connected_elsewhere
+                else f"{nickname} が参加しました"
+            ),
             private_map={client_id: "QuizOpenBattleへようこそ"},
             event_type="join",
-            event_message=f"{nickname} が入場しました",
+            event_message=(
+                f"{nickname}が別デバイスからログインしました"
+                if same_user_connected_elsewhere
+                else f"{nickname} が入場しました"
+            ),
             event_chat_type="lobby",
         )
 
@@ -2277,9 +2359,18 @@ class QuizGameManager:
         is_ai_mode = bool(normalized_payload.get("is_ai_mode"))
         model_id = normalize_model_id(normalized_payload.get("model_id"))
         requester_name = self.nicknames.get(player_id, "ゲスト")
+        user_id = self._resolve_known_user_id_for_client(player_id)
 
         if self.is_guest_client(player_id):
             await self.send_private_info(player_id, "ゲスト参加中は出題できません。ログイン後に利用してください。")
+            return
+
+        conflict = self._find_room_participation_conflict(player_id, user_id)
+        if conflict is not None:
+            await self.send_private_info(
+                player_id,
+                "この部屋には別のデバイスで参加中です。先に退室してください。",
+            )
             return
 
         if is_ai_mode:

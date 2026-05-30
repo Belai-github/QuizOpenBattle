@@ -62,6 +62,15 @@ def remove_client_from_all_rooms(manager, client_id: str):
 async def join_room(manager, client_id: str, payload: RoomEntryMessage):
     room_owner_id = payload.room_owner_id
     role = payload.role
+    user_id = manager._resolve_known_user_id_for_client(client_id)
+
+    conflict = manager._find_room_participation_conflict(client_id, user_id)
+    if conflict is not None:
+        await manager.send_private_info(
+            client_id,
+            "この部屋には別のデバイスで参加中です。先に退室してください。",
+        )
+        return
 
     manager._cancel_disconnect_grace_timer(client_id)
     manager._clear_pending_disconnect_everywhere(client_id)

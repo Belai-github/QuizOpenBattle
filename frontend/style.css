@@ -59,8 +59,25 @@ h1 {
 
 #login-screen[data-auth-state="loading"] .login-hero-card,
 #login-screen[data-auth-state="loading"] #auth-signed-out-panel,
-#login-screen[data-auth-state="loading"] #auth-signed-in-panel {
+#login-screen[data-auth-state="loading"] #auth-signed-in-panel,
+#login-screen[data-auth-state="loading"] #auth-transfer-pending-panel {
     display: none;
+}
+
+#login-screen[data-auth-state="transfer-pending"] .login-hero-card,
+#login-screen[data-auth-state="transfer-pending"] #auth-signed-out-panel,
+#login-screen[data-auth-state="transfer-pending"] #auth-signed-in-panel,
+#login-screen[data-auth-state="transfer-pending"] #auth-loading-panel {
+    display: none;
+}
+
+#login-screen[data-auth-state="transfer-pending"] {
+    justify-content: center;
+    min-height: 320px;
+}
+
+#login-screen[data-auth-state="transfer-pending"] #auth-transfer-pending-panel {
+    margin-block: auto;
 }
 
 .login-hero-card,
@@ -123,6 +140,15 @@ h1 {
 
 .auth-flow-card-login #login-passkey-btn {
     margin-top: auto;
+}
+
+.auth-transfer-login-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
 }
 
 .auth-step-badge {
@@ -193,6 +219,19 @@ h1 {
     flex-direction: column;
     gap: 8px;
     margin-top: 12px;
+}
+
+.auth-secondary-actions {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.auth-secondary-actions > button {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    margin-top: 0;
 }
 
 .guest-join-field {
@@ -326,6 +365,39 @@ button:hover {
 #logout-btn:hover {
     background: #b91c1c;
     color: #ffffff;
+}
+
+.transfer-code-modal-card {
+    max-width: 360px;
+    text-align: center;
+}
+
+.transfer-code-modal-card h2 {
+    margin: 0 0 10px;
+}
+
+.transfer-code-modal-status {
+    margin: 0;
+    color: #475569;
+    line-height: 1.5;
+    white-space: pre-line;
+}
+
+.transfer-code-modal-status.is-expired {
+    color: #b91c1c;
+    font-weight: 700;
+}
+
+.transfer-code-modal-value {
+    margin: 16px 0 8px !important;
+    padding: 12px 16px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #f8fafc, #eefbf7);
+    border: 1px solid #d1d5db;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: #0f172a;
 }
 
 #join-btn,
@@ -4804,7 +4876,8 @@ body:has(#login-screen:not([style*="none"])) h1 {
     }
 
     body:has(#login-screen[data-auth-state="loading"]:not([style*="none"])),
-    body:has(#login-screen[data-auth-state="authenticated"]:not([style*="none"])) {
+    body:has(#login-screen[data-auth-state="authenticated"]:not([style*="none"])),
+    body:has(#login-screen[data-auth-state="transfer-pending"]:not([style*="none"])) {
         justify-content: center;
     }
 
@@ -4827,6 +4900,14 @@ body:has(#login-screen:not([style*="none"])) h1 {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-y: contain;
+    }
+
+    .auth-secondary-actions {
+        flex-direction: column;
+    }
+
+    .auth-secondary-actions > button {
+        width: 100%;
     }
 }
 

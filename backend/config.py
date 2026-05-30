@@ -93,6 +93,15 @@ CEREMONY_TTL_SECONDS = 300
 # WebSocket 接続用署名チケットの有効秒数。
 WEBSOCKET_TICKET_TTL_SECONDS = 45
 
+# アカウント引き継ぎコードを有効とみなす秒数。
+ACCOUNT_TRANSFER_TTL_SECONDS = 60 * 5
+
+# アカウント引き継ぎコードの桁数。
+ACCOUNT_TRANSFER_CODE_LENGTH = 8
+
+# アカウント引き継ぎコードの入力失敗を許容する最大回数。
+ACCOUNT_TRANSFER_MAX_ATTEMPTS = 5
+
 # AI 問題生成時にモデルへ渡す temperature。
 QUIZ_GENERATION_TEMPERATURE = 1.2
 

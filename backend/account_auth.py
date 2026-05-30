@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import secrets
 import tempfile
 import threading
@@ -40,6 +41,9 @@ if not TYPE_CHECKING:
 
 from backend.auth import is_valid_client_id
 from backend.config import (
+    ACCOUNT_TRANSFER_CODE_LENGTH,
+    ACCOUNT_TRANSFER_MAX_ATTEMPTS,
+    ACCOUNT_TRANSFER_TTL_SECONDS,
     ACCOUNT_SCHEMA_VERSION,
     ACCOUNT_STORE_PATH,
     CEREMONY_TTL_SECONDS,
@@ -76,6 +80,74 @@ def _base64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(str(value or "") + padding)
 
 
+def _generate_transfer_code() -> str:
+    digits = [str(secrets.randbelow(10)) for _ in range(max(1, ACCOUNT_TRANSFER_CODE_LENGTH))]
+    return "".join(digits)
+
+
+def generate_client_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _format_transfer_code(code: str) -> str:
+    raw = "".join(ch for ch in str(code or "") if ch.isdigit())
+    if raw == "":
+        return ""
+    midpoint = len(raw) // 2
+    if midpoint <= 0:
+        return raw
+    return f"{raw[:midpoint]} {raw[midpoint:]}"
+
+
+def _normalize_transfer_code(code: str | None) -> str:
+    return "".join(ch for ch in str(code or "") if ch.isdigit())
+
+
+def _describe_browser(user_agent: str) -> str:
+    ua = str(user_agent or "")
+    if "Edg/" in ua:
+        return "Edge"
+    if "OPR/" in ua or "Opera" in ua:
+        return "Opera"
+    if "Chrome/" in ua and "Chromium" not in ua and "Edg/" not in ua:
+        return "Chrome"
+    if "Firefox/" in ua:
+        return "Firefox"
+    if "Safari/" in ua and "Chrome/" not in ua and "Chromium" not in ua:
+        return "Safari"
+    if "CriOS/" in ua:
+        return "Chrome"
+    if "FxiOS/" in ua:
+        return "Firefox"
+    return "不明なブラウザ"
+
+
+def _describe_device(user_agent: str) -> str:
+    ua = str(user_agent or "")
+    if re.search(r"iPhone", ua, re.IGNORECASE):
+        return "iPhone"
+    if re.search(r"iPad", ua, re.IGNORECASE):
+        return "iPad"
+    if re.search(r"Android", ua, re.IGNORECASE):
+        return "Android"
+    if re.search(r"Windows", ua, re.IGNORECASE):
+        return "Windows"
+    if re.search(r"Macintosh|Mac OS X", ua, re.IGNORECASE):
+        return "Mac"
+    if re.search(r"Linux", ua, re.IGNORECASE):
+        return "Linux"
+    return "不明な端末"
+
+
+def describe_request_device(request: RequestLike) -> dict[str, str]:
+    user_agent = str(getattr(request, "headers", {}).get("user-agent") or "").strip()
+    return {
+        "browser_name": _describe_browser(user_agent),
+        "device_name": _describe_device(user_agent),
+        "user_agent": user_agent,
+    }
+
+
 @dataclass(frozen=True)
 class AuthenticatedUser:
     user_id: str
@@ -84,6 +156,15 @@ class AuthenticatedUser:
     linked_client_ids: list[str]
     session_id: str
     current_client_id: str
+
+
+@dataclass(frozen=True)
+class PendingAccountTransferApproval:
+    transfer_id: str
+    requested_at_ms: int
+    expires_at_ms: int
+    browser_name: str
+    device_name: str
 
 
 class AccountStore:
@@ -498,6 +579,8 @@ class AccountAuthManager:
         self.store = store or AccountStore()
         self.pending_registration_ceremonies: dict[str, dict[str, Any]] = {}
         self.pending_authentication_ceremonies: dict[str, dict[str, Any]] = {}
+        self.pending_account_transfers: dict[str, dict[str, Any]] = {}
+        self._transfer_lock = threading.RLock()
 
     def is_webauthn_available(self) -> bool:
         try:
@@ -566,6 +649,8 @@ class AccountAuthManager:
             for ceremony_id, payload in list(mapping.items()):
                 if float(payload.get("expires_at") or 0) <= now:
                     mapping.pop(ceremony_id, None)
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked(now)
 
     def _make_public_user_payload(self, user: AuthenticatedUser) -> dict[str, Any]:
         return {
@@ -575,6 +660,17 @@ class AccountAuthManager:
             "linked_client_ids": list(user.linked_client_ids),
             "current_client_id": user.current_client_id,
         }
+
+    def _purge_pending_transfers_locked(self, now: float | None = None) -> None:
+        current = float(now or time.time())
+        for transfer_id, payload in list(self.pending_account_transfers.items()):
+            expires_at = float(payload.get("expires_at") or 0)
+            if expires_at > current and str(payload.get("status") or "") not in {"used", "rejected", "expired"}:
+                continue
+            if str(payload.get("status") or "") not in {"used", "rejected", "expired"} and expires_at <= current:
+                payload["status"] = "expired"
+            if str(payload.get("status") or "") in {"used", "rejected", "expired"} and expires_at + 60 <= current:
+                self.pending_account_transfers.pop(transfer_id, None)
 
     def _set_session_cookie(self, response: ResponseLike, session_id: str, request: RequestLike) -> None:
         response.set_cookie(
@@ -818,3 +914,222 @@ class AccountAuthManager:
         if refreshed is None:
             raise HTTPException(status_code=401, detail="not_authenticated")
         return refreshed
+
+    def start_account_transfer(self, request: RequestLike) -> dict[str, Any]:
+        user = self.require_authenticated_user(request)
+        device_info = describe_request_device(request)
+        now = time.time()
+        transfer_id = secrets.token_urlsafe(18)
+        code = _generate_transfer_code()
+        expires_at = now + ACCOUNT_TRANSFER_TTL_SECONDS
+        created_at_ms = int(now * 1000)
+        expires_at_ms = int(expires_at * 1000)
+        payload = {
+            "transfer_id": transfer_id,
+            "code": code,
+            "user_id": user.user_id,
+            "display_name": user.display_name,
+            "source_session_id": user.session_id,
+            "source_client_id": user.current_client_id,
+            "source_browser_name": device_info["browser_name"],
+            "source_device_name": device_info["device_name"],
+            "target_client_id": "",
+            "target_nonce": "",
+            "target_browser_name": "",
+            "target_device_name": "",
+            "requested_at": now,
+            "requested_at_ms": created_at_ms,
+            "approved_at_ms": None,
+            "attempt_count": 0,
+            "status": "issued",
+            "expires_at": expires_at,
+            "expires_at_ms": expires_at_ms,
+        }
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked(now)
+            for existing_id, existing in list(self.pending_account_transfers.items()):
+                if str(existing.get("user_id") or "") != user.user_id:
+                    continue
+                if str(existing.get("status") or "") in {"used", "rejected", "expired"}:
+                    continue
+                existing["status"] = "expired"
+                existing["expires_at"] = min(float(existing.get("expires_at") or expires_at), now)
+                existing["expires_at_ms"] = int(float(existing.get("expires_at") or now) * 1000)
+                self.pending_account_transfers[existing_id] = existing
+            self.pending_account_transfers[transfer_id] = payload
+        return {
+            "transfer_id": transfer_id,
+            "code": code,
+            "formatted_code": _format_transfer_code(code),
+            "expires_at": expires_at_ms,
+        }
+
+    def submit_account_transfer_code(self, code: str, client_id: str, request: RequestLike) -> dict[str, Any]:
+        normalized_code = _normalize_transfer_code(code)
+        cid = str(client_id or "").strip()
+        if len(normalized_code) != ACCOUNT_TRANSFER_CODE_LENGTH:
+            raise HTTPException(status_code=400, detail="invalid_transfer_code")
+        if not is_valid_client_id(cid):
+            raise HTTPException(status_code=400, detail="invalid_client_id")
+
+        device_info = describe_request_device(request)
+        now = time.time()
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked(now)
+            matched_id = None
+            matched_payload = None
+            for transfer_id, payload in self.pending_account_transfers.items():
+                if str(payload.get("code") or "") == normalized_code:
+                    matched_id = transfer_id
+                    matched_payload = payload
+                    break
+
+            if matched_id is None or not isinstance(matched_payload, dict):
+                raise HTTPException(status_code=404, detail="transfer_not_found")
+
+            if str(matched_payload.get("status") or "") != "issued":
+                raise HTTPException(status_code=409, detail="transfer_unavailable")
+
+            matched_payload["attempt_count"] = int(matched_payload.get("attempt_count") or 0) + 1
+            if int(matched_payload.get("attempt_count") or 0) > ACCOUNT_TRANSFER_MAX_ATTEMPTS:
+                matched_payload["status"] = "expired"
+                matched_payload["expires_at"] = now
+                matched_payload["expires_at_ms"] = int(now * 1000)
+                raise HTTPException(status_code=429, detail="transfer_attempts_exhausted")
+
+            user_id = str(matched_payload.get("user_id") or "").strip()
+            if user_id == "":
+                matched_payload["status"] = "expired"
+                raise HTTPException(status_code=404, detail="user_not_found")
+
+            if not self.store.can_link_client_id(user_id, cid):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "client_id_rotation_required",
+                        "replacement_client_id": generate_client_id(),
+                    },
+                )
+
+            target_nonce = secrets.token_urlsafe(24)
+            matched_payload["status"] = "pending_approval"
+            matched_payload["target_client_id"] = cid
+            matched_payload["target_nonce"] = target_nonce
+            matched_payload["target_browser_name"] = device_info["browser_name"]
+            matched_payload["target_device_name"] = device_info["device_name"]
+            matched_payload["requested_at"] = now
+            matched_payload["requested_at_ms"] = int(now * 1000)
+            self.pending_account_transfers[matched_id] = matched_payload
+
+        return {
+            "transfer_id": matched_id,
+            "status": "pending_approval",
+            "expires_at": int(matched_payload.get("expires_at_ms") or 0),
+            "target_nonce": target_nonce,
+        }
+
+    def list_pending_account_transfer_approvals(self, request: RequestLike) -> list[PendingAccountTransferApproval]:
+        user = self.require_authenticated_user(request)
+        now = time.time()
+        approvals: list[PendingAccountTransferApproval] = []
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked(now)
+            for payload in self.pending_account_transfers.values():
+                if str(payload.get("user_id") or "") != user.user_id:
+                    continue
+                if str(payload.get("status") or "") != "pending_approval":
+                    continue
+                approvals.append(
+                    PendingAccountTransferApproval(
+                        transfer_id=str(payload.get("transfer_id") or ""),
+                        requested_at_ms=int(payload.get("requested_at_ms") or 0),
+                        expires_at_ms=int(payload.get("expires_at_ms") or 0),
+                        browser_name=str(payload.get("target_browser_name") or "不明なブラウザ"),
+                        device_name=str(payload.get("target_device_name") or "不明な端末"),
+                    ),
+                )
+        approvals.sort(key=lambda item: item.requested_at_ms)
+        return approvals
+
+    def approve_account_transfer(self, transfer_id: str, request: RequestLike) -> None:
+        user = self.require_authenticated_user(request)
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked()
+            payload = self.pending_account_transfers.get(str(transfer_id or ""))
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=404, detail="transfer_not_found")
+            if str(payload.get("user_id") or "") != user.user_id:
+                raise HTTPException(status_code=403, detail="forbidden")
+            if str(payload.get("status") or "") != "pending_approval":
+                raise HTTPException(status_code=409, detail="transfer_unavailable")
+            payload["status"] = "approved"
+            payload["approved_at_ms"] = int(time.time() * 1000)
+
+    def reject_account_transfer(self, transfer_id: str, request: RequestLike) -> None:
+        user = self.require_authenticated_user(request)
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked()
+            payload = self.pending_account_transfers.get(str(transfer_id or ""))
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=404, detail="transfer_not_found")
+            if str(payload.get("user_id") or "") != user.user_id:
+                raise HTTPException(status_code=403, detail="forbidden")
+            if str(payload.get("status") or "") != "pending_approval":
+                raise HTTPException(status_code=409, detail="transfer_unavailable")
+            payload["status"] = "rejected"
+
+    def get_account_transfer_status(self, transfer_id: str, target_nonce: str) -> dict[str, Any]:
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked()
+            payload = self.pending_account_transfers.get(str(transfer_id or ""))
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=404, detail="transfer_not_found")
+            if str(payload.get("target_nonce") or "") != str(target_nonce or "").strip():
+                raise HTTPException(status_code=403, detail="forbidden")
+            return {
+                "transfer_id": str(payload.get("transfer_id") or ""),
+                "status": str(payload.get("status") or "unknown"),
+                "expires_at": int(payload.get("expires_at_ms") or 0),
+                "requested_at": int(payload.get("requested_at_ms") or 0),
+                "browser_name": str(payload.get("source_browser_name") or ""),
+                "device_name": str(payload.get("source_device_name") or ""),
+                "display_name": str(payload.get("display_name") or ""),
+            }
+
+    def finalize_account_transfer(
+        self,
+        transfer_id: str,
+        target_nonce: str,
+        client_id: str,
+        request: RequestLike,
+        response: ResponseLike,
+    ) -> dict[str, Any]:
+        cid = str(client_id or "").strip()
+        if not is_valid_client_id(cid):
+            raise HTTPException(status_code=400, detail="invalid_client_id")
+
+        with self._transfer_lock:
+            self._purge_pending_transfers_locked()
+            payload = self.pending_account_transfers.get(str(transfer_id or ""))
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=404, detail="transfer_not_found")
+            if str(payload.get("target_nonce") or "") != str(target_nonce or "").strip():
+                raise HTTPException(status_code=403, detail="forbidden")
+            if str(payload.get("status") or "") != "approved":
+                raise HTTPException(status_code=409, detail="transfer_not_ready")
+
+            user_id = str(payload.get("user_id") or "").strip()
+            target_client_id = str(payload.get("target_client_id") or "").strip()
+            if target_client_id != cid:
+                raise HTTPException(status_code=409, detail="client_id_mismatch")
+            if not self.store.can_link_client_id(user_id, cid):
+                raise HTTPException(status_code=409, detail="client_id_owned_by_other_user")
+            payload["status"] = "used"
+
+        session_id = self.store.create_session(user_id, cid)
+        self._set_session_cookie(response, session_id, request)
+        self.link_client_id_for_user(user_id, session_id, cid)
+        authenticated = self.store.build_authenticated_user(session_id)
+        if authenticated is None:
+            raise HTTPException(status_code=500, detail="session_creation_failed")
+        return self._make_public_user_payload(authenticated)

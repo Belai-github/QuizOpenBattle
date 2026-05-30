@@ -36,6 +36,26 @@ class GuestWsTicketIssueRequest(BaseModel):
     nickname: str | None = None
 
 
+class AccountTransferCodeSubmitRequest(BaseModel):
+    code: str
+    client_id: str
+
+
+class AccountTransferDecisionRequest(BaseModel):
+    transfer_id: str
+
+
+class AccountTransferStatusRequest(BaseModel):
+    transfer_id: str
+    target_nonce: str
+
+
+class AccountTransferFinalizeRequest(BaseModel):
+    transfer_id: str
+    target_nonce: str
+    client_id: str
+
+
 def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_manager: AccountAuthManager, diag_api_log):
     def _resolve_current_user_or_401(request: Request):
         user = account_auth_manager.get_authenticated_user(request)
@@ -120,6 +140,62 @@ def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_ma
     async def logout(request: Request, response: Response):
         account_auth_manager.logout(request, response)
         return {"ok": True}
+
+    @app.post("/api/auth/transfer/start")
+    async def start_account_transfer(request: Request):
+        return account_auth_manager.start_account_transfer(request)
+
+    @app.post("/api/auth/transfer/submit")
+    async def submit_account_transfer(request: Request, payload: AccountTransferCodeSubmitRequest):
+        return account_auth_manager.submit_account_transfer_code(
+            payload.code,
+            payload.client_id,
+            request,
+        )
+
+    @app.get("/api/auth/transfer/inbox")
+    async def list_account_transfer_inbox(request: Request):
+        approvals = account_auth_manager.list_pending_account_transfer_approvals(request)
+        return {
+            "requests": [
+                {
+                    "transfer_id": item.transfer_id,
+                    "requested_at": item.requested_at_ms,
+                    "expires_at": item.expires_at_ms,
+                    "browser_name": item.browser_name,
+                    "device_name": item.device_name,
+                }
+                for item in approvals
+            ]
+        }
+
+    @app.post("/api/auth/transfer/approve")
+    async def approve_account_transfer(request: Request, payload: AccountTransferDecisionRequest):
+        account_auth_manager.approve_account_transfer(payload.transfer_id, request)
+        return {"ok": True}
+
+    @app.post("/api/auth/transfer/reject")
+    async def reject_account_transfer(request: Request, payload: AccountTransferDecisionRequest):
+        account_auth_manager.reject_account_transfer(payload.transfer_id, request)
+        return {"ok": True}
+
+    @app.post("/api/auth/transfer/status")
+    async def get_account_transfer_status(payload: AccountTransferStatusRequest):
+        return account_auth_manager.get_account_transfer_status(
+            payload.transfer_id,
+            payload.target_nonce,
+        )
+
+    @app.post("/api/auth/transfer/finalize")
+    async def finalize_account_transfer(request: Request, response: Response, payload: AccountTransferFinalizeRequest):
+        user_payload = account_auth_manager.finalize_account_transfer(
+            payload.transfer_id,
+            payload.target_nonce,
+            payload.client_id,
+            request,
+            response,
+        )
+        return {"authenticated": True, "user": user_payload}
 
     @app.post("/api/auth/link-client")
     async def link_client(request: Request, payload: ClientLinkRequest):
