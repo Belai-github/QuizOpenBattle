@@ -3121,6 +3121,18 @@ async function pollTransferPendingStatus() {
     updateAuthUi();
     await ensureLinkedClientId();
     await showAlertModal("引き継ぎが完了しました。ゲームに参加できます。");
+    if (currentAccount && isWebAuthnSupported() && isServerWebAuthnReady) {
+      const shouldLinkPasskey = await showConfirmModal(
+        "この端末でも次回からパスキーでログインできるようにしますか？\n登録しておくと、次回は引き継ぎコードなしでログインできます。",
+        {
+          okLabel: "この端末を登録",
+          cancelLabel: "あとで",
+        },
+      );
+      if (shouldLinkPasskey) {
+        await runPasskeyLinkForCurrentDevice();
+      }
+    }
     return;
   }
 
@@ -3162,6 +3174,66 @@ function isPasskeyAbortError(error) {
   return error?.name === "AbortError" || error?.name === "NotAllowedError";
 }
 
+async function runPasskeyLinkForCurrentDevice() {
+  if (isAuthBusy || !currentAccount) return false;
+  if (!isWebAuthnSupported()) {
+    await showAlertModal("このブラウザは passkey に対応していません。");
+    return false;
+  }
+  if (!isServerWebAuthnReady) {
+    await showAlertModal(
+      "サーバー側で passkey 認証の準備ができていません。時間をおいて再試行してください。",
+    );
+    return false;
+  }
+
+  const clientId = getOrCreatePersistentClientId();
+  setAuthBusy(true);
+  try {
+    const startPayload = await fetchJsonOrThrow("/api/auth/passkey/link/start", {
+      method: "POST",
+    });
+    const credential = await navigator.credentials.create({
+      publicKey: decodeRegistrationOptions(startPayload.publicKey),
+    });
+    if (!credential) {
+      throw new Error("credential_create_failed");
+    }
+    const finishPayload = await fetchJsonOrThrow("/api/auth/register/finish", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ceremony_id: startPayload.ceremony_id,
+        credential: serializeCredential(credential),
+        client_id: clientId,
+      }),
+    });
+    currentAccount = finishPayload?.user || currentAccount;
+    updateAuthUi();
+    await ensureLinkedClientId();
+    await showAlertModal(
+      "この端末をパスキー登録しました。次回からは引き継ぎコードなしでログインできます。",
+    );
+    return true;
+  } catch (error) {
+    if (isPasskeyAbortError(error)) {
+      setAuthBusy(false);
+      return false;
+    }
+    await showAlertModal(
+      getAuthErrorMessage(
+        error,
+        "この端末のパスキー登録に失敗しました。あとで再試行してください。",
+      ),
+    );
+    return false;
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
 function getAuthErrorMessage(error, fallbackMessage) {
   const detail = String(error?.detail || "").trim();
   if (detail === "webauthn_unavailable") {
@@ -3190,6 +3262,9 @@ function getAuthErrorMessage(error, fallbackMessage) {
   }
   if (detail === "registration_verification_failed") {
     return "パスキー登録の検証に失敗しました。もう一度やり直してください。";
+  }
+  if (detail === "credential_exists") {
+    return "このパスキーはすでに登録済みです。別のパスキーを使用してください。";
   }
   if (
     detail === "authentication_verification_failed" ||

@@ -359,6 +359,46 @@ class AccountStore:
             self._persist_locked()
             return dict(user)
 
+    def add_credential_to_user(
+        self,
+        user_id: str,
+        credential_id: str,
+        public_key_b64: str,
+        sign_count: int,
+        transports: list[str] | None = None,
+        device_type: str | None = None,
+        backed_up: bool | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            resolved_user_id = str(user_id or "").strip()
+            user = self._state["users"].get(resolved_user_id)
+            if not isinstance(user, dict):
+                raise ValueError("user_not_found")
+            if str(credential_id or "") in self._state["credentials"]:
+                raise ValueError("credential_exists")
+
+            credential_ids = user.get("credential_ids")
+            if not isinstance(credential_ids, list):
+                credential_ids = []
+                user["credential_ids"] = credential_ids
+
+            now_ms = int(time.time() * 1000)
+            credential = {
+                "credential_id": str(credential_id or ""),
+                "user_id": resolved_user_id,
+                "public_key_b64": str(public_key_b64 or ""),
+                "sign_count": max(0, int(sign_count or 0)),
+                "transports": [str(item) for item in (transports or []) if str(item or "").strip() != ""],
+                "device_type": str(device_type or ""),
+                "backed_up": bool(backed_up) if backed_up is not None else None,
+                "created_at": now_ms,
+                "last_used_at": now_ms,
+            }
+            credential_ids.append(credential["credential_id"])
+            self._state["credentials"][credential["credential_id"]] = credential
+            self._persist_locked()
+            return dict(user)
+
     def update_credential_sign_count(self, credential_id: str, sign_count: int) -> None:
         with self._lock:
             credential = self._state["credentials"].get(str(credential_id or ""))
@@ -744,6 +784,49 @@ class AccountAuthManager:
             "publicKey": json.loads(webauthn.options_to_json(options)),
         }
 
+    def begin_passkey_link(self, request: RequestLike) -> dict[str, Any]:
+        webauthn, AuthenticatorSelectionCriteria, ResidentKeyRequirement, UserVerificationRequirement = self._require_webauthn()
+        self._purge_pending()
+
+        authenticated = self.require_authenticated_user(request)
+        user = self.store.get_user(authenticated.user_id)
+        if not isinstance(user, dict):
+            raise HTTPException(status_code=404, detail="user_not_found")
+
+        rp_id = self._resolve_rp_id(request)
+        if rp_id == "":
+            raise HTTPException(status_code=500, detail="invalid_rp_id")
+
+        user_handle_b64 = str(user.get("user_handle_b64") or "").strip()
+        if user_handle_b64 == "":
+            raise HTTPException(status_code=500, detail="invalid_user_handle")
+
+        options = webauthn.generate_registration_options(
+            rp_id=rp_id,
+            rp_name=self._resolve_rp_name(),
+            user_id=_base64url_decode(user_handle_b64),
+            user_name=str(user.get("display_name") or authenticated.display_name),
+            user_display_name=str(user.get("display_name") or authenticated.display_name),
+            timeout=60000,
+            authenticator_selection=AuthenticatorSelectionCriteria(
+                resident_key=ResidentKeyRequirement.REQUIRED,
+                user_verification=UserVerificationRequirement.REQUIRED,
+            ),
+        )
+        ceremony_id = secrets.token_urlsafe(18)
+        self.pending_registration_ceremonies[ceremony_id] = {
+            "mode": "link_existing_user",
+            "user_id": authenticated.user_id,
+            "challenge_b64": _base64url_encode(options.challenge),
+            "rp_id": rp_id,
+            "expected_origin": self._resolve_origin(request),
+            "expires_at": time.time() + CEREMONY_TTL_SECONDS,
+        }
+        return {
+            "ceremony_id": ceremony_id,
+            "publicKey": json.loads(webauthn.options_to_json(options)),
+        }
+
     def finish_registration(
         self,
         ceremony_id: str,
@@ -775,23 +858,46 @@ class AccountAuthManager:
         credential_id = _base64url_encode(verification.credential_id)
         public_key_b64 = _base64url_encode(verification.credential_public_key)
         requested_client_id = str(client_id or "").strip()
-        if requested_client_id != "" and not self.store.can_link_client_id("", requested_client_id):
-            raise HTTPException(status_code=409, detail="client_id_owned_by_other_user")
-        try:
-            user = self.store.create_user(
-                display_name=str(pending.get("display_name") or ""),
-                user_handle_b64=str(pending.get("user_handle_b64") or ""),
-                credential_id=credential_id,
-                public_key_b64=public_key_b64,
-                sign_count=int(verification.sign_count or 0),
-                transports=[str(item) for item in (credential.get("response", {}) or {}).get("transports", []) if str(item or "").strip() != ""],
-                device_type=str(getattr(verification, "credential_device_type", "") or ""),
-                backed_up=getattr(verification, "credential_backed_up", None),
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        transport_values = [
+            str(item)
+            for item in (credential.get("response", {}) or {}).get("transports", [])
+            if str(item or "").strip() != ""
+        ]
+        mode = str(pending.get("mode") or "create_user")
+        if mode == "link_existing_user":
+            user_id = str(pending.get("user_id") or "").strip()
+            if user_id == "":
+                raise HTTPException(status_code=404, detail="user_not_found")
+            try:
+                user = self.store.add_credential_to_user(
+                    user_id=user_id,
+                    credential_id=credential_id,
+                    public_key_b64=public_key_b64,
+                    sign_count=int(verification.sign_count or 0),
+                    transports=transport_values,
+                    device_type=str(getattr(verification, "credential_device_type", "") or ""),
+                    backed_up=getattr(verification, "credential_backed_up", None),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+        else:
+            if requested_client_id != "" and not self.store.can_link_client_id("", requested_client_id):
+                raise HTTPException(status_code=409, detail="client_id_owned_by_other_user")
+            try:
+                user = self.store.create_user(
+                    display_name=str(pending.get("display_name") or ""),
+                    user_handle_b64=str(pending.get("user_handle_b64") or ""),
+                    credential_id=credential_id,
+                    public_key_b64=public_key_b64,
+                    sign_count=int(verification.sign_count or 0),
+                    transports=transport_values,
+                    device_type=str(getattr(verification, "credential_device_type", "") or ""),
+                    backed_up=getattr(verification, "credential_backed_up", None),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            user_id = str(user.get("user_id") or "")
 
-        user_id = str(user.get("user_id") or "")
         if requested_client_id != "" and not self.store.can_link_client_id(user_id, requested_client_id):
             raise HTTPException(status_code=409, detail="client_id_owned_by_other_user")
 

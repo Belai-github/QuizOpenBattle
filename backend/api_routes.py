@@ -110,6 +110,10 @@ def register_api_routes(app, manager: Any, ws_auth_manager: Any, account_auth_ma
             raise HTTPException(status_code=400, detail="empty_display_name")
         return account_auth_manager.begin_registration(display_name, request)
 
+    @app.post("/api/auth/passkey/link/start")
+    async def start_passkey_link(request: Request):
+        return account_auth_manager.begin_passkey_link(request)
+
     @app.post("/api/auth/register/finish")
     async def finish_passkey_registration(request: Request, response: Response, payload: PasskeyCeremonyFinishRequest):
         user_payload = account_auth_manager.finish_registration(

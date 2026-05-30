@@ -513,6 +513,29 @@ class TestAccountStoreContracts(unittest.TestCase):
             refreshed = store.get_user(user["user_id"])
             self.assertEqual(refreshed["display_name"], "After")  # type: ignore[index]
 
+    def test_add_credential_to_existing_user(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AccountStore(f"{tmp_dir}/auth_state.json")
+            user = store.create_user(
+                display_name="Alice",
+                user_handle_b64="YWxpY2U",
+                credential_id="cred-initial",
+                public_key_b64="pub-initial",
+                sign_count=0,
+            )
+
+            updated = store.add_credential_to_user(
+                user["user_id"],
+                credential_id="cred-second",
+                public_key_b64="pub-second",
+                sign_count=3,
+            )
+
+            self.assertIn("cred-second", updated["credential_ids"])
+            credential = store.get_credential("cred-second")
+            self.assertIsNotNone(credential)
+            self.assertEqual(credential["user_id"], user["user_id"])  # type: ignore[index]
+
     def test_can_link_client_id_blocks_other_users(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             store = AccountStore(f"{tmp_dir}/auth_state.json")
