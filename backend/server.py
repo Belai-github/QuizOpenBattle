@@ -1187,7 +1187,13 @@ class QuizGameManager:
             ("team-right", set(room.get("right_participants", set()))),
         ):
             recipient_ids = default_ids
-            chat_result = resolve_chat_recipients(owner_id, room, "questioner", chat_type)
+            chat_result = resolve_chat_recipients(
+                owner_id,
+                room,
+                "questioner",
+                chat_type,
+                event_type=event_type,
+            )
             if chat_result.get("ok"):
                 recipient_ids = chat_result["event_recipient_ids"]
 

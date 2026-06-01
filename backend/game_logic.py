@@ -66,6 +66,18 @@ def _is_left_reveal_window(room_state: str, viewer_role: str, chat_role: str, ga
     return bool(game.get("left_correct_waiting"))
 
 
+def _can_share_team_right_event_with_team_left_during_reveal(
+    room_state: str,
+    viewer_role: str,
+    chat_role: str,
+    game: dict | None,
+    event_chat_type: str,
+):
+    if str(event_chat_type or "").strip() != "team-right":
+        return False
+    return _is_left_reveal_window(room_state, viewer_role, chat_role, game)
+
+
 def _resolve_event_message_for_viewer(
     event_message: str,
     event_type: str,
@@ -525,6 +537,17 @@ def build_current_room_for_client(rooms: dict, nicknames: dict, client_id: str):
 
             readable_roles = readable_roles_by_type.get(event_chat_type)
             can_read = bool(readable_roles and chat_role in readable_roles)
+            if (
+                not can_read
+                and _can_share_team_right_event_with_team_left_during_reveal(
+                    room_state,
+                    ctx["role"],
+                    chat_role,
+                    current_game,
+                    event_chat_type,
+                )
+            ):
+                can_read = True
             is_open_vote_log = event_type in {"open_vote_request", "open_vote_resolved"}
             if not can_read and is_open_vote_log and event_chat_type in {"team-left", "team-right"} and chat_role in {"team-left", "team-right"}:
                 can_read = True
@@ -954,13 +977,22 @@ def apply_update_team_name(rooms: dict, client_id: str, team: str, team_name: st
     }
 
 
-def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: str | None, chat_type: str):
+def resolve_chat_recipients(
+    room_owner_id: str,
+    room: dict,
+    sender_chat_role: str | None,
+    chat_type: str,
+    event_type: str | None = None,
+):
     room_state = room.get("game_state", "waiting")
     game = room.get("game") if isinstance(room.get("game"), dict) else None
     left_reveal_window = bool(room_state == "playing" and game and game.get("left_correct_waiting"))
+    questioner_client_id = ""
+    if not bool(room.get("is_ai_mode")):
+        questioner_client_id = str(room.get("questioner_id") or room_owner_id or "").strip()
 
     role_to_ids = {
-        "questioner": {room_owner_id},
+        "questioner": ({questioner_client_id} if questioner_client_id else set()),
         "team-left": set(room["left_participants"]),
         "team-right": set(room["right_participants"]),
         "spectator": set(room["spectators"]),
@@ -1006,9 +1038,6 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
         "team-right": {"team-right", "questioner", "spectator"},
     }
 
-    if left_reveal_window:
-        readable_roles_by_type["team-right"].add("team-left")
-
     if chat_type not in sendable_roles_by_type:
         return {"ok": False, "error": "未対応のチャット種別です。"}
 
@@ -1018,6 +1047,17 @@ def resolve_chat_recipients(room_owner_id: str, room: dict, sender_chat_role: st
     event_recipient_ids = set()
     for role_name in readable_roles_by_type[chat_type]:
         event_recipient_ids |= role_to_ids.get(role_name, set())
+
+    if (
+        _can_share_team_right_event_with_team_left_during_reveal(
+            room_state,
+            "participant",
+            "team-left",
+            game,
+            chat_type,
+        )
+    ):
+        event_recipient_ids |= role_to_ids["team-left"]
 
     return {"ok": True, "event_recipient_ids": event_recipient_ids}
 

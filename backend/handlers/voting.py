@@ -396,7 +396,13 @@ async def respond_answer_vote(manager, client_id: str, payload: AnswerVoteRespon
     full_open_vote_id = str(pending_vote.get("full_open_vote_id") or "").strip()
 
     team_chat_recipients = set(voter_ids)
-    team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
+    team_chat_result = resolve_chat_recipients(
+        owner_id,
+        room,
+        team,
+        team,
+        event_type="answer_vote_resolved",
+    )
     if team_chat_result.get("ok"):
         team_chat_recipients = team_chat_result["event_recipient_ids"]
 
@@ -973,7 +979,13 @@ async def respond_turn_end_vote(manager, client_id: str, payload: TurnEndVoteRes
     team = pending_vote["team"]
 
     team_chat_recipients = set(voter_ids)
-    team_chat_result = resolve_chat_recipients(owner_id, room, team, team)
+    team_chat_result = resolve_chat_recipients(
+        owner_id,
+        room,
+        team,
+        team,
+        event_type="answer_vote_resolved",
+    )
     if team_chat_result.get("ok"):
         team_chat_recipients = team_chat_result["event_recipient_ids"]
 

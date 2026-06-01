@@ -21,6 +21,7 @@ from backend.game_logic import (
     apply_shuffle_participants,
     apply_update_team_name,
     build_current_room_for_client,
+    resolve_chat_recipients,
 )
 from backend.events.identity import derive_event_identity
 from backend.storage.reconnect import (
@@ -969,6 +970,108 @@ class TestArenaAnswerVisibilityContracts(unittest.TestCase):
             current_room["arena_chat_history"][0]["event_payload"]["answer_text"],
             "東京",
         )
+
+    def test_left_reveal_window_shows_opponent_team_chat_history_to_team_left(self):
+        rooms = {}
+        nicknames = {
+            "owner-1": "出題者",
+            "left-1": "先攻",
+            "right-1": "後攻",
+        }
+        create_result = apply_create_question_room(
+            rooms,
+            nicknames,
+            "owner-1",
+            {"question_text": "テスト問題"},
+        )
+        self.assertTrue(create_result["ok"])
+
+        room = rooms["owner-1"]
+        room["game_state"] = "playing"
+        room["left_participants"] = {"left-1"}
+        room["right_participants"] = {"right-1"}
+        room["left_participant_order"] = ["left-1"]
+        room["right_participant_order"] = ["right-1"]
+        room["game"] = {
+            "game_status": "playing",
+            "left_correct_waiting": True,
+            "full_open_settlement": None,
+        }
+        room["arena_chat_history"] = [
+            {
+                "seq": 1,
+                "timestamp": 100,
+                "event_type": "chat",
+                "event_message": "後攻: ここは東京でしょ",
+                "event_chat_type": "team-right",
+            }
+        ]
+
+        current_room = build_current_room_for_client(rooms, nicknames, "left-1")
+        self.assertEqual(len(current_room["arena_chat_history"]), 1)
+        self.assertEqual(
+            current_room["arena_chat_history"][0]["event_message"],
+            "後攻: ここは東京でしょ",
+        )
+
+    def test_left_reveal_window_expands_team_right_recipients_only(self):
+        room = {
+            "game_state": "playing",
+            "left_participants": {"left-1"},
+            "right_participants": {"right-1"},
+            "spectators": set(),
+            "game": {
+                "game_status": "playing",
+                "left_correct_waiting": True,
+            },
+        }
+
+        chat_result = resolve_chat_recipients(
+            "owner-1",
+            room,
+            "team-right",
+            "team-right",
+            event_type="chat",
+        )
+        self.assertTrue(chat_result["ok"])
+        self.assertEqual(chat_result["event_recipient_ids"], {"left-1", "right-1", "owner-1"})
+
+        answer_vote_result = resolve_chat_recipients(
+            "owner-1",
+            room,
+            "team-right",
+            "team-right",
+            event_type="answer_vote_request",
+        )
+        self.assertTrue(answer_vote_result["ok"])
+        self.assertEqual(
+            answer_vote_result["event_recipient_ids"],
+            {"left-1", "right-1", "owner-1"},
+        )
+
+    def test_ai_room_owner_participant_does_not_receive_opponent_team_chat_as_questioner(self):
+        room = {
+            "game_state": "playing",
+            "questioner_id": "ai-questioner",
+            "left_participants": {"left-1"},
+            "right_participants": {"owner-1"},
+            "spectators": set(),
+            "is_ai_mode": True,
+            "game": {
+                "game_status": "playing",
+                "left_correct_waiting": False,
+            },
+        }
+
+        chat_result = resolve_chat_recipients(
+            "owner-1",
+            room,
+            "team-left",
+            "team-left",
+            event_type="chat",
+        )
+        self.assertTrue(chat_result["ok"])
+        self.assertEqual(chat_result["event_recipient_ids"], {"left-1"})
 
     def test_full_open_start_clears_left_reveal_window_and_hides_previous_opponent_answer_logs(self):
         manager = QuizGameManager()
