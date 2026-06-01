@@ -181,7 +181,7 @@ async def request_open_vote(manager, client_id: str, payload: OpenVoteRequestMes
         event_message="",
         event_chat_type=team,
         event_room_id=owner_id,
-        event_recipient_ids=open_log_recipient_ids,
+        event_recipient_ids=open_log_recipient_ids - {client_id},
         event_payload={
             "vote_id": vote_id,
             "team": team,

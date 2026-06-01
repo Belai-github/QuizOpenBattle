@@ -36,12 +36,14 @@ from backend.schemas import (
     AnswerVoteResponseMessage,
     JudgeAnswerMessage,
     LegacyQuestionSubmissionMessage,
+    OpenVoteRequestMessage,
     OpenVoteResponseMessage,
     RoomEntryMessage,
     TurnEndVoteResponseMessage,
     UpdateTeamNameMessage,
     validate_message,
 )
+from backend.handlers.voting import request_open_vote
 
 
 class TestAuthContracts(unittest.TestCase):
@@ -290,6 +292,54 @@ class TestArenaTeamContracts(unittest.TestCase):
 
         current_room = build_current_room_for_client(rooms, nicknames, "user-1")
         self.assertEqual(current_room["left_team_name"], "青組")
+
+
+class TestVotePromptContracts(unittest.TestCase):
+    def test_open_vote_request_is_not_sent_back_to_requester(self):
+        manager = QuizGameManager()
+        manager.broadcast_state = AsyncMock()
+        manager.send_private_info = AsyncMock()
+        manager.rooms["owner-1"] = {
+            "questioner_name": "出題者",
+            "question_text": "テスト問題",
+            "yakumono_indexes": set(),
+            "left_participants": {"left-1", "left-2"},
+            "right_participants": {"right-1"},
+            "left_participant_order": ["left-1", "left-2"],
+            "right_participant_order": ["right-1"],
+            "spectators": {"spec-1"},
+            "pending_disconnects": {},
+            "game_state": "playing",
+            "is_ai_mode": False,
+            "game": {
+                "game_status": "playing",
+                "current_turn_team": "team-left",
+                "pending_answer_judgement": None,
+                "full_open_settlement": None,
+                "left_correct_waiting": False,
+                "team_left": {"action_points": 1, "bonus_action_points": 0},
+                "team_right": {"action_points": 0, "bonus_action_points": 0},
+                "opened_char_indexes": set(),
+                "opened_by_team": {},
+            },
+        }
+
+        asyncio.run(
+            request_open_vote(
+                manager,
+                "left-1",
+                OpenVoteRequestMessage(
+                    type="open_vote_request",
+                    char_index=1,
+                ),
+            )
+        )
+
+        manager.broadcast_state.assert_awaited_once()
+        self.assertEqual(
+            manager.broadcast_state.await_args.kwargs["event_recipient_ids"],
+            {"left-2", "owner-1", "right-1", "spec-1"},
+        )
 
 
 class DummyReconnectManager:
