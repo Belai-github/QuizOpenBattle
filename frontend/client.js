@@ -6496,7 +6496,9 @@ function getQuestionViewModeCycleForCurrentUser() {
   // 対戦終了状態では参加者もQUESTIONER_VIEW_MODE_CYCLE を使う
   if (
     isGameFinished() &&
-    (userRole === "team-left" || userRole === "team-right")
+    (userRole === "team-left" ||
+      userRole === "team-right" ||
+      userRole === "spectator")
   ) {
     return QUESTIONER_VIEW_MODE_CYCLE;
   }
@@ -9540,6 +9542,13 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     userRole = data.current_room?.chat_role ?? null;
     currentRoomGameState = data.current_room?.game_state ?? null;
     currentGameState = data.current_room?.game ?? null;
+    const reachedFinishedAsSpectator =
+      String(currentRoomGameState || "") === "finished" &&
+      String(previousRoomGameState || "") !== "finished" &&
+      String(userRole || "") === "spectator";
+    if (reachedFinishedAsSpectator) {
+      questionerViewMode = "all";
+    }
     const activeRoomId =
       String(data.current_room?.room_owner_id || "").trim() || null;
     if (
