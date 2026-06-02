@@ -3870,27 +3870,45 @@ body.modal-open #arena-question-text .arena-question-line {
         max-height: 84px;
     }
 
-    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact {
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box {
         min-height: 0;
         padding: 8px;
+        max-height: 52px;
+        overflow: hidden;
+        transition:
+            max-height 340ms cubic-bezier(0.22, 1, 0.36, 1),
+            gap 340ms cubic-bezier(0.22, 1, 0.36, 1),
+            padding 340ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
-    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact:not(.is-expanded) {
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box:not(.is-expanded) {
         gap: 0;
     }
 
-    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact:not(.is-expanded) #arena-spectator-list {
-        display: none;
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box #arena-spectator-list {
+        display: flex;
+        flex: 0 0 auto;
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        pointer-events: none;
+        transform: translateY(-10px);
+        transition:
+            max-height 340ms cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 260ms ease,
+            transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
-    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact.is-expanded {
-        min-height: 176px;
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-expanded {
         max-height: 176px;
     }
 
-    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact.is-expanded #arena-spectator-list {
-        display: flex;
+    body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-expanded #arena-spectator-list {
+        flex: 1 1 auto;
         max-height: 120px;
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
     }
 
     body:has(#game-arena-screen:not([style*="none"])) #arena-spectator-box.is-compact.is-expanded .arena-spectator-toggle-icon::before {

@@ -7471,6 +7471,13 @@ function syncArenaSpectatorBoxState(spectatorCount = null) {
     "aria-label",
     isExpanded ? "観戦者一覧を閉じる" : "観戦者一覧を開く",
   );
+  const arenaSpectatorListEl = document.getElementById("arena-spectator-list");
+  if (arenaSpectatorListEl) {
+    arenaSpectatorListEl.setAttribute(
+      "aria-hidden",
+      String(isCompactMode && !isExpanded),
+    );
+  }
 }
 
 function syncArenaTeamCardPinState() {
