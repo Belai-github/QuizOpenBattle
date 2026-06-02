@@ -27,7 +27,7 @@ Some bundled sound effects are provided by OtoLogic.
 - Files:
   - `frontend/sound/Quiz-Ding_Dong02-1(Fast).mp3`
   - `frontend/sound/Quiz-Buzzer02-1(Mid).mp3`
-  - `frontend/sound/Music_Box01-2(Multi).mp3`
+  - `frontend/sound/Assorted_SE06-19.mp3`
 - Source: OtoLogic
 - Website: https://otologic.jp/
 - License: CC BY 4.0

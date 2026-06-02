@@ -351,7 +351,7 @@ const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
 const TURN_CHANGE_SOUND_FILE_PATH =
-  resolveAppAssetUrl("sound/Music_Box01-2(Multi).mp3");
+  resolveAppAssetUrl("sound/Assorted_SE06-19.mp3");
 const TURN_CHANGE_SOUND_PLAYBACK_RATE = 1;
 const TURN_CHANGE_SOUND_VOLUME = 1;
 const CORRECT_SOUND_FILE_PATH =
