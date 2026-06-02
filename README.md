@@ -5,6 +5,8 @@
 
 [![License](https://img.shields.io/badge/license-MIT-2563eb)](./LICENSE)
 
+一部の同梱音源は OtoLogic 提供の CC BY 4.0 素材です。詳細は [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) を参照してください。
+
 ## スクリーンショット
 
 | ロビー                          | アリーナ                        |

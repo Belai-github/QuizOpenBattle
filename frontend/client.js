@@ -348,28 +348,18 @@ const logScrollListenerBound = new WeakSet();
 const chatLogFilterStateById = new Map();
 const chatLogFilterControlById = new Map();
 const ARENA_CHAT_TYPES = ["team-left", "team-right", "game-global"];
-const SEMITONE_RATIO = 2 ** (1 / 12);
 const TURN_CHANGE_SOUND_FILE_PATH =
-  resolveAppAssetUrl("sound/373586__sgossner__marimba-f5-marimba_hit_outrigger_g4_loud_01.wav");
-const TURN_CHANGE_SOUND_VOLUME = 0.19;
-const TURN_CHANGE_SOUND_NOTE_PATTERN = [
-  { semitones: -5, startDelay: 0, volumeScale: 0.94, sustainScale: 1.22 },
-  { semitones: 0, startDelay: 0.055, volumeScale: 0.98, sustainScale: 1 },
-  { semitones: 7, startDelay: 0.15, volumeScale: 0.8, sustainScale: 1 },
-];
+  resolveAppAssetUrl("sound/Music_Box01-2(Multi).mp3");
+const TURN_CHANGE_SOUND_PLAYBACK_RATE = 1;
+const TURN_CHANGE_SOUND_VOLUME = 1;
 const CORRECT_SOUND_FILE_PATH =
-  resolveAppAssetUrl("sound/243701__ertfelda__correct.wav");
-const CORRECT_SOUND_FIRST_SEMITONES = 4;
-const CORRECT_SOUND_SECOND_SEMITONES = 0;
-const CORRECT_SOUND_FIRST_PLAYBACK_RATE =
-  SEMITONE_RATIO ** CORRECT_SOUND_FIRST_SEMITONES;
-const CORRECT_SOUND_SECOND_PLAYBACK_RATE =
-  SEMITONE_RATIO ** CORRECT_SOUND_SECOND_SEMITONES;
-const CORRECT_SOUND_VOLUME = 0.18;
+  resolveAppAssetUrl("sound/Quiz-Ding_Dong02-1(Fast).mp3");
+const CORRECT_SOUND_PLAYBACK_RATE = 1;
+const CORRECT_SOUND_VOLUME = 1;
 const WRONG_SOUND_FILE_PATH =
-  resolveAppAssetUrl("sound/650842__andreas__wrong-answer-buzzer.wav");
+  resolveAppAssetUrl("sound/Quiz-Buzzer02-1(Mid).mp3");
 const WRONG_SOUND_PLAYBACK_RATE = 1;
-const WRONG_SOUND_VOLUME = 0.1;
+const WRONG_SOUND_VOLUME = 1;
 let soundEffectsEnabled = true;
 let quizAudioContext = null;
 let quizAudioUnlocked = false;
@@ -980,15 +970,12 @@ async function playTurnChangeSoundEffect() {
 
   try {
     const turnChangeSoundBuffer = await loadAudioBuffer(TURN_CHANGE_SOUND_FILE_PATH);
-    const played = TURN_CHANGE_SOUND_NOTE_PATTERN.map((note) =>
+    if (
       playAudioBuffer(turnChangeSoundBuffer, {
-        playbackRate: SEMITONE_RATIO ** Number(note.semitones || 0),
-        volume: TURN_CHANGE_SOUND_VOLUME * Number(note.volumeScale || 1),
-        startDelay: Number(note.startDelay || 0),
-        durationScale: Number(note.sustainScale || 1),
-      }),
-    );
-    if (played.some(Boolean)) {
+        playbackRate: TURN_CHANGE_SOUND_PLAYBACK_RATE,
+        volume: TURN_CHANGE_SOUND_VOLUME,
+      })
+    ) {
       return;
     }
   } catch (error) {
@@ -1039,17 +1026,12 @@ async function playCorrectAnswerSoundEffect() {
 
   try {
     const correctSoundBuffer = await loadAudioBuffer(CORRECT_SOUND_FILE_PATH);
-    const playedFirst = playAudioBuffer(correctSoundBuffer, {
-      playbackRate: CORRECT_SOUND_FIRST_PLAYBACK_RATE,
-      volume: CORRECT_SOUND_VOLUME,
-      startDelay: 0,
-    });
-    const playedSecond = playAudioBuffer(correctSoundBuffer, {
-      playbackRate: CORRECT_SOUND_SECOND_PLAYBACK_RATE,
-      volume: CORRECT_SOUND_VOLUME * 0.94,
-      startDelay: 0.12,
-    });
-    if (playedFirst || playedSecond) {
+    if (
+      playAudioBuffer(correctSoundBuffer, {
+        playbackRate: CORRECT_SOUND_PLAYBACK_RATE,
+        volume: CORRECT_SOUND_VOLUME,
+      })
+    ) {
       return;
     }
   } catch (error) {
