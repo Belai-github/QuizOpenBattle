@@ -20,12 +20,14 @@ const confirmMessageEl = document.getElementById("confirm-message");
 const confirmOkBtn = document.getElementById("confirm-ok-btn");
 const confirmCancelBtn = document.getElementById("confirm-cancel-btn");
 const confirmActionsEl = confirmModal.querySelector(".modal-actions");
+const confirmModalCardEl = confirmModal?.querySelector(".modal-card");
 const voteConfirmModal = document.getElementById("vote-confirm-modal");
 const voteConfirmMessageEl = document.getElementById("vote-confirm-message");
 const voteConfirmOkBtn = document.getElementById("vote-confirm-ok-btn");
 const voteConfirmCancelBtn = document.getElementById(
   "vote-confirm-cancel-btn",
 );
+const voteConfirmModalCardEl = voteConfirmModal?.querySelector(".modal-card");
 const alertModal = document.getElementById("alert-modal");
 const alertMessageEl = document.getElementById("alert-message");
 const alertOkBtn = document.getElementById("alert-ok-btn");
@@ -6878,7 +6880,10 @@ function showConfirmModal(message, options = {}) {
     if (!confirmModal.open) {
       confirmModal.showModal();
     }
-    confirmOkBtn.focus();
+    if (confirmModalCardEl instanceof HTMLElement) {
+      confirmModalCardEl.setAttribute("tabindex", "-1");
+      confirmModalCardEl.focus();
+    }
     setArenaCharClickGuard();
     updateArenaInteractionLock();
 
@@ -7042,7 +7047,10 @@ function showVotePromptModal(prompt) {
     if (!voteConfirmModal.open) {
       voteConfirmModal.showModal();
     }
-    voteConfirmOkBtn.focus();
+    if (voteConfirmModalCardEl instanceof HTMLElement) {
+      voteConfirmModalCardEl.setAttribute("tabindex", "-1");
+      voteConfirmModalCardEl.focus();
+    }
     setArenaCharClickGuard();
     updateArenaInteractionLock();
 
