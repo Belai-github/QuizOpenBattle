@@ -640,6 +640,17 @@ class QuizGameManager:
                 "is_correct": bool(is_correct),
             },
         )
+        await self.broadcast_state(
+            public_info="",
+            event_type="answer_result_sound",
+            event_message="",
+            event_room_id=owner_id,
+            event_recipient_ids=self._room_member_ids(owner_id, room),
+            event_payload={
+                "is_correct": bool(is_correct),
+                "skip_history": True,
+            },
+        )
 
         next_turn_team = (room.get("game") or {}).get("current_turn_team")
         should_notify_turn_changed = result.get("game_status") == "playing" and previous_turn_team != next_turn_team

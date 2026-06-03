@@ -4608,6 +4608,7 @@ async function submitArenaAnswer() {
   const confirmed = await showConfirmModal(confirmMessage, {
     okLabel,
     cancelLabel: "キャンセル",
+    initialFocus: "ok",
   });
   if (!confirmed) {
     return;
@@ -6855,6 +6856,7 @@ function showConfirmModal(message, options = {}) {
     cancelLabel = "キャンセル",
     requireExplicitChoice = false,
     variant = "",
+    initialFocus = "dialog",
   } = options;
   return new Promise((resolve) => {
     if (allowHtml) {
@@ -6880,7 +6882,11 @@ function showConfirmModal(message, options = {}) {
     if (!confirmModal.open) {
       confirmModal.showModal();
     }
-    if (confirmModalCardEl instanceof HTMLElement) {
+    if (initialFocus === "ok") {
+      confirmOkBtn.focus();
+    } else if (initialFocus === "cancel" && !hideCancel) {
+      confirmCancelBtn.focus();
+    } else if (confirmModalCardEl instanceof HTMLElement) {
       confirmModalCardEl.setAttribute("tabindex", "-1");
       confirmModalCardEl.focus();
     }
@@ -9636,6 +9642,14 @@ document.getElementById("join-btn").addEventListener("click", async () => {
       void playTurnChangeSoundEffect();
     }
     if (data.event_type === "answer_result" && isInGameArena()) {
+      const isCorrect = data.event_payload?.is_correct;
+      if (isCorrect === true) {
+        void playCorrectAnswerSoundEffect();
+      } else if (isCorrect === false) {
+        void playWrongAnswerSoundEffect();
+      }
+    }
+    if (data.event_type === "answer_result_sound" && isInGameArena()) {
       const isCorrect = data.event_payload?.is_correct;
       if (isCorrect === true) {
         void playCorrectAnswerSoundEffect();
