@@ -744,6 +744,10 @@ async def request_intentional_draw_vote(manager, client_id: str, payload: Intent
         await manager.send_private_info(client_id, "正誤判定中はフルオープン決着を提案できません。")
         return
 
+    if game.get("left_correct_waiting"):
+        await manager.send_private_info(client_id, "先攻待機中はフルオープン決着を提案できません。")
+        return
+
     pending_open_vote = room.get("pending_open_vote")
     if pending_open_vote and pending_open_vote.get("status") == "pending":
         await manager.send_private_info(client_id, "文字オープン投票中はフルオープン決着を提案できません。")

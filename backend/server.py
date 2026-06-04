@@ -1002,6 +1002,9 @@ class QuizGameManager:
         if game.get("game_status") != "playing":
             return False
 
+        if game.get("left_correct_waiting"):
+            return False
+
         question_length = len(_normalized_question_chars(room.get("question_text", "")))
         if question_length <= 0:
             return False

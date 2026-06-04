@@ -1123,6 +1123,23 @@ class TestArenaAnswerVisibilityContracts(unittest.TestCase):
         self.assertTrue(chat_result["ok"])
         self.assertEqual(chat_result["event_recipient_ids"], {"left-1"})
 
+    def test_left_reveal_window_disables_full_open_settlement_eligibility(self):
+        manager = QuizGameManager()
+        room = {
+            "game_state": "playing",
+            "question_text": "abcdefghij",
+            "game": {
+                "game_status": "playing",
+                "left_correct_waiting": True,
+                "full_open_settlement": None,
+                "opened_char_indexes": set(range(7)),
+                "team_left": {"wrong_answer_count": 1},
+                "team_right": {"wrong_answer_count": 1},
+            },
+        }
+
+        self.assertFalse(manager._is_intentional_draw_eligible(room))
+
     def test_full_open_start_clears_left_reveal_window_and_hides_previous_opponent_answer_logs(self):
         manager = QuizGameManager()
         room = {

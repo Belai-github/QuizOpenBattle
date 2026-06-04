@@ -4304,6 +4304,7 @@ function canRequestIntentionalDraw() {
   if (!isInGameArena()) return false;
   if ((currentRoomGameState || "waiting") !== "playing") return false;
   if (isAnswerJudgementPending()) return false;
+  if (Boolean(currentGameState?.left_correct_waiting)) return false;
   if (
     String(currentGameState?.full_open_settlement?.state || "idle") !== "idle"
   ) {
