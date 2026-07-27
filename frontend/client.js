@@ -321,7 +321,7 @@ const MIN_AI_ACCURACY_RATE = 10;
 const ARENA_MASK_CHAR = "■";
 const ARENA_MIN_CHARS_PER_LINE = 4;
 const ARENA_MIN_QUESTION_FONT_SIZE_PX = 16;
-const ARENA_QUESTION_FONT_STEP_PX = 1;
+const ARENA_QUESTION_SCROLLBAR_RESERVE_PX = 16;
 const QUESTIONER_VIEW_MODE_CYCLE = ["all", "team-left", "team-right"];
 const SPECTATOR_VIEW_MODE_CYCLE = ["team-left", "team-right"];
 const DEBUG_VIEWPORT_OVERLAY_ENABLED = false;
@@ -329,6 +329,14 @@ let currentArenaQuestionRawText = "";
 let questionerViewMode = "all";
 const selectedArenaQuestionCharIndexes = new Set();
 let lastAutoSelectedQuestionKey = null;
+let lastArenaQuestionRenderSignature = "";
+let lastArenaQuestionBoardWidth = -1;
+let lastArenaQuestionBoardHeight = -1;
+let lastArenaQuestionViewportWidth = -1;
+let lastArenaQuestionViewportHeight = -1;
+let arenaQuestionResizeFrameId = 0;
+let arenaQuestionResizeForceRefresh = false;
+let arenaQuestionFontRefreshRegistered = false;
 const lastChatSentAt = {}; // key: "lobby" or "game-all", "team-left", "team-right", "questioner"
 let lastRulebookTriggerEl = null;
 let viewportDebugEl = null;
@@ -6401,6 +6409,8 @@ function renderKifuStep() {
   if (shouldReplayLog) {
     renderArenaLogsForRoom(replayRoomId, { forceScrollToBottom: true });
   }
+  syncArenaPlayerBoxHeights();
+  renderArenaQuestionText();
   highlightReplayCurrentLogFromDisplayedProgress();
 }
 
@@ -7811,60 +7821,35 @@ function ensureDefaultPunctuationSelection() {
   lastAutoSelectedQuestionKey = questionKey;
 }
 
-function getArenaCharsPerLine() {
-  const boardEl = document.getElementById("arena-question-board");
-  const questionEl = document.getElementById("arena-question-text");
-  if (!boardEl || !questionEl) {
-    return 10;
-  }
-
-  const boardStyle = window.getComputedStyle(boardEl);
-  const horizontalPadding =
-    parseFloat(boardStyle.paddingLeft || "0") +
-    parseFloat(boardStyle.paddingRight || "0");
-  const availableWidth = Math.max(boardEl.clientWidth - horizontalPadding, 40);
-
-  // 実際の描画スタイル（padding含む）で1文字幅を測る。
-  const totalChars = Math.max(getNormalizedArenaQuestionChars().length, 1);
-  const maxDigits = Math.max(String(totalChars).length, 1);
-  const probeCharEl = document.createElement("span");
-  probeCharEl.className = "arena-question-char is-mask-token";
-  probeCharEl.dataset.tokenLabel = "8".repeat(maxDigits);
-  probeCharEl.textContent = "";
-  probeCharEl.style.visibility = "hidden";
-  probeCharEl.style.position = "absolute";
-  probeCharEl.style.left = "-9999px";
-  probeCharEl.style.top = "-9999px";
-  questionEl.appendChild(probeCharEl);
-
-  const measuredCharWidth = Math.max(
-    probeCharEl.getBoundingClientRect().width,
-    1,
-  );
-  probeCharEl.remove();
-
-  const calculatedCharsPerLine = Math.max(
-    Math.floor(availableWidth / measuredCharWidth),
-    ARENA_MIN_CHARS_PER_LINE,
-  );
-  if (window.matchMedia("(min-width: 768px) and (max-width: 991px)").matches) {
-    return Math.min(calculatedCharsPerLine, 20);
-  }
-
-  return calculatedCharsPerLine;
+function resetArenaQuestionLayoutCache() {
+  lastArenaQuestionRenderSignature = "";
+  lastArenaQuestionBoardWidth = -1;
+  lastArenaQuestionBoardHeight = -1;
+  lastArenaQuestionViewportWidth = -1;
+  lastArenaQuestionViewportHeight = -1;
 }
 
-function getArenaQuestionAvailableBounds() {
+function getArenaQuestionRenderSignature() {
+  return JSON.stringify([
+    currentArenaQuestionRawText,
+    questionerViewMode,
+    userRole,
+    currentRoomGameState,
+    currentGameState,
+    isKifuMode,
+    isArenaReplayMode,
+  ]);
+}
+
+function measureArenaQuestionLayout() {
   const boardEl = document.getElementById("arena-question-board");
   const questionEl = document.getElementById("arena-question-text");
   if (!boardEl || !questionEl) {
-    return {
-      availableWidth: 0,
-      availableHeight: 0,
-    };
+    return null;
   }
 
   const boardStyle = window.getComputedStyle(boardEl);
+  const questionStyle = window.getComputedStyle(questionEl);
   const horizontalPadding =
     parseFloat(boardStyle.paddingLeft || "0") +
     parseFloat(boardStyle.paddingRight || "0");
@@ -7887,8 +7872,28 @@ function getArenaQuestionAvailableBounds() {
   );
   const totalVisibleItems = visibleSiblingEls.length + 1;
 
+  const totalChars = Math.max(getNormalizedArenaQuestionChars().length, 1);
+  const maxDigits = Math.max(String(totalChars).length, 1);
+  const probeCharEl = document.createElement("span");
+  probeCharEl.className = "arena-question-char is-mask-token";
+  probeCharEl.dataset.tokenLabel = "8".repeat(maxDigits);
+  probeCharEl.style.position = "absolute";
+  probeCharEl.style.inset = "auto";
+  probeCharEl.style.visibility = "hidden";
+  probeCharEl.style.pointerEvents = "none";
+  questionEl.appendChild(probeCharEl);
+  const probeRect = probeCharEl.getBoundingClientRect();
+  probeCharEl.remove();
+
   return {
-    availableWidth: Math.max(boardEl.clientWidth - horizontalPadding, 40),
+    boardEl,
+    questionEl,
+    boardWidth: boardEl.clientWidth,
+    boardHeight: boardEl.clientHeight,
+    availableWidth: Math.max(
+      boardEl.clientWidth - horizontalPadding - 1,
+      40,
+    ),
     availableHeight: Math.max(
       boardEl.clientHeight -
         verticalPadding -
@@ -7896,6 +7901,9 @@ function getArenaQuestionAvailableBounds() {
         gap * Math.max(totalVisibleItems - 1, 0),
       40,
     ),
+    defaultFontSize: Math.max(parseFloat(questionStyle.fontSize || "16"), 1),
+    cellWidth: Math.max(probeRect.width, 1),
+    cellHeight: Math.max(probeRect.height, 1),
   };
 }
 
@@ -7907,26 +7915,17 @@ function setArenaQuestionOverflowState(questionEl, overflowEnabled, maxHeight = 
   if (overflowEnabled) {
     questionEl.style.maxHeight = `${Math.max(maxHeight, 40)}px`;
     questionEl.style.overflowY = "auto";
-    questionEl.style.paddingRight = "4px";
+    questionEl.style.scrollbarGutter = "stable";
     return;
   }
 
   questionEl.style.maxHeight = "";
   questionEl.style.overflowY = "";
-  questionEl.style.paddingRight = "";
+  questionEl.style.scrollbarGutter = "";
 }
 
-function renderArenaQuestionWithAutoFit(renderQuestion) {
-  const questionEl = document.getElementById("arena-question-text");
-  if (!questionEl) return;
-
-  questionEl.style.fontSize = "";
-  questionEl.style.lineHeight = "";
-  setArenaQuestionOverflowState(questionEl, false);
-
-  const defaultFontSize = parseFloat(
-    window.getComputedStyle(questionEl).fontSize || "16",
-  );
+function calculateArenaQuestionLayout(measurement, totalChars, maxFontSize = null) {
+  const defaultFontSize = measurement.defaultFontSize;
   const minFontSize = Math.min(
     defaultFontSize,
     Math.max(
@@ -7934,45 +7933,225 @@ function renderArenaQuestionWithAutoFit(renderQuestion) {
       Math.floor(defaultFontSize * 0.68),
     ),
   );
+  const upperFontSize = Math.max(
+    minFontSize,
+    Math.min(
+      Number.isFinite(maxFontSize) ? maxFontSize : defaultFontSize,
+      defaultFontSize,
+    ),
+  );
+  const normalizedTotal = Math.max(totalChars, 1);
 
-  const tryRender = () => {
-    const charsPerLine = getArenaCharsPerLine();
-    renderQuestion(questionEl, charsPerLine);
-
-    const { availableWidth, availableHeight } = getArenaQuestionAvailableBounds();
-    const rect = questionEl.getBoundingClientRect();
-    const fits =
-      rect.width <= availableWidth + 1 && rect.height <= availableHeight + 1;
-
-    if (!fits) {
-      setArenaQuestionOverflowState(questionEl, true, availableHeight);
+  const evaluate = (fontSize, reserveScrollbar = false) => {
+    const scale = fontSize / defaultFontSize;
+    const usableWidth = Math.max(
+      measurement.availableWidth -
+        (reserveScrollbar ? ARENA_QUESTION_SCROLLBAR_RESERVE_PX : 0),
+      40,
+    );
+    let charsPerLine = Math.max(
+      Math.floor(usableWidth / (measurement.cellWidth * scale)),
+      ARENA_MIN_CHARS_PER_LINE,
+    );
+    if (window.matchMedia("(min-width: 768px) and (max-width: 991px)").matches) {
+      charsPerLine = Math.min(charsPerLine, 20);
     }
-
-    return fits;
+    charsPerLine = Math.min(charsPerLine, normalizedTotal);
+    const rows = Math.max(Math.ceil(normalizedTotal / charsPerLine), 1);
+    return {
+      fontSize,
+      charsPerLine,
+      rows,
+      predictedWidth: charsPerLine * measurement.cellWidth * scale,
+      predictedHeight: rows * measurement.cellHeight * scale,
+      overflowEnabled: reserveScrollbar,
+    };
   };
 
-  if (tryRender()) {
-    return;
+  const defaultLayout = evaluate(upperFontSize);
+  if (defaultLayout.predictedHeight <= measurement.availableHeight) {
+    return defaultLayout;
   }
 
-  for (
-    let fontSize = defaultFontSize - ARENA_QUESTION_FONT_STEP_PX;
-    fontSize >= minFontSize;
-    fontSize -= ARENA_QUESTION_FONT_STEP_PX
-  ) {
-    questionEl.style.fontSize = `${fontSize}px`;
-    questionEl.style.lineHeight =
-      fontSize <= defaultFontSize * 0.82 ? "1.18" : "";
-    setArenaQuestionOverflowState(questionEl, false);
-    if (tryRender()) {
-      return;
+  const minimumLayout = evaluate(minFontSize);
+  if (minimumLayout.predictedHeight > measurement.availableHeight) {
+    return evaluate(minFontSize, true);
+  }
+
+  let lower = minFontSize;
+  let upper = upperFontSize;
+  let bestLayout = minimumLayout;
+  for (let iteration = 0; iteration < 16; iteration += 1) {
+    const candidateFontSize = (lower + upper) / 2;
+    const candidateLayout = evaluate(candidateFontSize);
+    if (candidateLayout.predictedHeight <= measurement.availableHeight) {
+      bestLayout = candidateLayout;
+      lower = candidateFontSize;
+    } else {
+      upper = candidateFontSize;
     }
   }
 
-  questionEl.style.fontSize = `${minFontSize}px`;
-  questionEl.style.lineHeight = "1.18";
+  return evaluate(Math.floor(bestLayout.fontSize * 1000) / 1000);
+}
+
+function applyArenaQuestionLayout(questionEl, measurement, layout, renderQuestion) {
+  const usesDefaultFont =
+    Math.abs(layout.fontSize - measurement.defaultFontSize) < 0.01;
+  questionEl.style.fontSize = usesDefaultFont
+    ? ""
+    : `${Math.max(layout.fontSize, 1)}px`;
+  questionEl.style.lineHeight =
+    !usesDefaultFont &&
+    layout.fontSize <= measurement.defaultFontSize * 0.82
+      ? "1.18"
+      : "";
+  setArenaQuestionOverflowState(
+    questionEl,
+    layout.overflowEnabled,
+    measurement.availableHeight,
+  );
+  renderQuestion(questionEl, layout.charsPerLine);
+}
+
+function verifyArenaQuestionLayout(measurement, layout) {
+  const { boardEl, questionEl } = measurement;
+  const lineEls = Array.from(
+    questionEl.querySelectorAll(".arena-question-line"),
+  );
+  const hasHorizontalOverflow =
+    boardEl.scrollWidth > boardEl.clientWidth + 1 ||
+    questionEl.scrollWidth > questionEl.clientWidth + 1 ||
+    lineEls.some((lineEl) => lineEl.scrollWidth > lineEl.clientWidth + 1);
+  const hasVerticalOverflowWithoutScroll =
+    !layout.overflowEnabled &&
+    questionEl.getBoundingClientRect().height >
+      measurement.availableHeight + 1;
+  const fullLineEls = lineEls.filter(
+    (lineEl) => lineEl.children.length === layout.charsPerLine,
+  );
+  const measuredLineEls = fullLineEls.length > 0 ? fullLineEls : lineEls;
+  const actualCellWidth = measuredLineEls.reduce((largestWidth, lineEl) => {
+    const charCount = lineEl.children.length;
+    if (charCount <= 0) return largestWidth;
+    return Math.max(largestWidth, lineEl.scrollWidth / charCount);
+  }, 0);
+
+  return {
+    hasHorizontalOverflow,
+    hasVerticalOverflowWithoutScroll,
+    actualCellWidth,
+  };
+}
+
+function getCorrectedArenaQuestionLayout(measurement, layout, verification) {
+  if (
+    !verification.hasHorizontalOverflow &&
+    !verification.hasVerticalOverflowWithoutScroll
+  ) {
+    return null;
+  }
+
+  const scrollbarReserve = layout.overflowEnabled
+    ? ARENA_QUESTION_SCROLLBAR_RESERVE_PX
+    : 0;
+  const usableWidth = Math.max(
+    measurement.availableWidth - scrollbarReserve,
+    40,
+  );
+  const heightScale = verification.hasVerticalOverflowWithoutScroll
+    ? Math.min(
+        1,
+        measurement.availableHeight /
+          Math.max(layout.predictedHeight, measurement.availableHeight + 1),
+      )
+    : 1;
+  const correctedMaxFont = Math.max(
+    ARENA_MIN_QUESTION_FONT_SIZE_PX,
+    layout.fontSize * heightScale * 0.995,
+  );
+  const correctedLayout = calculateArenaQuestionLayout(
+    measurement,
+    getNormalizedArenaQuestionChars().length,
+    correctedMaxFont,
+  );
+
+  if (verification.hasHorizontalOverflow && verification.actualCellWidth > 0) {
+    const correctedCellWidth =
+      verification.actualCellWidth *
+      (correctedLayout.fontSize / layout.fontSize);
+    correctedLayout.charsPerLine = Math.min(
+      correctedLayout.charsPerLine,
+      Math.max(
+        Math.floor(usableWidth / Math.max(correctedCellWidth, 1)),
+        ARENA_MIN_CHARS_PER_LINE,
+      ),
+    );
+  } else if (
+    verification.hasHorizontalOverflow &&
+    correctedLayout.charsPerLine >= layout.charsPerLine
+  ) {
+    correctedLayout.charsPerLine = Math.max(
+      ARENA_MIN_CHARS_PER_LINE,
+      layout.charsPerLine - 1,
+    );
+  }
+
+  if (correctedLayout.charsPerLine !== layout.charsPerLine) {
+    correctedLayout.rows = Math.max(
+      Math.ceil(
+        Math.max(getNormalizedArenaQuestionChars().length, 1) /
+          correctedLayout.charsPerLine,
+      ),
+      1,
+    );
+    const correctedScale =
+      correctedLayout.fontSize / measurement.defaultFontSize;
+    correctedLayout.predictedWidth =
+      correctedLayout.charsPerLine *
+      measurement.cellWidth *
+      correctedScale;
+    correctedLayout.predictedHeight =
+      correctedLayout.rows * measurement.cellHeight * correctedScale;
+  }
+
+  return correctedLayout;
+}
+
+function renderArenaQuestionWithAutoFit(renderQuestion, measurement = null) {
+  const questionEl = document.getElementById("arena-question-text");
+  if (!questionEl) return;
+
+  questionEl.style.fontSize = "";
+  questionEl.style.lineHeight = "";
   setArenaQuestionOverflowState(questionEl, false);
-  tryRender();
+
+  const finalMeasurement = measurement || measureArenaQuestionLayout();
+  if (!finalMeasurement) return;
+
+  const totalChars = getNormalizedArenaQuestionChars().length;
+  const layout = calculateArenaQuestionLayout(finalMeasurement, totalChars);
+  applyArenaQuestionLayout(
+    questionEl,
+    finalMeasurement,
+    layout,
+    renderQuestion,
+  );
+
+  const verification = verifyArenaQuestionLayout(finalMeasurement, layout);
+  const correctedLayout = getCorrectedArenaQuestionLayout(
+    finalMeasurement,
+    layout,
+    verification,
+  );
+  if (correctedLayout) {
+    applyArenaQuestionLayout(
+      questionEl,
+      finalMeasurement,
+      correctedLayout,
+      renderQuestion,
+    );
+  }
 }
 
 function buildMaskedQuestionText(questionText, charsPerLine) {
@@ -8244,6 +8423,12 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
         charEl.setAttribute("role", "button");
         // 参加者の文字オープン操作はタップ主体なので、フォーカス残留を避ける。
         charEl.setAttribute("tabindex", canClickInSetup ? "0" : "-1");
+        if (canClickInSetup) {
+          charEl.setAttribute(
+            "aria-pressed",
+            String(selectedArenaQuestionCharIndexes.has(globalIndex)),
+          );
+        }
       } else {
         charEl.setAttribute("aria-disabled", "true");
       }
@@ -8274,10 +8459,38 @@ function renderMaskedArenaQuestionText() {
   });
 }
 
-function renderArenaQuestionText() {
+function renderArenaQuestionText({ force = false } = {}) {
+  const boardEl = document.getElementById("arena-question-board");
+  if (!boardEl || !isInGameArena()) {
+    resetArenaQuestionLayoutCache();
+    return false;
+  }
+
+  const renderSignature = getArenaQuestionRenderSignature();
+  const boardWidth = boardEl.clientWidth;
+  const boardHeight = boardEl.clientHeight;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  if (
+    !force &&
+    renderSignature === lastArenaQuestionRenderSignature &&
+    boardWidth === lastArenaQuestionBoardWidth &&
+    boardHeight === lastArenaQuestionBoardHeight &&
+    viewportWidth === lastArenaQuestionViewportWidth &&
+    viewportHeight === lastArenaQuestionViewportHeight
+  ) {
+    return false;
+  }
+
   renderArenaQuestionWithAutoFit((questionEl, charsPerLine) => {
     renderArenaQuestionCharGrid(questionEl, charsPerLine);
   });
+  lastArenaQuestionRenderSignature = renderSignature;
+  lastArenaQuestionBoardWidth = boardEl.clientWidth;
+  lastArenaQuestionBoardHeight = boardEl.clientHeight;
+  lastArenaQuestionViewportWidth = viewportWidth;
+  lastArenaQuestionViewportHeight = viewportHeight;
+  return true;
 }
 
 function renderArena(currentRoom) {
@@ -8313,6 +8526,7 @@ function renderArena(currentRoom) {
     questionerViewMode = "all";
     selectedArenaQuestionCharIndexes.clear();
     lastAutoSelectedQuestionKey = null;
+    resetArenaQuestionLayoutCache();
     questionEl.style.fontSize = "";
     questionEl.style.lineHeight = "";
     setArenaQuestionOverflowState(questionEl, false);
@@ -8432,7 +8646,6 @@ function renderArena(currentRoom) {
   }
 
   ensureDefaultPunctuationSelection();
-  renderArenaQuestionText();
   updateQuestionVisibilityButton();
 
   const leftPlayers = Array.isArray(currentRoom.left_participants)
@@ -9333,6 +9546,7 @@ function bootstrapApp() {
   syncWaitingRoomMobilePanelState();
   updateAuthUi();
   bindAudioUnlockListeners();
+  registerArenaQuestionFontRefresh();
   void initializeAuthState();
 }
 
@@ -9772,6 +9986,7 @@ document.getElementById("join-btn").addEventListener("click", async () => {
     }
     updateArenaAnswerFormVisibility();
     updateChatBoxVisibility();
+    renderArenaQuestionText();
 
     const isPlayingParticipantJoin =
       isEnteringArena &&
@@ -10175,13 +10390,16 @@ function toggleArenaQuestionCharSelectionFromTarget(targetEl) {
   const isOpened = Boolean(getOpenedByTeamMap()[String(index)]);
 
   if (canSelectArenaQuestionChars()) {
+    const shouldSelect = !selectedArenaQuestionCharIndexes.has(index);
     if (selectedArenaQuestionCharIndexes.has(index)) {
       selectedArenaQuestionCharIndexes.delete(index);
     } else {
       selectedArenaQuestionCharIndexes.add(index);
     }
-
-    renderArenaQuestionText();
+    charEl.classList.toggle("is-selected", shouldSelect);
+    if (charEl.hasAttribute("aria-pressed")) {
+      charEl.setAttribute("aria-pressed", String(shouldSelect));
+    }
     return;
   }
 
@@ -10621,16 +10839,42 @@ waitingPanelRightBtnEl?.addEventListener("click", () => {
   });
 });
 
-window.addEventListener("resize", () => {
-  syncWaitingRoomMobilePanelState();
-  syncArenaPlayerBoxHeights();
-  if (isInGameArena()) {
-    renderArenaQuestionText();
-    syncArenaLogsPresentation();
-    updateArenaLogsButtonVisibility();
-    syncArenaSpectatorBoxState();
+function scheduleArenaQuestionLayoutRefresh({ force = false } = {}) {
+  arenaQuestionResizeForceRefresh =
+    arenaQuestionResizeForceRefresh || Boolean(force);
+  if (arenaQuestionResizeFrameId !== 0) {
+    return;
   }
-  updateViewportDebugOverlay();
+
+  arenaQuestionResizeFrameId = window.requestAnimationFrame(() => {
+    arenaQuestionResizeFrameId = 0;
+    const shouldForce = arenaQuestionResizeForceRefresh;
+    arenaQuestionResizeForceRefresh = false;
+
+    syncWaitingRoomMobilePanelState();
+    if (isInGameArena()) {
+      syncArenaLogsPresentation();
+      updateArenaLogsButtonVisibility();
+      syncArenaSpectatorBoxState();
+      syncArenaPlayerBoxHeights();
+      renderArenaQuestionText({ force: shouldForce });
+    }
+    updateViewportDebugOverlay();
+  });
+}
+
+function registerArenaQuestionFontRefresh() {
+  if (arenaQuestionFontRefreshRegistered || !document.fonts?.ready) {
+    return;
+  }
+  arenaQuestionFontRefreshRegistered = true;
+  void document.fonts.ready.then(() => {
+    scheduleArenaQuestionLayoutRefresh({ force: true });
+  });
+}
+
+window.addEventListener("resize", () => {
+  scheduleArenaQuestionLayoutRefresh();
 });
 
 document.addEventListener("click", (event) => {
