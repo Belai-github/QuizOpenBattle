@@ -335,8 +335,12 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 }
 
 #game-arena-screen .arena-player-header {
-    min-height: 0;
+    position: relative;
+    min-height: 2.5rem;
     height: auto;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    align-content: normal;
     gap: var(--arena-space-xs);
     margin-block-end: var(--arena-space-xs);
     padding-block: 0 var(--arena-space-xs);
@@ -376,12 +380,25 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 }
 
 #game-arena-screen .arena-action-points-display {
+    position: absolute;
+    inset-block-start: 0.75rem;
+    inset-inline-end: 0;
+    flex: 0 0 auto;
+    width: max-content;
+    height: 1.25rem;
+    min-height: 1.25rem;
+    max-height: 1.25rem;
     min-width: 0;
+    max-width: 100%;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--arena-space-2xs);
     color: var(--arena-color-on-stage);
     font-family: var(--arena-font-data);
     font-size: var(--arena-text-sm);
     font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 #game-arena-screen .arena-action-points-display::before {
@@ -392,34 +409,119 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     letter-spacing: 0.08em;
 }
 
+@keyframes arena-action-spin-counterclockwise {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(-360deg);
+    }
+}
+
+@keyframes arena-action-spin-clockwise {
+    from {
+        transform: rotate(45deg);
+    }
+
+    to {
+        transform: rotate(405deg);
+    }
+}
+
 #game-arena-screen .action-icon,
 #game-arena-screen .bonus-action-icon {
+    --arena-action-indicator-color: var(--arena-color-on-stage);
     position: relative;
-    width: 0.875rem;
-    height: 0.875rem;
-    flex: 0 0 0.875rem;
-    display: inline-block;
-    border: 0.125rem solid var(--arena-color-on-stage);
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 1rem;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
     background: transparent;
     color: transparent;
     cursor: help;
     font-size: 0;
+    isolation: isolate;
+    opacity: 0.42;
+    transform: scale(0.72);
+    transform-origin: center;
+    transition:
+        transform 180ms ease,
+        opacity 180ms ease;
 }
 
-#game-arena-screen .action-icon {
-    transform: rotate(30deg);
+#game-arena-screen .action-icon::before,
+#game-arena-screen .action-icon::after,
+#game-arena-screen .bonus-action-icon::before,
+#game-arena-screen .bonus-action-icon::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    border: 0.125rem solid var(--arena-action-indicator-color);
+    animation: arena-action-spin-counterclockwise 6s linear infinite;
+    animation-play-state: paused;
+    backface-visibility: hidden;
+    pointer-events: none;
+    transform-origin: center;
+    will-change: transform;
+}
+
+#game-arena-screen .action-icon::before,
+#game-arena-screen .bonus-action-icon::before {
+    z-index: 1;
+}
+
+#game-arena-screen .action-icon::after,
+#game-arena-screen .bonus-action-icon::after {
+    z-index: 0;
+    border-color: color-mix(
+        in oklch,
+        var(--arena-action-indicator-color) 55%,
+        var(--arena-color-stage) 45%
+    );
+    border-width: 0.0625rem;
+    animation-name: arena-action-spin-clockwise;
+    animation-duration: 3s;
+}
+
+#game-arena-screen
+    :is(.action-icon, .bonus-action-icon)[data-active="true"] {
+    opacity: 1;
+    transform: scale(1);
+}
+
+#game-arena-screen
+    :is(.action-icon, .bonus-action-icon)[data-active="true"]::before,
+#game-arena-screen
+    :is(.action-icon, .bonus-action-icon)[data-active="true"]::after {
+    animation-play-state: running;
 }
 
 #game-arena-screen .bonus-action-icon {
-    border-color: var(--arena-color-turn);
-    border-radius: 50%;
-    background: var(--arena-color-turn);
+    --arena-action-indicator-color: var(--arena-color-turn);
+    margin-inline-start: 0.375rem;
+}
+
+#game-arena-screen .arena-player-box.left .bonus-action-icon {
+    --arena-action-indicator-color: var(--arena-color-left);
+}
+
+#game-arena-screen .arena-player-box.right .bonus-action-icon {
+    --arena-action-indicator-color: var(--arena-color-right);
 }
 
 #game-arena-screen .times-symbol {
     color: var(--arena-color-on-stage-muted);
     font-size: var(--arena-text-xs);
     opacity: 1;
+}
+
+#game-arena-screen .action-times-symbol,
+#game-arena-screen .action-count {
+    display: none;
 }
 
 #game-arena-screen .action-count,
@@ -1066,16 +1168,6 @@ body:has(#game-arena-screen:not([style*="none"]))
     line-height: 1;
 }
 
-#game-arena-screen .new-log-indicator::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: max(100%, 2.75rem);
-    height: 2.75rem;
-    transform: translate(-50%, -50%);
-}
-
 /* Arena overlays */
 #game-arena-screen .modal-card,
 #game-arena-screen .arena-logs-modal-shell {
@@ -1119,7 +1211,7 @@ body:has(#game-arena-screen:not([style*="none"]))
 
 #game-arena-screen
     :is(
-        button,
+        button:not(.new-log-indicator),
         [role="button"]:not(.arena-question-char):not(.player-list-item),
         a[href]
     ) {
@@ -1310,7 +1402,7 @@ body:has(#game-arena-screen:not([style*="none"]))
 /* Mobile-first corrections over the legacy max-width rules */
 @media (max-width: 47.99rem), (pointer: coarse) and (max-height: 47.99rem) {
     body:has(#game-arena-screen:not([style*="none"])) {
-        --arena-question-mobile-min: clamp(10rem, 32dvh, 15rem);
+        --arena-question-mobile-size: clamp(15rem, 36dvh, 22.5rem);
         justify-content: flex-start;
         padding: 0;
         gap: 0;
@@ -1336,51 +1428,56 @@ body:has(#game-arena-screen:not([style*="none"]))
 
     body:has(#game-arena-screen:not([style*="none"]))
         #arena-board-layout {
-        flex: 1 1 0;
+        flex: 0 0 auto;
         min-height: 0;
-        grid-template-rows:
-            minmax(var(--arena-question-mobile-min), 1fr)
-            auto;
+        grid-template-rows: auto auto;
     }
 
     body:has(#game-arena-screen:not([style*="none"]))
         #arena-question-board {
-        max-height: none;
-        min-height: var(--arena-question-mobile-min);
+        height: var(--arena-question-mobile-size);
+        min-height: var(--arena-question-mobile-size);
+        max-height: var(--arena-question-mobile-size);
     }
 }
 
 @media (min-width: 48rem) and (max-width: 61.99rem) {
     body:has(#game-arena-screen:not([style*="none"])) {
-        --arena-question-mobile-min: clamp(10rem, 32dvh, 15rem);
-    }
-
-    body:has(#game-arena-screen:not([style*="none"]))
-        #arena-board-layout {
-        flex: 1 1 0;
-        min-height: calc(var(--arena-question-mobile-min) + 12rem);
-        grid-template-rows:
-            minmax(var(--arena-question-mobile-min), 1fr)
-            auto;
-    }
-
-    body:has(#game-arena-screen:not([style*="none"]))
-        #arena-question-board {
-        max-height: none;
-        min-height: var(--arena-question-mobile-min) !important;
-    }
-}
-
-@media (pointer: coarse) and (max-height: 47.99rem) {
-    body:has(#game-arena-screen:not([style*="none"])) {
-        --arena-question-mobile-min: clamp(11.5rem, 50dvh, 15rem);
+        --arena-question-mobile-size: clamp(21rem, 42dvh, 23rem);
     }
 
     body:has(#game-arena-screen:not([style*="none"]))
         #arena-board-layout {
         flex: 0 0 auto;
-        min-height: calc(var(--arena-question-mobile-min) + 12rem);
-        grid-template-rows: var(--arena-question-mobile-min) auto;
+        min-height: 0;
+        grid-template-rows: auto auto;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-question-board {
+        height: var(--arena-question-mobile-size);
+        min-height: var(--arena-question-mobile-size) !important;
+        max-height: var(--arena-question-mobile-size);
+    }
+}
+
+@media (pointer: coarse) and (max-height: 47.99rem) {
+    body:has(#game-arena-screen:not([style*="none"])) {
+        --arena-question-mobile-size: clamp(11.5rem, 50dvh, 15rem);
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-board-layout {
+        flex: 0 0 auto;
+        min-height: 0;
+        grid-template-rows: auto auto;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-question-board {
+        height: var(--arena-question-mobile-size);
+        min-height: var(--arena-question-mobile-size);
+        max-height: var(--arena-question-mobile-size);
     }
 }
 
@@ -1557,7 +1654,8 @@ body:has(#game-arena-screen:not([style*="none"]))
     }
 
     body:has(#game-arena-screen:not([style*="none"])) .arena-player-header {
-        min-height: 0;
+        min-height: 3.25rem;
+        align-items: flex-start;
         gap: var(--arena-space-2xs);
         padding-inline-end: 3.25rem;
     }
@@ -1576,7 +1674,11 @@ body:has(#game-arena-screen:not([style*="none"]))
     }
 
     body:has(#game-arena-screen:not([style*="none"])) .arena-action-points-display {
-        flex-basis: 100%;
+        inset-block-start: 1.75rem;
+        inset-inline-start: 0;
+        inset-inline-end: auto;
+        flex-basis: auto;
+        justify-content: flex-start;
         padding-inline-start: 0;
         gap: var(--arena-space-2xs);
         font-size: var(--arena-text-xs);
@@ -1588,9 +1690,9 @@ body:has(#game-arena-screen:not([style*="none"]))
 
     #game-arena-screen .action-icon,
     #game-arena-screen .bonus-action-icon {
-        width: 0.75rem;
-        height: 0.75rem;
-        flex-basis: 0.75rem;
+        width: 0.875rem;
+        height: 0.875rem;
+        flex-basis: 0.875rem;
     }
 
     #game-arena-screen .action-count,
@@ -1823,6 +1925,13 @@ body:has(#game-arena-screen:not([style*="none"]))
 }
 
 @media (min-width: 75rem) {
+    #game-arena-screen #arena-board-layout {
+        grid-template-columns:
+            minmax(18.125rem, 1fr)
+            minmax(0, 34.375rem)
+            minmax(18.125rem, 1fr);
+    }
+
     #game-arena-screen #arena-lower-layout {
         width: 100%;
         max-width: none;
@@ -1959,9 +2068,28 @@ body:has(#game-arena-screen:not([style*="none"]))
         scroll-behavior: auto !important;
     }
 
+    #game-arena-screen .action-icon,
+    #game-arena-screen .bonus-action-icon {
+        transition: none;
+    }
+
+    #game-arena-screen .action-icon::before,
+    #game-arena-screen .bonus-action-icon::before {
+        animation-duration: 6s !important;
+        animation-iteration-count: infinite !important;
+    }
+
+    #game-arena-screen .action-icon::after,
+    #game-arena-screen .bonus-action-icon::after {
+        animation-duration: 3s !important;
+        animation-iteration-count: infinite !important;
+    }
+
     #game-arena-screen .arena-player-box.is-current-turn,
     #game-arena-screen
-        button:active:not(:disabled):not([aria-disabled="true"]),
+        button:active:not(:disabled):not([aria-disabled="true"]):not(
+            .new-log-indicator
+        ),
     #game-arena-screen
         [role="button"]:not(.arena-question-char):not(.player-list-item):not(
             [aria-disabled="true"]
@@ -1969,7 +2097,9 @@ body:has(#game-arena-screen:not([style*="none"]))
     #game-arena-screen a[href]:active,
     #game-arena-screen
         :is(
-            button:not(:disabled):not([aria-disabled="true"]),
+            button:not(:disabled):not([aria-disabled="true"]):not(
+                    .new-log-indicator
+                ),
             [role="button"]:not(.arena-question-char):not(.player-list-item):not(
                     [aria-disabled="true"]
                 ),

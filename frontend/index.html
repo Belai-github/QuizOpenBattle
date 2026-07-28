@@ -7,7 +7,7 @@
     <title>QuizOpenBattle</title>
     <link rel="icon" href="img/favicon.png" type="image/png">
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="hallmark-theme.css">
+    <link rel="stylesheet" href="hallmark-theme.css?v=20260729-action-indicators-11">
 </head>
 
 <body>
@@ -188,8 +188,8 @@
                 <div class="arena-player-header">
                     <div class="arena-player-label">先攻</div>
                     <div class="arena-action-points-display arena-action-points-hidden" id="arena-action-points-left">
-                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span class="times-symbol">×</span><span class="action-count">1</span>
-                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span class="times-symbol">×</span><span class="bonus-count">0</span>
+                        <span class="action-icon" data-active="false" role="img" title="アクション権" aria-label="アクション権なし">⚫</span><span class="times-symbol action-times-symbol">×</span><span class="action-count">1</span>
+                        <span class="bonus-action-icon" data-active="false" role="img" title="＋アクション権" aria-label="＋アクション権なし（0個）">🔴</span><span class="times-symbol bonus-times-symbol">×</span><span class="bonus-count">0</span>
                     </div>
                     <div class="arena-result-badge hidden" id="arena-result-badge-left" aria-live="polite"></div>
                 </div>
@@ -277,8 +277,8 @@
                 <div class="arena-player-header">
                     <div class="arena-player-label">後攻</div>
                     <div class="arena-action-points-display arena-action-points-hidden" id="arena-action-points-right">
-                        <span class="action-icon" title="アクション権" aria-label="アクション権">⚫</span><span class="times-symbol">×</span><span class="action-count">1</span>
-                        <span class="bonus-action-icon" title="＋アクション権" aria-label="＋アクション権">🔴</span><span class="times-symbol">×</span><span class="bonus-count">0</span>
+                        <span class="action-icon" data-active="false" role="img" title="アクション権" aria-label="アクション権なし">⚫</span><span class="times-symbol action-times-symbol">×</span><span class="action-count">1</span>
+                        <span class="bonus-action-icon" data-active="false" role="img" title="＋アクション権" aria-label="＋アクション権なし（0個）">🔴</span><span class="times-symbol bonus-times-symbol">×</span><span class="bonus-count">0</span>
                     </div>
                     <div class="arena-result-badge hidden" id="arena-result-badge-right" aria-live="polite"></div>
                 </div>

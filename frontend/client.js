@@ -330,10 +330,12 @@ let questionerViewMode = "all";
 const selectedArenaQuestionCharIndexes = new Set();
 let lastAutoSelectedQuestionKey = null;
 let lastArenaQuestionRenderSignature = "";
+let lastArenaQuestionLayoutSignature = "";
 let lastArenaQuestionBoardWidth = -1;
 let lastArenaQuestionBoardHeight = -1;
 let lastArenaQuestionViewportWidth = -1;
 let lastArenaQuestionViewportHeight = -1;
+let lastArenaQuestionCharsPerLine = 0;
 let arenaQuestionResizeFrameId = 0;
 let arenaQuestionResizeForceRefresh = false;
 let arenaQuestionFontRefreshRegistered = false;
@@ -4875,6 +4877,58 @@ function updateArenaReplayResultBadges({ show, winner }) {
   }
 }
 
+function syncArenaActionPointDisplay(
+  displayEl,
+  actionPointsValue,
+  bonusActionPointsValue,
+) {
+  if (!displayEl) return;
+
+  const actionPoints = Math.max(
+    0,
+    Math.trunc(Number(actionPointsValue) || 0),
+  );
+  const bonusActionPoints = Math.max(
+    0,
+    Math.trunc(Number(bonusActionPointsValue) || 0),
+  );
+  const actionCountEl = displayEl.querySelector(".action-count");
+  const bonusCountEl = displayEl.querySelector(".bonus-count");
+  const actionIconEl = displayEl.querySelector(".action-icon");
+  const bonusActionIconEl = displayEl.querySelector(".bonus-action-icon");
+
+  if (actionCountEl) {
+    actionCountEl.textContent = String(actionPoints);
+  }
+  if (bonusCountEl) {
+    bonusCountEl.textContent = String(bonusActionPoints);
+  }
+
+  const syncIndicator = (iconEl, isActive, ariaLabel) => {
+    if (!iconEl) return;
+    const nextActiveValue = String(isActive);
+    if (iconEl.dataset.active !== nextActiveValue) {
+      iconEl.dataset.active = nextActiveValue;
+    }
+    if (iconEl.getAttribute("aria-label") !== ariaLabel) {
+      iconEl.setAttribute("aria-label", ariaLabel);
+    }
+  };
+
+  syncIndicator(
+    actionIconEl,
+    actionPoints > 0,
+    actionPoints > 0 ? "アクション権あり" : "アクション権なし",
+  );
+  syncIndicator(
+    bonusActionIconEl,
+    bonusActionPoints > 0,
+    bonusActionPoints > 0
+      ? `＋アクション権あり（${bonusActionPoints}個）`
+      : "＋アクション権なし（0個）",
+  );
+}
+
 function updateGameStateUI() {
   // waiting -> playing へ遷移したタイミングで、出題前の選択状態を確実に破棄する
   if (
@@ -4901,13 +4955,11 @@ function updateGameStateUI() {
     const rightDisplay = document.getElementById("arena-action-points-right");
     if (leftDisplay) {
       leftDisplay.classList.add("arena-action-points-hidden");
-      leftDisplay.querySelector(".action-count").textContent = "0";
-      leftDisplay.querySelector(".bonus-count").textContent = "0";
+      syncArenaActionPointDisplay(leftDisplay, 0, 0);
     }
     if (rightDisplay) {
       rightDisplay.classList.add("arena-action-points-hidden");
-      rightDisplay.querySelector(".action-count").textContent = "0";
-      rightDisplay.querySelector(".bonus-count").textContent = "0";
+      syncArenaActionPointDisplay(rightDisplay, 0, 0);
     }
 
     // ターン表示をリセット
@@ -4937,20 +4989,22 @@ function updateGameStateUI() {
   const leftDisplay = document.getElementById("arena-action-points-left");
   if (leftDisplay) {
     leftDisplay.classList.remove("arena-action-points-hidden");
-    leftDisplay.querySelector(".action-count").textContent =
-      leftTeamState.action_points || 0;
-    leftDisplay.querySelector(".bonus-count").textContent =
-      leftTeamState.bonus_action_points || 0;
+    syncArenaActionPointDisplay(
+      leftDisplay,
+      leftTeamState.action_points,
+      leftTeamState.bonus_action_points,
+    );
   }
 
   // 後攻（右）のアクション権
   const rightDisplay = document.getElementById("arena-action-points-right");
   if (rightDisplay) {
     rightDisplay.classList.remove("arena-action-points-hidden");
-    rightDisplay.querySelector(".action-count").textContent =
-      rightTeamState.action_points || 0;
-    rightDisplay.querySelector(".bonus-count").textContent =
-      rightTeamState.bonus_action_points || 0;
+    syncArenaActionPointDisplay(
+      rightDisplay,
+      rightTeamState.action_points,
+      rightTeamState.bonus_action_points,
+    );
   }
 
   // ターン表示（ボックスを光らせる）
@@ -7809,10 +7863,12 @@ function ensureDefaultPunctuationSelection() {
 
 function resetArenaQuestionLayoutCache() {
   lastArenaQuestionRenderSignature = "";
+  lastArenaQuestionLayoutSignature = "";
   lastArenaQuestionBoardWidth = -1;
   lastArenaQuestionBoardHeight = -1;
   lastArenaQuestionViewportWidth = -1;
   lastArenaQuestionViewportHeight = -1;
+  lastArenaQuestionCharsPerLine = 0;
 }
 
 function getArenaQuestionRenderSignature() {
@@ -7825,6 +7881,10 @@ function getArenaQuestionRenderSignature() {
     isKifuMode,
     isArenaReplayMode,
   ]);
+}
+
+function getArenaQuestionLayoutSignature() {
+  return String(getNormalizedArenaQuestionChars().length);
 }
 
 function measureArenaQuestionLayout() {
@@ -8106,14 +8166,14 @@ function getCorrectedArenaQuestionLayout(measurement, layout, verification) {
 
 function renderArenaQuestionWithAutoFit(renderQuestion, measurement = null) {
   const questionEl = document.getElementById("arena-question-text");
-  if (!questionEl) return;
+  if (!questionEl) return null;
 
   questionEl.style.fontSize = "";
   questionEl.style.lineHeight = "";
   setArenaQuestionOverflowState(questionEl, false);
 
   const finalMeasurement = measurement || measureArenaQuestionLayout();
-  if (!finalMeasurement) return;
+  if (!finalMeasurement) return null;
 
   const totalChars = getNormalizedArenaQuestionChars().length;
   const layout = calculateArenaQuestionLayout(finalMeasurement, totalChars);
@@ -8137,7 +8197,9 @@ function renderArenaQuestionWithAutoFit(renderQuestion, measurement = null) {
       correctedLayout,
       renderQuestion,
     );
+    return correctedLayout;
   }
+  return layout;
 }
 
 function buildMaskedQuestionText(questionText, charsPerLine) {
@@ -8309,25 +8371,8 @@ function getDisplayCharForIndex(originalChar, index) {
   };
 }
 
-function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
-  const rows = buildArenaQuestionRows(charsPerLine);
-  if (rows.length === 0) {
-    questionEl.textContent = "問題文を準備中...";
-    selectedArenaQuestionCharIndexes.clear();
-    return;
-  }
-
+function prepareArenaQuestionCharState(totalChars) {
   const selectableForSetup = canSelectArenaQuestionChars();
-  const selectableForOpen = canRequestOpenCharacter();
-  const selectable = selectableForSetup || selectableForOpen;
-  const openedByTeam = getOpenedByTeamMap();
-  const viewerRole = getEffectiveQuestionViewerRole();
-
-  let totalChars = 0;
-  rows.forEach((row) => {
-    totalChars += row.length;
-  });
-
   if (!selectableForSetup) {
     selectedArenaQuestionCharIndexes.clear();
     lastAutoSelectedQuestionKey = null;
@@ -8338,6 +8383,126 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
       }
     }
   }
+}
+
+function applyArenaQuestionCharState(charEl, char, globalIndex) {
+  const selectableForSetup = canSelectArenaQuestionChars();
+  const selectableForOpen = canRequestOpenCharacter();
+  const openedByTeam = getOpenedByTeamMap();
+  const viewerRole = getEffectiveQuestionViewerRole();
+  const openedOwner = openedByTeam[String(globalIndex)];
+  const isOpened = Boolean(openedOwner);
+  const displayInfo = getDisplayCharForIndex(char, globalIndex);
+
+  charEl.className = "arena-question-char";
+  charEl.removeAttribute("role");
+  charEl.removeAttribute("tabindex");
+  charEl.removeAttribute("aria-pressed");
+  charEl.removeAttribute("aria-disabled");
+  delete charEl.dataset.tokenLabel;
+  charEl.dataset.charIndex = String(globalIndex);
+  charEl.setAttribute("aria-label", `文字 ${globalIndex + 1}`);
+  charEl.textContent = displayInfo.text;
+
+  // どの経路でも空表示を避ける（白い穴に見える状態を防ぐ）
+  if (charEl.textContent === "") {
+    charEl.textContent = "□";
+  }
+
+  if (displayInfo.tokenVariant) {
+    charEl.classList.add("is-mask-token");
+    charEl.dataset.tokenLabel = displayInfo.text || String(globalIndex + 1);
+    charEl.textContent = "";
+    if (displayInfo.tokenVariant === "left") {
+      charEl.classList.add("is-owned-left");
+    } else if (displayInfo.tokenVariant === "right") {
+      charEl.classList.add("is-owned-right");
+    }
+  }
+
+  const isAllOpenMode = questionerViewMode === "all";
+  const shouldHighlightOpenedInAllMode =
+    isAllOpenMode &&
+    viewerRole === "questioner" &&
+    displayInfo.tokenVariant == null &&
+    typeof openedOwner === "string";
+  if (shouldHighlightOpenedInAllMode) {
+    if (openedOwner === "team-left") {
+      charEl.classList.add("is-revealed-left");
+    } else if (openedOwner === "team-right") {
+      charEl.classList.add("is-revealed-right");
+    } else if (openedOwner === "yakumono") {
+      // 約物は既存の選択色（黄色）を使って明示する。
+      charEl.classList.add("is-selected");
+    }
+  }
+
+  // 参加者/観戦者視点で空白文字が開いた場合、白い穴に見えないように可視記号で描く。
+  if (
+    displayInfo.tokenVariant == null &&
+    viewerRole !== "questioner" &&
+    typeof displayInfo.text === "string" &&
+    displayInfo.text.trim() === ""
+  ) {
+    charEl.classList.add("is-whitespace-visible");
+    charEl.textContent = "□";
+    charEl.setAttribute("aria-label", `空白 文字 ${globalIndex + 1}`);
+  }
+
+  const canClickInSetup = selectableForSetup;
+  const canClickInOpen = selectableForOpen && !isOpened;
+  if (canClickInSetup || canClickInOpen) {
+    charEl.classList.add("is-selectable");
+    charEl.setAttribute("role", "button");
+    // 参加者の文字オープン操作はタップ主体なので、フォーカス残留を避ける。
+    charEl.setAttribute("tabindex", canClickInSetup ? "0" : "-1");
+    if (canClickInSetup) {
+      charEl.setAttribute(
+        "aria-pressed",
+        String(selectedArenaQuestionCharIndexes.has(globalIndex)),
+      );
+    }
+  } else {
+    charEl.setAttribute("aria-disabled", "true");
+  }
+
+  if (
+    selectableForSetup &&
+    selectedArenaQuestionCharIndexes.has(globalIndex)
+  ) {
+    charEl.classList.add("is-selected");
+  }
+}
+
+function refreshArenaQuestionCharGridInPlace(questionEl) {
+  const normalized = getNormalizedArenaQuestionChars();
+  const charEls = Array.from(
+    questionEl.querySelectorAll(".arena-question-char"),
+  );
+  if (normalized.length === 0 || charEls.length !== normalized.length) {
+    return false;
+  }
+
+  prepareArenaQuestionCharState(normalized.length);
+  charEls.forEach((charEl, globalIndex) => {
+    applyArenaQuestionCharState(charEl, normalized[globalIndex], globalIndex);
+  });
+  return true;
+}
+
+function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
+  const rows = buildArenaQuestionRows(charsPerLine);
+  if (rows.length === 0) {
+    questionEl.textContent = "問題文を準備中...";
+    selectedArenaQuestionCharIndexes.clear();
+    return;
+  }
+
+  let totalChars = 0;
+  rows.forEach((row) => {
+    totalChars += row.length;
+  });
+  prepareArenaQuestionCharState(totalChars);
 
   questionEl.textContent = "";
   const fragment = document.createDocumentFragment();
@@ -8348,84 +8513,8 @@ function renderArenaQuestionCharGrid(questionEl, charsPerLine) {
     lineEl.className = "arena-question-line";
 
     rowChars.forEach((char) => {
-      const openedOwner = openedByTeam[String(globalIndex)];
-      const isOpened = Boolean(openedOwner);
-      const displayInfo = getDisplayCharForIndex(char, globalIndex);
       const charEl = document.createElement("span");
-      charEl.className = "arena-question-char";
-      charEl.setAttribute("aria-label", `文字 ${globalIndex + 1}`);
-      charEl.dataset.charIndex = String(globalIndex);
-      charEl.textContent = displayInfo.text;
-
-      // どの経路でも空表示を避ける（白い穴に見える状態を防ぐ）
-      if (charEl.textContent === "") {
-        charEl.textContent = "□";
-      }
-
-      if (displayInfo.tokenVariant) {
-        charEl.classList.add("is-mask-token");
-        charEl.dataset.tokenLabel = displayInfo.text || String(globalIndex + 1);
-        charEl.textContent = "";
-        if (displayInfo.tokenVariant === "left") {
-          charEl.classList.add("is-owned-left");
-        } else if (displayInfo.tokenVariant === "right") {
-          charEl.classList.add("is-owned-right");
-        }
-      }
-
-      const isAllOpenMode = questionerViewMode === "all";
-      const shouldHighlightOpenedInAllMode =
-        isAllOpenMode &&
-        viewerRole === "questioner" &&
-        displayInfo.tokenVariant == null &&
-        typeof openedOwner === "string";
-      if (shouldHighlightOpenedInAllMode) {
-        if (openedOwner === "team-left") {
-          charEl.classList.add("is-revealed-left");
-        } else if (openedOwner === "team-right") {
-          charEl.classList.add("is-revealed-right");
-        } else if (openedOwner === "yakumono") {
-          // 約物は既存の選択色（黄色）を使って明示する。
-          charEl.classList.add("is-selected");
-        }
-      }
-
-      // 参加者/観戦者視点で空白文字が開いた場合、白い穴に見えないように可視記号で描く。
-      if (
-        displayInfo.tokenVariant == null &&
-        viewerRole !== "questioner" &&
-        typeof displayInfo.text === "string" &&
-        displayInfo.text.trim() === ""
-      ) {
-        charEl.classList.add("is-whitespace-visible");
-        charEl.textContent = "□";
-        charEl.setAttribute("aria-label", `空白 文字 ${globalIndex + 1}`);
-      }
-
-      const canClickInSetup = selectableForSetup;
-      const canClickInOpen = selectableForOpen && !isOpened;
-      if (canClickInSetup || canClickInOpen) {
-        charEl.classList.add("is-selectable");
-        charEl.setAttribute("role", "button");
-        // 参加者の文字オープン操作はタップ主体なので、フォーカス残留を避ける。
-        charEl.setAttribute("tabindex", canClickInSetup ? "0" : "-1");
-        if (canClickInSetup) {
-          charEl.setAttribute(
-            "aria-pressed",
-            String(selectedArenaQuestionCharIndexes.has(globalIndex)),
-          );
-        }
-      } else {
-        charEl.setAttribute("aria-disabled", "true");
-      }
-
-      if (
-        selectableForSetup &&
-        selectedArenaQuestionCharIndexes.has(globalIndex)
-      ) {
-        charEl.classList.add("is-selected");
-      }
-
+      applyArenaQuestionCharState(charEl, char, globalIndex);
       lineEl.appendChild(charEl);
       globalIndex += 1;
     });
@@ -8453,29 +8542,49 @@ function renderArenaQuestionText({ force = false } = {}) {
   }
 
   const renderSignature = getArenaQuestionRenderSignature();
+  const layoutSignature = getArenaQuestionLayoutSignature();
   const boardWidth = boardEl.clientWidth;
   const boardHeight = boardEl.clientHeight;
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
-  if (
-    !force &&
-    renderSignature === lastArenaQuestionRenderSignature &&
+  const layoutIsUnchanged =
+    layoutSignature === lastArenaQuestionLayoutSignature &&
     boardWidth === lastArenaQuestionBoardWidth &&
     boardHeight === lastArenaQuestionBoardHeight &&
     viewportWidth === lastArenaQuestionViewportWidth &&
-    viewportHeight === lastArenaQuestionViewportHeight
+    viewportHeight === lastArenaQuestionViewportHeight &&
+    lastArenaQuestionCharsPerLine > 0;
+  if (
+    !force &&
+    renderSignature === lastArenaQuestionRenderSignature &&
+    layoutIsUnchanged
   ) {
     return false;
   }
 
-  renderArenaQuestionWithAutoFit((questionEl, charsPerLine) => {
-    renderArenaQuestionCharGrid(questionEl, charsPerLine);
-  });
+  const questionEl = document.getElementById("arena-question-text");
+  if (
+    !force &&
+    layoutIsUnchanged &&
+    questionEl &&
+    refreshArenaQuestionCharGridInPlace(questionEl)
+  ) {
+    lastArenaQuestionRenderSignature = renderSignature;
+    return true;
+  }
+
+  const appliedLayout = renderArenaQuestionWithAutoFit(
+    (questionEl, charsPerLine) => {
+      renderArenaQuestionCharGrid(questionEl, charsPerLine);
+    },
+  );
   lastArenaQuestionRenderSignature = renderSignature;
+  lastArenaQuestionLayoutSignature = layoutSignature;
   lastArenaQuestionBoardWidth = boardEl.clientWidth;
   lastArenaQuestionBoardHeight = boardEl.clientHeight;
   lastArenaQuestionViewportWidth = viewportWidth;
   lastArenaQuestionViewportHeight = viewportHeight;
+  lastArenaQuestionCharsPerLine = appliedLayout?.charsPerLine || 0;
   return true;
 }
 
@@ -10861,7 +10970,15 @@ function registerArenaQuestionFontRefresh() {
 
 window.addEventListener("resize", () => {
   clearArenaPlayerBoxHeightOverrides();
-  scheduleArenaQuestionLayoutRefresh();
+  syncWaitingRoomMobilePanelState();
+  if (isInGameArena()) {
+    syncArenaLogsPresentation();
+    updateArenaLogsButtonVisibility();
+    syncArenaSpectatorBoxState();
+    clearArenaPlayerBoxHeightOverrides();
+    renderArenaQuestionText();
+  }
+  updateViewportDebugOverlay();
 });
 
 document.addEventListener("click", (event) => {
