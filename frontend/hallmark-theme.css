@@ -29,6 +29,8 @@
     --arena-color-focus-contrast: var(--arena-color-paper);
     --arena-color-danger: oklch(53% 0.2 28);
     --arena-color-success: oklch(50% 0.13 148);
+    --arena-color-chat-send: oklch(42% 0.09 165);
+    --arena-color-chat-send-hover: oklch(35% 0.08 165);
     --arena-color-overlay: oklch(10% 0.02 258 / 0.52);
     --arena-color-shadow: oklch(8% 0.025 258 / 0.16);
 
@@ -77,6 +79,13 @@
 }
 
 body:has(#game-arena-screen:not([style*="none"])) {
+    --arena-color-stage: oklch(100% 0 0);
+    --arena-color-stage-raised: oklch(97% 0.006 258);
+    --arena-color-stage-high: oklch(93% 0.008 258);
+    --arena-color-paper: oklch(100% 0 0);
+    --arena-color-paper-raised: oklch(96% 0.006 258);
+    --arena-color-paper-low: oklch(91% 0.009 258);
+
     background: var(--arena-color-stage);
     color: var(--arena-color-on-stage);
 }
@@ -511,8 +520,27 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     font-family: var(--arena-font-data);
 }
 
-#game-arena-screen .arena-team-card-chevron {
+#game-arena-screen
+    #arena-board-layout
+    .arena-team-card-chevron {
+    position: relative;
+    width: 1rem;
+    min-width: 1rem;
+    height: 1rem;
+    font-size: 0;
+    line-height: 0;
     color: var(--arena-color-on-stage-muted);
+}
+
+#game-arena-screen
+    #arena-board-layout
+    .arena-team-card-chevron::before {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    border-inline-end: var(--arena-rule-thin) solid currentColor;
+    border-block-end: var(--arena-rule-thin) solid currentColor;
+    transform: translateY(-0.125rem) rotate(45deg);
 }
 
 #game-arena-screen .arena-team-edit-btn {
@@ -714,10 +742,24 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 }
 
 #game-arena-screen #arena-answer-submit-btn {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
     min-width: 5.75rem;
-    border: var(--arena-rule-thin) solid var(--arena-color-ink);
-    background: var(--arena-color-ink);
+    height: 100%;
+    margin: 0;
+    border: var(--arena-rule-thin) solid var(--arena-color-danger);
+    border-radius: 0 var(--arena-radius-control) var(--arena-radius-control) 0;
+    background: var(--arena-color-danger);
     color: var(--arena-color-paper);
+    transform: none;
+    scale: 1;
+}
+
+#game-arena-screen #arena-answer-submit-btn:disabled {
+    border-color: var(--arena-color-stage-rule);
+    background: var(--arena-color-on-stage-muted);
+    color: var(--arena-color-stage-raised);
 }
 
 #game-arena-screen #arena-turn-end-btn {
@@ -766,7 +808,6 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     font-variant-numeric: tabular-nums;
 }
 
-#game-arena-screen .arena-spectator-toggle-btn,
 #game-arena-screen .arena-panel-close-btn {
     min-width: 2.75rem;
     min-height: 2.75rem;
@@ -775,6 +816,16 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
     border-radius: var(--arena-radius-control);
     background: var(--arena-color-stage-high);
+    color: var(--arena-color-on-stage);
+}
+
+#game-arena-screen #arena-spectator-toggle-btn {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 0;
+    background: transparent;
     color: var(--arena-color-on-stage);
 }
 
@@ -787,6 +838,12 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     border-radius: var(--arena-radius-control);
     background: transparent;
     box-shadow: none;
+}
+
+#game-arena-screen
+    .arena-mobile-chat-toolbar-buttons
+    .arena-panel-toggle-btn {
+    margin: 0;
 }
 
 #game-arena-screen .arena-panel-toggle-btn-left {
@@ -804,6 +861,7 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 #game-arena-screen .arena-panel-toggle-icon {
     width: 100%;
     height: 100%;
+    margin: 0;
     background: currentColor;
     filter: none;
     object-fit: none;
@@ -887,30 +945,135 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     color: var(--arena-color-on-stage-muted);
 }
 
-#game-arena-screen .chat-send-btn,
-#game-arena-screen .arena-chat-send-btn {
+body:not([data-app-mode="kifu"])
+    #game-arena-screen
+    .chat-compose:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: stretch;
+    min-width: 0;
+}
+
+#game-arena-screen .chat-compose:not(.hidden) .chat-input,
+#game-arena-screen .chat-compose:not(.hidden) .arena-chat-send-btn {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+#game-arena-screen .chat-compose:not(.hidden) .chat-input {
+    width: 100%;
+    min-width: 0;
+    padding-inline-end: 3.25rem;
+}
+
+body:has(#game-arena-screen:not([style*="none"]))
+    #arena-lower-layout
+    > #arena-global-chat-box
+    .chat-compose:not(.hidden)
+    .chat-input {
+    padding-inline-end: 3.25rem;
+}
+
+#game-arena-screen .chat-compose:not(.hidden) .chat-length-warning {
+    position: static;
+    inset: auto;
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 1lh;
+    margin: 0;
+}
+
+body:has(#game-arena-screen:not([style*="none"]))
+    #game-arena-screen
+    .chat-compose:not(.hidden)
+    .chat-length-warning {
+    position: static;
+    inset: auto;
+    margin: 0;
+}
+
+#game-arena-screen .chat-compose:not(.hidden) .arena-chat-send-btn {
+    position: relative;
+    inset: auto;
+    justify-self: end;
+    align-self: end;
     min-width: 2.75rem;
     min-height: 2.75rem;
     width: 2.75rem;
     height: 2.75rem;
-    border: var(--arena-rule-thin) solid var(--arena-color-turn);
+    margin: 0.125rem;
+    padding: 0;
+    border: var(--arena-rule-thin) solid var(--arena-color-chat-send);
     border-radius: var(--arena-radius-control);
-    background: var(--arena-color-turn);
-    color: var(--arena-color-turn-ink);
+    background: var(--arena-color-chat-send);
+    color: var(--arena-color-paper);
     box-shadow: none;
-    transition:
-        background-color var(--arena-dur-short) var(--arena-ease-out),
-        transform var(--arena-dur-micro) var(--arena-ease-out);
+    transform: none;
+    scale: 1;
+    z-index: var(--arena-z-raised);
+}
+
+body:has(#game-arena-screen:not([style*="none"]))
+    #arena-lower-layout
+    > #arena-global-chat-box
+    .chat-compose:not(.hidden)
+    .arena-chat-send-btn {
+    position: relative;
+    inset: auto;
+    transform: none;
+}
+
+#game-arena-screen .arena-chat-send-btn > b {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    z-index: var(--arena-z-base);
+    line-height: 1;
+    pointer-events: none;
+}
+
+#game-arena-screen
+    .chat-compose:not(.hidden)
+    .arena-chat-send-btn:active:not(:disabled) {
+    background: var(--arena-color-chat-send-hover);
+    transform: none;
+    scale: 1;
+}
+
+#game-arena-screen
+    .chat-compose:not(.hidden)
+    .arena-chat-send-btn:disabled {
+    border-color: var(--arena-color-stage-rule);
+    background: var(--arena-color-on-stage-muted);
+    color: var(--arena-color-stage-raised);
+    box-shadow: none;
 }
 
 #game-arena-screen .new-log-indicator {
-    min-height: 2.75rem;
-    border: var(--arena-rule-thin) solid var(--arena-color-turn);
+    box-sizing: border-box;
+    min-height: 1.625rem;
+    height: 1.625rem;
+    padding: var(--arena-space-3xs) var(--arena-space-xs);
+    border: var(--arena-rule-thin) solid var(--arena-color-danger);
     border-radius: var(--arena-radius-control);
-    background: var(--arena-color-turn);
-    color: var(--arena-color-turn-ink);
+    background: var(--arena-color-danger);
+    color: var(--arena-color-paper);
     box-shadow: none;
     font-family: var(--arena-font-body);
+    line-height: 1;
+}
+
+#game-arena-screen .new-log-indicator::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 2.75rem);
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
 }
 
 /* Arena overlays */
@@ -941,41 +1104,6 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 #game-arena-screen .full-open-settlement-answer {
     border-color: var(--arena-color-stage-rule);
     background: var(--arena-color-stage);
-    color: var(--arena-color-on-stage);
-}
-
-#game-arena-screen .arena-toast-notification {
-    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
-    border-radius: var(--arena-radius-panel);
-    background: var(--arena-color-stage-raised);
-    color: var(--arena-color-on-stage);
-    box-shadow: var(--arena-shadow-overlay);
-}
-
-#game-arena-screen .arena-toast-notification.is-game-global {
-    border-color: var(--arena-color-turn);
-    background: var(--arena-color-stage-raised);
-    color: var(--arena-color-on-stage);
-}
-
-#game-arena-screen .arena-toast-notification.is-team-left {
-    border-color: var(--arena-color-left);
-    background: var(--arena-color-stage-raised);
-    color: var(--arena-color-on-stage);
-}
-
-#game-arena-screen .arena-toast-notification.is-team-right {
-    border-color: var(--arena-color-right);
-    background: var(--arena-color-stage-raised);
-    color: var(--arena-color-on-stage);
-}
-
-#game-arena-screen .arena-toast-notification.is-game-global .arena-toast-title,
-#game-arena-screen .arena-toast-notification.is-game-global .arena-toast-message,
-#game-arena-screen .arena-toast-notification.is-team-left .arena-toast-title,
-#game-arena-screen .arena-toast-notification.is-team-left .arena-toast-message,
-#game-arena-screen .arena-toast-notification.is-team-right .arena-toast-title,
-#game-arena-screen .arena-toast-notification.is-team-right .arena-toast-message {
     color: var(--arena-color-on-stage);
 }
 
@@ -1026,7 +1154,10 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
         var(--arena-color-focus-contrast);
 }
 
-#game-arena-screen button:active:not(:disabled):not([aria-disabled="true"]),
+#game-arena-screen
+    button:active:not(:disabled):not([aria-disabled="true"]):not(
+        .new-log-indicator
+    ),
 #game-arena-screen
     [role="button"]:not(.arena-question-char):not(.player-list-item):not(
         [aria-disabled="true"]
@@ -1070,23 +1201,36 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     #game-arena-screen #close-room-btn:hover,
     #game-arena-screen .start-game-btn:hover,
     #game-arena-screen .kifu-step-btn:hover,
-    #game-arena-screen .arena-spectator-toggle-btn:hover,
     #game-arena-screen .arena-panel-close-btn:hover {
         background: var(--arena-color-stage-high);
         color: var(--arena-color-on-stage);
     }
 
     #game-arena-screen .start-game-btn:hover,
-    #game-arena-screen .chat-send-btn:hover,
-    #game-arena-screen .arena-chat-send-btn:hover,
-    #game-arena-screen .new-log-indicator:hover {
+    #game-arena-screen .kifu-step-btn:hover {
         background: var(--arena-color-turn-strong);
         color: var(--arena-color-turn-ink);
     }
 
-    #game-arena-screen #arena-answer-submit-btn:hover {
-        background: var(--arena-color-stage-high);
-        color: var(--arena-color-on-stage);
+    #game-arena-screen
+        .chat-compose:not(.hidden)
+        .arena-chat-send-btn:hover:not(:disabled) {
+        border-color: var(--arena-color-chat-send-hover);
+        background: var(--arena-color-chat-send-hover);
+        color: var(--arena-color-paper);
+        transform: none;
+        scale: 1;
+    }
+
+    #game-arena-screen .new-log-indicator:hover {
+        background: var(--arena-color-left-strong);
+        color: var(--arena-color-paper);
+    }
+
+    #game-arena-screen #arena-answer-submit-btn:hover:not(:disabled) {
+        border-color: var(--arena-color-left-strong);
+        background: var(--arena-color-left-strong);
+        color: var(--arena-color-paper);
     }
 
     #game-arena-screen #arena-turn-end-btn:hover {
@@ -1111,14 +1255,11 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
         color: var(--arena-color-paper);
     }
 
-    #game-arena-screen .chat-send-btn:hover,
-    #game-arena-screen .arena-chat-send-btn:hover {
-        transform: none;
-    }
-
     #game-arena-screen
         :is(
-            button:not(:disabled):not([aria-disabled="true"]),
+            button:not(:disabled):not([aria-disabled="true"]):not(
+                    .new-log-indicator
+                ),
             [role="button"]:not(.arena-question-char):not(.player-list-item):not(
                     [aria-disabled="true"]
                 ),
@@ -1167,15 +1308,159 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 }
 
 /* Mobile-first corrections over the legacy max-width rules */
-@media (max-width: 47.99rem) {
+@media (max-width: 47.99rem), (pointer: coarse) and (max-height: 47.99rem) {
     body:has(#game-arena-screen:not([style*="none"])) {
+        --arena-question-mobile-min: clamp(10rem, 32dvh, 15rem);
+        justify-content: flex-start;
+        padding: 0;
+        gap: 0;
         background: var(--arena-color-stage);
     }
 
     body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
-        border-radius: var(--arena-radius-panel);
+        box-sizing: border-box;
+        flex: 0 0 100dvh;
+        height: 100dvh;
+        min-height: 100dvh;
+        max-height: none;
+        margin: 0;
+        padding:
+            max(var(--arena-space-xs), env(safe-area-inset-top))
+            max(var(--arena-space-xs), env(safe-area-inset-right))
+            max(var(--arena-space-xs), env(safe-area-inset-bottom))
+            max(var(--arena-space-xs), env(safe-area-inset-left));
+        overflow-x: hidden;
+        overflow-y: auto;
+        border-radius: 0;
     }
 
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-board-layout {
+        flex: 1 1 0;
+        min-height: 0;
+        grid-template-rows:
+            minmax(var(--arena-question-mobile-min), 1fr)
+            auto;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-question-board {
+        max-height: none;
+        min-height: var(--arena-question-mobile-min);
+    }
+}
+
+@media (min-width: 48rem) and (max-width: 61.99rem) {
+    body:has(#game-arena-screen:not([style*="none"])) {
+        --arena-question-mobile-min: clamp(10rem, 32dvh, 15rem);
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-board-layout {
+        flex: 1 1 0;
+        min-height: calc(var(--arena-question-mobile-min) + 12rem);
+        grid-template-rows:
+            minmax(var(--arena-question-mobile-min), 1fr)
+            auto;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-question-board {
+        max-height: none;
+        min-height: var(--arena-question-mobile-min) !important;
+    }
+}
+
+@media (pointer: coarse) and (max-height: 47.99rem) {
+    body:has(#game-arena-screen:not([style*="none"])) {
+        --arena-question-mobile-min: clamp(11.5rem, 50dvh, 15rem);
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-board-layout {
+        flex: 0 0 auto;
+        min-height: calc(var(--arena-question-mobile-min) + 12rem);
+        grid-template-rows: var(--arena-question-mobile-min) auto;
+    }
+}
+
+@media (max-width: 61.99rem) {
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-answer-box:not(.hidden) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+        align-items: end;
+        gap: var(--arena-space-2xs);
+        min-width: 0;
+    }
+
+    #game-arena-screen #arena-answer-box .arena-answer-compose {
+        grid-column: 1;
+        grid-row: 1;
+        min-width: 0;
+    }
+
+    #game-arena-screen #arena-answer-box .arena-turn-end-row {
+        grid-column: 2;
+        grid-row: 1;
+        align-self: stretch;
+        align-items: stretch;
+        justify-content: flex-end;
+        min-width: 0;
+    }
+
+    #game-arena-screen #arena-answer-box #arena-answer-length-warning {
+        position: static;
+        inset: auto;
+        grid-column: 1 / -1;
+        grid-row: 2;
+        margin: 0;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden)) {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto;
+    }
+
+    #game-arena-screen
+        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden))
+        .arena-turn-end-row {
+        grid-column: 1;
+        grid-row: 2;
+        justify-content: flex-end;
+    }
+
+    #game-arena-screen
+        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden))
+        #arena-answer-length-warning {
+        grid-row: 3;
+    }
+
+    body:has(#game-arena-screen:not([style*="none"])) #arena-answer-input {
+        min-height: var(--arena-target);
+        padding-inline-end: 6.5rem;
+    }
+
+    #game-arena-screen #arena-answer-submit-btn {
+        min-height: var(--arena-target);
+        min-width: 5.5rem;
+    }
+
+    #game-arena-screen #arena-turn-end-btn,
+    #game-arena-screen #arena-intentional-draw-btn {
+        min-height: var(--arena-target);
+    }
+
+    #game-arena-screen #arena-turn-end-btn {
+        min-width: 0;
+        padding-inline: var(--arena-space-xs);
+        font-size: var(--arena-text-xs);
+    }
+}
+
+@media (max-width: 47.99rem) {
     #game-arena-screen .arena-header-tools {
         min-height: 2.75rem;
         gap: var(--arena-space-2xs);
@@ -1190,6 +1475,9 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 
     #game-arena-screen #leave-game-arena,
     #game-arena-screen #close-room-btn {
+        position: relative;
+        display: inline-grid;
+        place-items: center;
         min-width: var(--arena-target);
         width: var(--arena-target);
         padding: 0;
@@ -1200,11 +1488,32 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 
     #game-arena-screen #leave-game-arena::before,
     #game-arena-screen #close-room-btn::before {
-        content: "×";
-        color: var(--arena-color-on-stage);
-        font-family: var(--arena-font-body);
-        font-size: var(--arena-text-lg);
-        line-height: 1;
+        content: none;
+    }
+
+    #game-arena-screen #leave-game-arena::after,
+    #game-arena-screen #close-room-btn::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 1.125rem;
+        height: 1.125rem;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        background:
+            linear-gradient(
+                45deg,
+                transparent 43%,
+                var(--arena-color-on-stage) 44% 56%,
+                transparent 57%
+            ),
+            linear-gradient(
+                -45deg,
+                transparent 43%,
+                var(--arena-color-on-stage) 44% 56%,
+                transparent 57%
+            );
     }
 
     #game-arena-screen .start-game-btn {
@@ -1306,21 +1615,6 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
         height: 2.75rem;
     }
 
-    body:has(#game-arena-screen:not([style*="none"])) #arena-answer-input {
-        min-height: var(--arena-target);
-        padding-inline-end: 6.5rem;
-    }
-
-    #game-arena-screen #arena-answer-submit-btn {
-        min-height: var(--arena-target);
-        min-width: 5.5rem;
-    }
-
-    #game-arena-screen #arena-turn-end-btn,
-    #game-arena-screen #arena-intentional-draw-btn {
-        min-height: var(--arena-target);
-    }
-
     #game-arena-screen .arena-mobile-chat-toolbar {
         margin-block-start: var(--arena-space-xs);
     }
@@ -1376,6 +1670,7 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     #game-arena-screen .arena-logs-modal-slot {
         box-sizing: border-box;
         width: min(45rem, 100%);
+        height: min(78dvh, 42rem);
         min-width: 0;
         min-height: 0;
         max-width: 100%;
@@ -1388,8 +1683,11 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     }
 
     #game-arena-screen #arena-logs-modal-slot > .chat-box {
+        display: flex;
+        flex-direction: column;
         box-sizing: border-box;
         width: 100%;
+        height: min(78dvh, 42rem);
         min-width: 0;
         min-height: 0;
         max-width: 100%;
@@ -1400,6 +1698,13 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
         border-radius: var(--arena-radius-panel);
         background: var(--arena-color-stage-raised);
         color: var(--arena-color-on-stage);
+    }
+
+    #game-arena-screen
+        #arena-logs-modal-slot
+        > #arena-global-chat-box {
+        height: min(78dvh, 42rem);
+        align-self: stretch;
     }
 
     #game-arena-screen
@@ -1452,10 +1757,10 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     }
 
     #game-arena-screen #arena-logs-modal-slot > .chat-box .log-scroll-shell {
-        flex: 1 1 min(20rem, 50dvh);
+        flex: 1 1 auto;
         min-width: 0;
-        min-height: min(10rem, 32dvh);
-        max-height: min(20rem, 50dvh);
+        min-height: 0;
+        max-height: none;
         overflow: hidden;
     }
 
@@ -1525,7 +1830,10 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 }
 
 @media (pointer: coarse) {
-    #game-arena-screen button:not(#arena-question-board button),
+    #game-arena-screen
+        button:not(#arena-question-board button):not(.chat-send-btn):not(
+            .arena-chat-send-btn
+        ):not(.new-log-indicator),
     #game-arena-screen [role="button"]:not(.arena-question-char),
     #game-arena-screen input:not(#arena-question-board input),
     #game-arena-screen textarea:not(#arena-question-board textarea) {
@@ -1596,12 +1904,17 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
         #arena-logs-modal-slot
         .arena-panel-close-btn {
         position: relative;
+        display: inline-grid;
+        place-items: center;
         flex: 0 0 2rem;
         min-width: 2rem;
         width: 2rem;
         min-height: 2rem;
         height: 2rem;
         align-self: center;
+        overflow: visible;
+        color: transparent;
+        font-size: 0;
     }
 
     #game-arena-screen
@@ -1611,6 +1924,28 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
         content: "";
         position: absolute;
         inset: -0.4375rem;
+    }
+
+    #game-arena-screen
+        #arena-logs-modal[open]
+        #arena-logs-modal-slot
+        .arena-panel-close-btn::after {
+        content: "";
+        width: 1rem;
+        height: 1rem;
+        background:
+            linear-gradient(
+                45deg,
+                transparent 42%,
+                var(--arena-color-on-stage) 43% 57%,
+                transparent 58%
+            ),
+            linear-gradient(
+                -45deg,
+                transparent 42%,
+                var(--arena-color-on-stage) 43% 57%,
+                transparent 58%
+            );
     }
 }
 

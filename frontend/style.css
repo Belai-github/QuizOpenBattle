@@ -2130,7 +2130,7 @@ body.modal-open #arena-question-text .arena-question-line {
     background: #fff7cc;
     border: 1px solid #facc15;
     border-radius: 12px;
-    padding: 10px 10px 0;
+    padding: 10px 10px 10px;
     display: flex;
     flex-direction: column;
     min-height: 0;

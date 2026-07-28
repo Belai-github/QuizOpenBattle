@@ -3745,7 +3745,7 @@ function updateChatBoxVisibility() {
   });
 
   refreshChatLogFilterControls();
-  syncArenaPlayerBoxHeights();
+  clearArenaPlayerBoxHeightOverrides();
 }
 
 function updateArenaLogElementVisibility() {
@@ -3769,7 +3769,7 @@ function updateArenaLogElementVisibility() {
   });
 }
 
-function syncArenaPlayerBoxHeights() {
+function clearArenaPlayerBoxHeightOverrides() {
   const leftBoxEl = document.getElementById("arena-player-left");
   const rightBoxEl = document.getElementById("arena-player-right");
   const questionBoxEl = document.getElementById("arena-question-board");
@@ -3778,20 +3778,6 @@ function syncArenaPlayerBoxHeights() {
   leftBoxEl.style.minHeight = "";
   rightBoxEl.style.minHeight = "";
   questionBoxEl.style.minHeight = "";
-
-  if (!isInGameArena()) return;
-  if (!window.matchMedia("(min-width: 768px)").matches) return;
-  if (window.matchMedia("(max-width: 991px)").matches) return;
-
-  // 問題文が長い場合でも左右の参加者ボックスが追従するようにする。
-  const targetHeight = Math.max(
-    questionBoxEl.offsetHeight,
-    leftBoxEl.offsetHeight,
-    rightBoxEl.offsetHeight,
-  );
-  leftBoxEl.style.minHeight = `${targetHeight}px`;
-  rightBoxEl.style.minHeight = `${targetHeight}px`;
-  questionBoxEl.style.minHeight = `${targetHeight}px`;
 }
 
 function setChatBoxEditable(chatBoxEl, editable) {
@@ -6409,7 +6395,7 @@ function renderKifuStep() {
   if (shouldReplayLog) {
     renderArenaLogsForRoom(replayRoomId, { forceScrollToBottom: true });
   }
-  syncArenaPlayerBoxHeights();
+  clearArenaPlayerBoxHeightOverrides();
   renderArenaQuestionText();
   highlightReplayCurrentLogFromDisplayedProgress();
 }
@@ -10856,7 +10842,7 @@ function scheduleArenaQuestionLayoutRefresh({ force = false } = {}) {
       syncArenaLogsPresentation();
       updateArenaLogsButtonVisibility();
       syncArenaSpectatorBoxState();
-      syncArenaPlayerBoxHeights();
+      clearArenaPlayerBoxHeightOverrides();
       renderArenaQuestionText({ force: shouldForce });
     }
     updateViewportDebugOverlay();
@@ -10874,6 +10860,7 @@ function registerArenaQuestionFontRefresh() {
 }
 
 window.addEventListener("resize", () => {
+  clearArenaPlayerBoxHeightOverrides();
   scheduleArenaQuestionLayoutRefresh();
 });
 
