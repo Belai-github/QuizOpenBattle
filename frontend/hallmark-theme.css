@@ -864,19 +864,100 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 
 /* Question monitor */
 #game-arena-screen #arena-question-board {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
+    justify-items: stretch;
+    justify-content: stretch;
     border-color: var(--arena-color-paper-low);
     background: var(--arena-color-paper);
     color: var(--arena-color-ink);
 }
 
+#game-arena-screen .arena-question-stage {
+    order: 1;
+    grid-area: question;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-auto-flow: row;
+    align-self: stretch;
+    justify-self: stretch;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+#game-arena-screen
+    .arena-question-stage:has(> #arena-answer-box:not(.hidden)) {
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: var(--arena-space-xs);
+}
+
+#game-arena-screen
+    #arena-board-layout
+    .arena-question-stage
+    > #arena-question-board {
+    order: initial;
+    grid-area: auto;
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+    justify-self: stretch;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+#game-arena-screen .arena-question-stage > #arena-answer-box {
+    grid-column: 1;
+    align-self: end;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: var(--arena-space-xs);
+    border: var(--arena-rule-thin) solid var(--arena-color-paper-low);
+    border-radius: var(--arena-radius-panel);
+    background: var(--arena-color-paper);
+}
+
+#game-arena-screen
+    .arena-question-stage
+    > #arena-answer-box:not(.hidden) {
+    grid-row: 2;
+}
+
+#game-arena-screen .arena-question-stage > #arena-answer-box.hidden {
+    display: none;
+}
+
 #game-arena-screen #arena-progress-announcement {
+    position: sticky;
+    z-index: 2;
+    inset-block-start: 0;
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
     border-block-end-color: var(--arena-color-turn-strong);
     background: var(--arena-color-turn);
     color: var(--arena-color-turn-ink);
 }
 
 #game-arena-screen #arena-question-text {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: center;
+    justify-self: center;
     color: var(--arena-color-ink);
+}
+
+#game-arena-screen
+    #arena-question-board:has(#arena-progress-announcement:empty) {
+    row-gap: 0;
 }
 
 #game-arena-screen .arena-question-char {
@@ -1744,10 +1825,18 @@ body:has(#game-arena-screen:not([style*="none"]))
     }
 
     body:has(#game-arena-screen:not([style*="none"]))
-        #arena-question-board {
+        .arena-question-stage {
         height: var(--arena-question-mobile-size);
         min-height: var(--arena-question-mobile-size);
         max-height: var(--arena-question-mobile-size);
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        .arena-question-stage
+        > #arena-question-board {
+        height: 100%;
+        min-height: 0;
+        max-height: none;
     }
 }
 
@@ -1764,10 +1853,18 @@ body:has(#game-arena-screen:not([style*="none"]))
     }
 
     body:has(#game-arena-screen:not([style*="none"]))
-        #arena-question-board {
+        .arena-question-stage {
         height: var(--arena-question-mobile-size);
         min-height: var(--arena-question-mobile-size) !important;
         max-height: var(--arena-question-mobile-size);
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        .arena-question-stage
+        > #arena-question-board {
+        height: 100%;
+        min-height: 0 !important;
+        max-height: none;
     }
 }
 
@@ -1784,10 +1881,18 @@ body:has(#game-arena-screen:not([style*="none"]))
     }
 
     body:has(#game-arena-screen:not([style*="none"]))
-        #arena-question-board {
+        .arena-question-stage {
         height: var(--arena-question-mobile-size);
         min-height: var(--arena-question-mobile-size);
         max-height: var(--arena-question-mobile-size);
+    }
+
+    body:has(#game-arena-screen:not([style*="none"]))
+        .arena-question-stage
+        > #arena-question-board {
+        height: 100%;
+        min-height: 0;
+        max-height: none;
     }
 }
 
@@ -1825,26 +1930,6 @@ body:has(#game-arena-screen:not([style*="none"]))
         margin: 0;
     }
 
-    body:has(#game-arena-screen:not([style*="none"]))
-        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden)) {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto auto auto;
-    }
-
-    #game-arena-screen
-        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden))
-        .arena-turn-end-row {
-        grid-column: 1;
-        grid-row: 2;
-        justify-content: flex-end;
-    }
-
-    #game-arena-screen
-        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden))
-        #arena-answer-length-warning {
-        grid-row: 3;
-    }
-
     body:has(#game-arena-screen:not([style*="none"])) #arena-answer-input {
         min-height: var(--arena-target);
         padding-inline-end: 6.5rem;
@@ -1864,6 +1949,28 @@ body:has(#game-arena-screen:not([style*="none"]))
         min-width: 0;
         padding-inline: var(--arena-space-xs);
         font-size: var(--arena-text-xs);
+    }
+}
+
+@media (max-width: 22.49rem) {
+    body:has(#game-arena-screen:not([style*="none"]))
+        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden)) {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto;
+    }
+
+    #game-arena-screen
+        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden))
+        .arena-turn-end-row {
+        grid-column: 1;
+        grid-row: 2;
+        justify-content: flex-end;
+    }
+
+    #game-arena-screen
+        #arena-answer-box:has(#arena-intentional-draw-btn:not(.hidden))
+        #arena-answer-length-warning {
+        grid-row: 3;
     }
 }
 
@@ -2250,11 +2357,14 @@ body:has(#game-arena-screen:not([style*="none"]))
 
 @media (pointer: coarse) {
     #game-arena-screen
-        button:not(#arena-question-board button):not(.chat-send-btn):not(
-            .arena-chat-send-btn
-        ):not(.new-log-indicator),
+        button:not(#arena-question-board button):not(
+            #arena-answer-box button
+        ):not(.chat-send-btn):not(.arena-chat-send-btn):not(
+            .new-log-indicator
+        ),
     #game-arena-screen [role="button"]:not(.arena-question-char),
-    #game-arena-screen input:not(#arena-question-board input),
+    #game-arena-screen
+        input:not(#arena-question-board input):not(#arena-answer-box input),
     #game-arena-screen textarea:not(#arena-question-board textarea) {
         min-height: var(--arena-target);
     }

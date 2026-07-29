@@ -7,7 +7,7 @@
     <title>QuizOpenBattle</title>
     <link rel="icon" href="img/favicon.png" type="image/png">
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="hallmark-theme.css?v=20260730-result-badges-32">
+    <link rel="stylesheet" href="hallmark-theme.css?v=20260730-question-stage-34">
 </head>
 
 <body>
@@ -272,9 +272,11 @@
                 </div>
             </div>
 
-            <div id="arena-question-board">
-                <p id="arena-progress-announcement" aria-live="polite"></p>
-                <p id="arena-question-text">問題文を準備中...</p>
+            <div class="arena-question-stage">
+                <div id="arena-question-board">
+                    <p id="arena-progress-announcement" aria-live="polite"></p>
+                    <p id="arena-question-text">問題文を準備中...</p>
+                </div>
                 <div id="arena-answer-box" class="hidden">
                     <div class="arena-turn-end-row">
                         <button id="arena-intentional-draw-btn" type="button" class="hidden" aria-label="フルオープン決着" title="フルオープン決着">
