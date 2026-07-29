@@ -1,16 +1,16 @@
-/* Hallmark · macrostructure: Workbench · scope: arena+lobby · tone: technical · anchor hue: amber · genre: editorial · theme: Sport · enrichment: none · pre-emit critique: P5 H5 E4 S5 R5 V4 · contrast: pass (40–41) · nav: n/a · footer: n/a · slop: pass (42–45) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · responsive: pass (49) · icons: pass (30) · mobile: pass (34, 49, 50–57) */
+/* Hallmark · macrostructure: Workbench · scope: app · tone: technical · anchor hue: amber · genre: editorial · theme: Sport · enrichment: none · pre-emit critique: P5 H5 E5 S5 R5 V5 · contrast: pass (40–41) · nav: n/a · footer: n/a · slop: pass (42–45) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · responsive: pass (49) · icons: pass (30) · mobile: pass (34, 49, 50–57) */
 :root,
 [data-theme="light"] {
     --arena-color-scheme: light;
-    --arena-color-stage: oklch(98% 0.008 88);
-    --arena-color-stage-raised: oklch(95% 0.012 88);
-    --arena-color-stage-high: oklch(90% 0.016 88);
+    --arena-color-stage: oklch(100% 0 0);
+    --arena-color-stage-raised: oklch(97% 0.006 258);
+    --arena-color-stage-high: oklch(93% 0.008 258);
     --arena-color-stage-rule: oklch(68% 0.018 258);
     --arena-color-on-stage: oklch(20% 0.022 258);
     --arena-color-on-stage-muted: oklch(40% 0.022 258);
-    --arena-color-paper: oklch(98% 0.01 88);
-    --arena-color-paper-raised: oklch(94% 0.014 88);
-    --arena-color-paper-low: oklch(88% 0.018 88);
+    --arena-color-paper: oklch(100% 0 0);
+    --arena-color-paper-raised: oklch(96% 0.006 258);
+    --arena-color-paper-low: oklch(91% 0.009 258);
     --arena-color-ink: oklch(18% 0.02 258);
     --arena-color-ink-muted: oklch(42% 0.022 258);
     --arena-color-rule: oklch(74% 0.018 258);
@@ -57,6 +57,7 @@
     --arena-radius-panel: 0.375rem;
     --arena-radius-tile: 0.2em;
     --arena-rule-thin: 1px;
+    --arena-rule-focus: 2px;
     --arena-rule-strong: 3px;
     --arena-target: 3rem;
 
@@ -3333,7 +3334,9 @@ body:has(#waiting-room-screen:not([style*="none"]))
 
 @media (prefers-reduced-motion: reduce) {
     #waiting-room-screen
-        *:not(.waiting-header-icon-btn):not(#rulebook-btn),
+        *:not(.waiting-header-icon-btn):not(#rulebook-btn):not(
+            .ai-btn-spinner
+        ),
     #waiting-room-screen *::before,
     #waiting-room-screen *::after {
         animation-duration: 0.01ms !important;
@@ -3351,5 +3354,1388 @@ body:has(#waiting-room-screen:not([style*="none"]))
         ) {
         transform: none;
         scale: 1;
+    }
+}
+
+/* Entry desk, records index, and global utility surfaces. */
+html {
+    overflow-x: clip;
+}
+
+body:has(#login-screen:not([style*="none"])),
+body:has(#kifu-list-screen:not([style*="none"])) {
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    background: var(--arena-color-stage);
+    color: var(--arena-color-on-stage);
+    font-family: var(--arena-font-body);
+}
+
+body:has(#login-screen:not([style*="none"])) {
+    justify-content: flex-start;
+    padding:
+        max(var(--arena-space-lg), env(safe-area-inset-top))
+        max(var(--arena-space-md), env(safe-area-inset-right))
+        max(var(--arena-space-lg), env(safe-area-inset-bottom))
+        max(var(--arena-space-md), env(safe-area-inset-left));
+    gap: var(--arena-space-sm);
+    overflow-x: clip;
+    overflow-y: auto;
+}
+
+body:has(#login-screen:not([style*="none"])) > h1 {
+    width: min(60rem, 100%);
+    margin: 0 auto;
+    padding-block-end: var(--arena-space-sm);
+    border-block-end: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+    color: var(--arena-color-on-stage);
+    font-family: var(--arena-font-display);
+    font-size: var(--arena-text-lg);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.015em;
+    text-align: start;
+}
+
+body:has(#login-screen:not([style*="none"])) #login-screen {
+    display: flex;
+    flex-direction: column;
+    width: min(60rem, 100%);
+    max-width: 60rem;
+    min-height: 0;
+    margin: 0 auto;
+    padding: 0;
+    gap: 0;
+    overflow: clip;
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-panel);
+    background: var(--arena-color-paper);
+    color: var(--arena-color-ink);
+    box-shadow: none;
+}
+
+#login-screen :is(button, input, textarea, select) {
+    font-family: inherit;
+}
+
+#login-screen :is(.login-hero-card, .auth-status-card, .auth-flow-card) {
+    min-width: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--arena-color-paper);
+    color: var(--arena-color-ink);
+    box-shadow: none;
+}
+
+#login-screen .login-hero-card {
+    padding: var(--arena-space-lg);
+    border-block-start: var(--arena-rule-strong) solid
+        var(--arena-color-turn);
+    border-block-end: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+    background: var(--arena-color-stage-raised);
+    animation: hallmark-entry-surface-in var(--arena-dur-long)
+        var(--arena-ease-out) both;
+}
+
+#login-screen .login-eyebrow {
+    color: var(--arena-color-turn-strong);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-xs);
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+#login-screen .login-title {
+    max-width: none;
+    min-width: 0;
+    margin: var(--arena-space-xs) 0 var(--arena-space-2xs);
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-display);
+    font-size: clamp(1.35rem, 4vw, var(--arena-text-xl));
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.015em;
+    overflow-wrap: normal;
+    white-space: nowrap;
+}
+
+#login-screen .login-subtitle {
+    max-width: 56ch;
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-sm);
+    line-height: 1.55;
+}
+
+#login-screen .auth-choice-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(18rem, 0.92fr);
+    gap: 0;
+    align-items: stretch;
+}
+
+#login-screen .auth-choice-layout.hidden,
+#login-screen[data-auth-state="authenticated"] .auth-choice-layout {
+    display: none;
+}
+
+#login-screen[data-auth-state="authenticated"] .auth-flow-card {
+    display: none;
+}
+
+#login-screen .auth-flow-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--arena-space-sm);
+    padding: var(--arena-space-lg);
+    animation: hallmark-entry-surface-in var(--arena-dur-long)
+        var(--arena-ease-out) both;
+}
+
+#login-screen .auth-flow-card-login {
+    border-inline-start: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+    background: var(--arena-color-stage-raised);
+    animation-delay: 60ms;
+}
+
+#login-screen .auth-step-badge {
+    display: inline-flex;
+    align-self: flex-start;
+    min-height: 1.5rem;
+    padding: var(--arena-space-2xs) var(--arena-space-xs);
+    border-inline-start: var(--arena-rule-strong) solid
+        var(--arena-color-turn);
+    border-radius: 0;
+    background: transparent;
+    color: var(--arena-color-ink-muted);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-xs);
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+#login-screen .auth-flow-card h3 {
+    margin: 0;
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-display);
+    font-size: var(--arena-text-md);
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1.05;
+}
+
+#login-screen :is(.auth-flow-text, .auth-inline-note, .auth-stats-text) {
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-sm);
+    line-height: 1.5;
+}
+
+#login-screen .auth-label {
+    color: var(--arena-color-ink);
+    font-size: var(--arena-text-xs);
+    font-weight: 800;
+}
+
+#login-screen
+    :is(
+        #nickname,
+        #guest-nickname,
+        #transfer-code-input,
+        .profile-modal-name-input
+    ) {
+    width: 100%;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-paper);
+    color: var(--arena-color-ink);
+    box-shadow: none;
+}
+
+#login-screen
+    :is(#nickname, #guest-nickname, #transfer-code-input):focus {
+    border-color: var(--arena-color-focus);
+    outline: var(--arena-rule-focus) solid var(--arena-color-focus);
+    outline-offset: var(--arena-space-3xs);
+    box-shadow: none;
+}
+
+#login-screen .auth-transfer-login-block {
+    gap: var(--arena-space-xs);
+    margin-block-start: auto;
+    padding-block-start: var(--arena-space-sm);
+    border-block-start: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+}
+
+#login-screen
+    :is(
+        #register-btn,
+        #login-passkey-btn,
+        #join-btn,
+        #transfer-code-login-btn,
+        #issue-transfer-code-btn,
+        #auth-transfer-cancel-btn,
+        #logout-btn
+    ) {
+    width: 100%;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+    box-shadow: none;
+    font-size: var(--arena-text-sm);
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition:
+        background-color var(--arena-dur-short) var(--arena-ease-out),
+        border-color var(--arena-dur-short) var(--arena-ease-out),
+        transform var(--arena-dur-micro) var(--arena-ease-out);
+}
+
+#login-screen :is(#register-btn, #login-passkey-btn, #join-btn) {
+    border-color: var(--arena-color-turn);
+    background: var(--arena-color-turn);
+    color: var(--arena-color-turn-ink);
+}
+
+#login-screen
+    :is(#register-btn, #login-passkey-btn, #join-btn):hover:not(:disabled) {
+    border-color: var(--arena-color-turn-strong);
+    background: var(--arena-color-turn-strong);
+}
+
+#login-screen #login-passkey-btn:not(:disabled) {
+    border-color: var(--arena-color-right);
+    background: var(--arena-color-right);
+    color: var(--arena-color-paper);
+}
+
+#login-screen #login-passkey-btn:hover:not(:disabled) {
+    border-color: var(--arena-color-right-strong);
+    background: var(--arena-color-right-strong);
+    color: var(--arena-color-paper);
+}
+
+#login-screen
+    :is(
+        #transfer-code-login-btn,
+        #issue-transfer-code-btn,
+        #auth-transfer-cancel-btn
+    ):hover:not(:disabled) {
+    border-color: var(--arena-color-on-stage-muted);
+    background: var(--arena-color-stage-high);
+}
+
+#login-screen
+    :is(
+        #register-btn,
+        #login-passkey-btn,
+        #join-btn,
+        #transfer-code-login-btn,
+        #issue-transfer-code-btn,
+        #auth-transfer-cancel-btn,
+        #logout-btn
+    ):active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+#login-screen
+    :is(
+        #register-btn,
+        #login-passkey-btn,
+        #join-btn,
+        #transfer-code-login-btn,
+        #issue-transfer-code-btn,
+        #auth-transfer-cancel-btn,
+        #logout-btn,
+        #auth-profile-card
+    ):focus-visible {
+    outline: var(--arena-rule-strong) solid var(--arena-color-focus);
+    outline-offset: var(--arena-space-3xs);
+}
+
+#login-screen :is(button:disabled, [aria-disabled="true"]) {
+    border-color: var(--arena-color-stage-rule);
+    background: var(--arena-color-stage-high);
+    color: var(--arena-color-on-stage-muted);
+    opacity: 0.62;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#login-screen
+    :is(#register-btn, #login-passkey-btn, #join-btn):disabled {
+    border-color: var(--arena-color-stage-rule);
+    background: var(--arena-color-stage-high);
+    color: var(--arena-color-on-stage-muted);
+}
+
+#login-screen #logout-btn {
+    border-color: var(--arena-color-danger);
+    background: transparent;
+    color: var(--arena-color-danger);
+}
+
+#login-screen #logout-btn:hover:not(:disabled) {
+    background: var(--arena-color-left-soft);
+    color: var(--arena-color-left-strong);
+}
+
+#login-screen .auth-status-card {
+    padding: var(--arena-space-lg);
+    border-block-start: var(--arena-rule-strong) solid
+        var(--arena-color-turn);
+    animation: hallmark-entry-surface-in var(--arena-dur-long)
+        var(--arena-ease-out) both;
+}
+
+#login-screen[data-auth-state="loading"],
+#login-screen[data-auth-state="transfer-pending"] {
+    justify-content: center;
+    min-height: 18rem;
+}
+
+#login-screen .auth-signed-in-label {
+    color: var(--arena-color-turn-strong);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-xs);
+    font-weight: 800;
+    letter-spacing: 0.05em;
+}
+
+#login-screen #auth-status-text {
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-body);
+    font-size: var(--arena-text-base);
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+#login-screen #auth-profile-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    width: 100%;
+    min-height: 3.25rem;
+    margin: var(--arena-space-sm) 0 0;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+    box-shadow: none;
+}
+
+#login-screen #auth-profile-card.hidden {
+    display: none;
+}
+
+#login-screen #auth-profile-card:hover {
+    border-color: var(--arena-color-on-stage-muted);
+    background: var(--arena-color-stage-high);
+}
+
+#login-screen .waiting-profile-card-label {
+    color: var(--arena-color-on-stage-muted);
+    font-size: var(--arena-text-xs);
+}
+
+#login-screen .waiting-profile-card-name {
+    color: var(--arena-color-on-stage);
+    font-family: var(--arena-font-display);
+    font-size: var(--arena-text-md);
+    font-weight: 800;
+}
+
+#login-screen .auth-join-actions {
+    gap: var(--arena-space-xs);
+    margin-block-start: var(--arena-space-sm);
+}
+
+#login-screen .auth-secondary-actions {
+    gap: var(--arena-space-xs);
+}
+
+/* Match index — compact archival rows instead of blue cards and pills. */
+body:has(#kifu-list-screen:not([style*="none"])) {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding:
+        max(var(--arena-space-lg), env(safe-area-inset-top))
+        max(var(--arena-space-md), env(safe-area-inset-right))
+        max(var(--arena-space-lg), env(safe-area-inset-bottom))
+        max(var(--arena-space-md), env(safe-area-inset-left));
+    overflow-x: clip;
+}
+
+body:has(#kifu-list-screen:not([style*="none"])) #kifu-list-screen {
+    width: min(73.75rem, 100%);
+    max-width: 73.75rem;
+    min-height: min(42rem, calc(100dvh - 3rem));
+    margin: 0;
+    padding: var(--arena-space-md);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-panel);
+    background: var(--arena-color-stage);
+    color: var(--arena-color-on-stage);
+    box-shadow: none;
+    font-family: var(--arena-font-body);
+}
+
+#kifu-list-screen .kifu-list-header {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) auto minmax(8rem, 1fr);
+    align-items: center;
+    gap: var(--arena-space-sm);
+    min-height: 3rem;
+    margin: 0 0 var(--arena-space-sm);
+    padding-block-end: var(--arena-space-sm);
+    border-block-end: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+}
+
+#kifu-list-screen .kifu-list-header h3 {
+    position: static;
+    grid-column: 2;
+    min-width: 0;
+    margin: 0;
+    color: var(--arena-color-on-stage);
+    font-family: var(--arena-font-display);
+    font-size: var(--arena-text-lg);
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1;
+    transform: none;
+    overflow-wrap: anywhere;
+}
+
+#kifu-list-screen #kifu-list-back-link {
+    grid-column: 1;
+    justify-self: start;
+    min-height: 2.75rem;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+    font-size: var(--arena-text-sm);
+    font-weight: 800;
+    line-height: 1;
+    text-decoration: none;
+    transition:
+        background-color var(--arena-dur-short) var(--arena-ease-out),
+        border-color var(--arena-dur-short) var(--arena-ease-out),
+        transform var(--arena-dur-micro) var(--arena-ease-out);
+}
+
+#kifu-list-screen #kifu-list-back-link:hover {
+    border-color: var(--arena-color-on-stage-muted);
+    background: var(--arena-color-stage-high);
+    text-decoration: none;
+}
+
+#kifu-list-screen #kifu-list-back-link:active {
+    transform: translateY(1px);
+}
+
+#kifu-list-screen #kifu-list-back-link:focus-visible {
+    outline: var(--arena-rule-strong) solid var(--arena-color-focus);
+    outline-offset: var(--arena-space-3xs);
+}
+
+#kifu-list-screen .kifu-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--arena-space-xs);
+}
+
+#kifu-list-screen .kifu-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "title actions"
+        "question actions"
+        "meta actions";
+    gap: var(--arena-space-2xs) var(--arena-space-md);
+    min-width: 0;
+    margin: 0;
+    padding: var(--arena-space-sm);
+    overflow: clip;
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-block-start: var(--arena-rule-strong) solid
+        var(--arena-color-turn);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-paper);
+    color: var(--arena-color-ink);
+    box-shadow: none;
+    animation: hallmark-record-row-in var(--arena-dur-reveal)
+        var(--arena-ease-out) both;
+}
+
+#kifu-list-screen .kifu-card-title {
+    grid-area: title;
+    min-width: 0;
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-display);
+    font-size: var(--arena-text-md);
+    font-weight: 800;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+}
+
+#kifu-list-screen .kifu-card-question {
+    grid-area: question;
+    min-width: 0;
+    margin: 0;
+    color: var(--arena-color-ink);
+    font-size: var(--arena-text-sm);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+#kifu-list-screen .kifu-card-meta {
+    grid-area: meta;
+    margin: 0;
+    color: var(--arena-color-ink-muted);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+}
+
+#kifu-list-screen :is(.kifu-open-btn, .kifu-exit-btn) {
+    grid-area: actions;
+    align-self: center;
+    width: auto;
+    min-width: 5rem;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-turn);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-turn);
+    color: var(--arena-color-turn-ink);
+    box-shadow: none;
+    font-size: var(--arena-text-sm);
+    font-weight: 800;
+    line-height: 1;
+    transition:
+        background-color var(--arena-dur-short) var(--arena-ease-out),
+        border-color var(--arena-dur-short) var(--arena-ease-out),
+        transform var(--arena-dur-micro) var(--arena-ease-out);
+}
+
+#kifu-list-screen .kifu-open-btn:hover:not(:disabled) {
+    border-color: var(--arena-color-turn-strong);
+    background: var(--arena-color-turn-strong);
+}
+
+#kifu-list-screen .kifu-exit-btn {
+    border-color: var(--arena-color-stage-rule);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+}
+
+#kifu-list-screen .kifu-exit-btn:hover:not(:disabled) {
+    border-color: var(--arena-color-on-stage-muted);
+    background: var(--arena-color-stage-high);
+}
+
+#kifu-list-screen :is(.kifu-open-btn, .kifu-exit-btn):active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+#kifu-list-screen :is(.kifu-open-btn, .kifu-exit-btn):disabled {
+    border-color: var(--arena-color-stage-rule);
+    background: var(--arena-color-stage-high);
+    color: var(--arena-color-on-stage-muted);
+    opacity: 0.62;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#kifu-list-screen
+    :is(.kifu-open-btn, .kifu-exit-btn):focus-visible {
+    outline: var(--arena-rule-strong) solid var(--arena-color-focus);
+    outline-offset: var(--arena-space-3xs);
+}
+
+#kifu-list-screen .kifu-empty {
+    min-height: 14rem;
+    padding: var(--arena-space-lg);
+    color: var(--arena-color-ink-muted);
+    font-family: var(--arena-font-display);
+    font-size: var(--arena-text-md);
+    text-align: center;
+}
+
+/* Shared utility dialogs; arena-owned dialogs keep their dedicated layout. */
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal) {
+    width: auto;
+    min-width: 0;
+    margin: auto;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-body);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)[open] {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: var(--arena-space-md);
+    overflow: hidden;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)::backdrop {
+    background: var(--arena-color-overlay);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)[open]::backdrop {
+    animation: hallmark-dialog-backdrop-in var(--arena-dur-reveal)
+        var(--arena-ease-out) both;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    > .modal-card {
+    width: min(30rem, calc(100vw - 2rem));
+    max-width: 30rem;
+    max-height: calc(100dvh - 2rem);
+    margin: 0;
+    padding: var(--arena-space-lg);
+    overflow: auto;
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-block-start: var(--arena-rule-strong) solid
+        var(--arena-color-turn);
+    border-radius: var(--arena-radius-panel);
+    background: var(--arena-color-paper);
+    color: var(--arena-color-ink);
+    box-shadow: var(--arena-shadow-overlay);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)[open]
+    > .modal-card {
+    animation: hallmark-dialog-surface-in var(--arena-dur-reveal)
+        var(--arena-ease-out) both;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    :is(h2, h3) {
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-display);
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal) h2 {
+    min-width: 0;
+    margin: 0 0 var(--arena-space-sm);
+    font-size: var(--arena-text-lg);
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    :is(p, li) {
+    color: var(--arena-color-ink);
+    line-height: 1.55;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    :is(input, textarea, select) {
+    width: 100%;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-paper);
+    color: var(--arena-color-ink);
+    box-shadow: none;
+    font-family: inherit;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    :is(input, textarea, select):focus {
+    border-color: var(--arena-color-focus);
+    outline: var(--arena-rule-focus) solid var(--arena-color-focus);
+    outline-offset: var(--arena-space-3xs);
+    box-shadow: none;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    .modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--arena-space-xs);
+    margin-block-start: var(--arena-space-md);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    .modal-actions.single {
+    display: flex;
+    justify-content: flex-end;
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    .modal-actions
+    button {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+    box-shadow: none;
+    font-size: var(--arena-text-sm);
+    font-weight: 800;
+    transition:
+        background-color var(--arena-dur-short) var(--arena-ease-out),
+        border-color var(--arena-dur-short) var(--arena-ease-out),
+        transform var(--arena-dur-micro) var(--arena-ease-out);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    .modal-actions
+    button:last-child {
+    border-color: var(--arena-color-turn);
+    background: var(--arena-color-turn);
+    color: var(--arena-color-turn-ink);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    .modal-actions
+    button:hover:not(:disabled) {
+    border-color: var(--arena-color-on-stage-muted);
+    background: var(--arena-color-stage-high);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    .modal-actions
+    button:last-child:hover:not(:disabled) {
+    border-color: var(--arena-color-turn-strong);
+    background: var(--arena-color-turn-strong);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    .modal-actions
+    button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    :is(button, [role="button"]):focus-visible {
+    outline: var(--arena-rule-strong) solid var(--arena-color-focus);
+    outline-offset: var(--arena-space-3xs);
+}
+
+dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+    button:disabled {
+    border-color: var(--arena-color-stage-rule);
+    background: var(--arena-color-stage-high);
+    color: var(--arena-color-on-stage-muted);
+    opacity: 0.62;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#confirm-modal:not([data-variant="answer-judgement"]) #confirm-cancel-btn,
+#vote-confirm-modal #vote-confirm-cancel-btn,
+#ai-question-modal #ai-question-cancel-btn {
+    border-color: var(--arena-color-danger);
+    background: transparent;
+    color: var(--arena-color-danger);
+}
+
+#confirm-modal:not([data-variant="answer-judgement"])
+    #confirm-cancel-btn:hover:not(:disabled),
+#vote-confirm-modal #vote-confirm-cancel-btn:hover:not(:disabled),
+#ai-question-modal #ai-question-cancel-btn:hover:not(:disabled) {
+    border-color: var(--arena-color-danger);
+    background: var(--arena-color-left-soft);
+    color: var(--arena-color-left-strong);
+}
+
+#confirm-modal[data-variant="answer-judgement"] #confirm-cancel-btn {
+    border-color: var(--arena-color-right);
+    background: var(--arena-color-right);
+    color: var(--arena-color-paper);
+}
+
+#confirm-modal[data-variant="answer-judgement"] #confirm-ok-btn {
+    border-color: var(--arena-color-left);
+    background: var(--arena-color-left);
+    color: var(--arena-color-paper);
+}
+
+#confirm-modal[data-variant="answer-judgement"]
+    #confirm-cancel-btn:hover:not(:disabled) {
+    border-color: var(--arena-color-right-strong);
+    background: var(--arena-color-right-strong);
+}
+
+#confirm-modal[data-variant="answer-judgement"]
+    #confirm-ok-btn:hover:not(:disabled) {
+    border-color: var(--arena-color-left-strong);
+    background: var(--arena-color-left-strong);
+}
+
+#alert-modal #alert-message.alert-winner-left {
+    color: var(--arena-color-left);
+    font-weight: 800;
+}
+
+#alert-modal #alert-message.alert-winner-right {
+    color: var(--arena-color-right);
+    font-weight: 800;
+}
+
+#transfer-code-modal .transfer-code-modal-card {
+    width: min(26rem, calc(100vw - 2rem));
+    max-width: 26rem;
+    text-align: start;
+}
+
+#transfer-code-modal .transfer-code-modal-status {
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-sm);
+}
+
+#transfer-code-modal .transfer-code-modal-status.is-expired {
+    color: var(--arena-color-danger);
+}
+
+#transfer-code-modal .transfer-code-modal-value {
+    margin: var(--arena-space-md) 0 var(--arena-space-xs);
+    padding: var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-inline-start: var(--arena-rule-strong) solid
+        var(--arena-color-turn);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-xl);
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-align: center;
+}
+
+#transfer-code-modal .auth-inline-note {
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-xs);
+}
+
+#profile-modal .profile-modal-card {
+    width: min(30rem, calc(100vw - 2rem));
+    max-width: 30rem;
+    max-height: calc(100dvh - 2rem);
+    gap: var(--arena-space-xs);
+    overflow: hidden;
+}
+
+#profile-modal .profile-modal-kicker {
+    margin: 0;
+    color: var(--arena-color-turn-strong);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-xs);
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+#profile-modal .profile-modal-title {
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-display);
+    font-size: var(--arena-text-lg);
+    font-weight: 800;
+}
+
+#profile-modal .profile-modal-edit-toggle-btn {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: var(--arena-space-xs);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+    box-shadow: none;
+}
+
+#profile-modal .profile-modal-edit-toggle-btn:hover {
+    border-color: var(--arena-color-on-stage-muted);
+    background: var(--arena-color-stage-high);
+}
+
+#profile-modal
+    :is(
+        .profile-modal-edit-toggle-btn,
+        .profile-modal-edit,
+        .profile-modal-stats
+    ).hidden {
+    display: none;
+}
+
+#profile-modal :is(.profile-modal-subtitle, .profile-modal-note) {
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-sm);
+}
+
+#profile-modal .profile-modal-edit {
+    gap: var(--arena-space-xs);
+    padding-block: var(--arena-space-sm);
+    border-block: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+}
+
+#profile-modal .profile-modal-edit-label {
+    color: var(--arena-color-ink);
+    font-size: var(--arena-text-xs);
+    font-weight: 800;
+}
+
+#profile-modal .profile-modal-name-input {
+    margin: 0;
+}
+
+#profile-modal .profile-modal-name-save-btn {
+    min-width: 5rem;
+    min-height: 2.75rem;
+    margin: 0;
+    border: var(--arena-rule-thin) solid var(--arena-color-turn);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-turn);
+    color: var(--arena-color-turn-ink);
+}
+
+#profile-modal .profile-modal-edit-help {
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-xs);
+}
+
+#profile-modal .profile-modal-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    border-block-start: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+}
+
+#profile-modal .profile-modal-stat-chip {
+    min-width: 0;
+    padding: var(--arena-space-sm);
+    gap: var(--arena-space-2xs);
+    border: 0;
+    border-inline-end: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+    border-block-end: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+    border-radius: 0;
+    background: var(--arena-color-paper);
+}
+
+#profile-modal .profile-modal-stat-chip:nth-child(even) {
+    border-inline-end: 0;
+}
+
+#profile-modal .profile-modal-stat-label {
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-xs);
+}
+
+#profile-modal .profile-modal-stat-value {
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-md);
+    font-variant-numeric: tabular-nums;
+}
+
+#rulebook-modal .rulebook-modal-card {
+    width: min(56rem, calc(100vw - 2rem));
+    max-width: 56rem;
+    max-height: calc(100dvh - 2rem);
+    overflow: hidden;
+}
+
+#rulebook-modal .rulebook-tab-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    margin-block-end: var(--arena-space-sm);
+    padding: 0;
+    overflow: clip;
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage);
+}
+
+#rulebook-modal .rulebook-tab-btn {
+    position: relative;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: 0;
+    border-inline-end: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+    border-radius: 0;
+    background: var(--arena-color-stage);
+    color: var(--arena-color-on-stage-muted);
+    box-shadow: none;
+    font-size: var(--arena-text-sm);
+    font-weight: 800;
+}
+
+#rulebook-modal .rulebook-tab-btn:last-child {
+    border-inline-end: 0;
+}
+
+#rulebook-modal .rulebook-tab-btn[aria-selected="true"] {
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+    box-shadow: inset 0 calc(var(--arena-rule-strong) * -1) 0
+        var(--arena-color-turn);
+}
+
+#rulebook-modal .rulebook-tab-btn:hover {
+    background: var(--arena-color-stage-high);
+    color: var(--arena-color-on-stage);
+}
+
+#rulebook-modal .rulebook-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 62dvh;
+    margin: 0;
+    padding: var(--arena-space-md);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-paper);
+    color: var(--arena-color-ink);
+    font-size: var(--arena-text-sm);
+}
+
+#rulebook-modal .rulebook-content h3 {
+    margin: var(--arena-space-md) 0 var(--arena-space-xs);
+    font-size: var(--arena-text-md);
+    line-height: 1.15;
+}
+
+#rulebook-modal .rulebook-content h3:first-child {
+    margin-block-start: 0;
+}
+
+#rulebook-modal .rulebook-content hr {
+    margin: var(--arena-space-md) 0;
+    border: 0;
+    border-block-start: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+}
+
+#rulebook-modal .rulebook-content :is(p, ul) {
+    margin-block: var(--arena-space-xs);
+}
+
+#ai-question-modal .ai-question-modal-card {
+    gap: var(--arena-space-xs);
+}
+
+#ai-question-modal
+    :is(.ai-question-modal-help, .ai-question-modal-label) {
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-sm);
+}
+
+#ai-question-modal .ai-question-modal-label {
+    margin-block-start: var(--arena-space-2xs);
+    color: var(--arena-color-ink);
+    font-size: var(--arena-text-xs);
+    font-weight: 800;
+}
+
+#ai-question-modal #ai-accuracy-rate-range {
+    padding: 0;
+    accent-color: var(--arena-color-turn-strong);
+}
+
+#ai-question-modal .ai-accuracy-rate-readout {
+    padding: var(--arena-space-xs) var(--arena-space-sm);
+    border: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-ink-muted);
+    font-size: var(--arena-text-sm);
+}
+
+#ai-question-modal .ai-accuracy-rate-readout strong {
+    color: var(--arena-color-ink);
+    font-family: var(--arena-font-data);
+    font-size: var(--arena-text-base);
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes hallmark-entry-surface-in {
+    from {
+        opacity: 0;
+        transform: translateY(var(--arena-space-xs));
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes hallmark-record-row-in {
+    from {
+        opacity: 0;
+        transform: translateY(var(--arena-space-2xs));
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes hallmark-dialog-surface-in {
+    from {
+        opacity: 0;
+        transform: translateY(calc(var(--arena-space-xs) * -1)) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes hallmark-dialog-backdrop-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@media (min-width: 48rem) {
+    body:has(#login-screen:not([style*="none"])) {
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 47.99rem) {
+    body:has(#login-screen:not([style*="none"])) {
+        justify-content: flex-start;
+        align-items: stretch;
+        min-height: 100dvh;
+        padding:
+            max(var(--arena-space-xs), env(safe-area-inset-top))
+            max(var(--arena-space-xs), env(safe-area-inset-right))
+            max(var(--arena-space-xs), env(safe-area-inset-bottom))
+            max(var(--arena-space-xs), env(safe-area-inset-left));
+        gap: var(--arena-space-xs);
+        overflow-x: clip;
+        overflow-y: auto;
+    }
+
+    body:has(#login-screen:not([style*="none"])) > h1 {
+        width: 100%;
+        padding-block-end: var(--arena-space-xs);
+        font-size: var(--arena-text-md);
+        text-align: start;
+    }
+
+    body:has(#login-screen:not([style*="none"])) #login-screen {
+        flex: 0 0 auto;
+        width: 100%;
+        max-width: none;
+        max-height: none;
+        margin: 0;
+        overflow: clip;
+    }
+
+    body:has(
+            #login-screen[data-auth-state="guest"]:not([style*="none"])
+        )
+        #login-screen {
+        max-height: none;
+        overflow: clip;
+    }
+
+    body:has(#login-screen:not([style*="none"]))
+        #login-screen
+        .login-hero-card,
+    body:has(#login-screen:not([style*="none"]))
+        #login-screen
+        .auth-flow-card,
+    body:has(#login-screen:not([style*="none"]))
+        #login-screen
+        .auth-status-card {
+        padding: var(--arena-space-md);
+    }
+
+    #login-screen .login-title {
+        font-size: clamp(1.35rem, 6vw, var(--arena-text-lg));
+    }
+
+    #login-screen .auth-choice-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #login-screen .auth-flow-card-login {
+        border-inline-start: 0;
+        border-block-start: var(--arena-rule-thin) solid
+            var(--arena-color-stage-rule);
+    }
+
+    #login-screen .auth-secondary-actions {
+        flex-direction: column;
+    }
+
+    #login-screen .auth-secondary-actions > button {
+        font-size: var(--arena-text-xs);
+    }
+
+    body:has(#kifu-list-screen:not([style*="none"])) {
+        padding: 0;
+    }
+
+    body:has(#kifu-list-screen:not([style*="none"])) #kifu-list-screen {
+        width: 100%;
+        min-height: 100dvh;
+        padding:
+            max(var(--arena-space-xs), env(safe-area-inset-top))
+            max(var(--arena-space-xs), env(safe-area-inset-right))
+            max(var(--arena-space-xs), env(safe-area-inset-bottom))
+            max(var(--arena-space-xs), env(safe-area-inset-left));
+        border: 0;
+        border-radius: 0;
+    }
+
+    #kifu-list-screen .kifu-list-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--arena-space-xs);
+    }
+
+    #kifu-list-screen .kifu-list-header h3 {
+        grid-column: 2;
+        font-size: var(--arena-text-md);
+        white-space: nowrap;
+    }
+
+    #kifu-list-screen .kifu-card {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "title"
+            "question"
+            "meta"
+            "actions";
+        gap: var(--arena-space-xs);
+        padding: var(--arena-space-xs);
+    }
+
+    #kifu-list-screen :is(.kifu-open-btn, .kifu-exit-btn) {
+        justify-self: stretch;
+        width: 100%;
+    }
+
+    dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+        > .modal-card {
+        width: min(100%, calc(100vw - 1rem));
+        max-height: calc(100dvh - 1rem);
+        padding: var(--arena-space-md);
+    }
+
+    dialog.modal:not(.arena-logs-modal):not(
+            .full-open-settlement-modal
+        )[open] {
+        padding: var(--arena-space-xs);
+    }
+
+    dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)
+        .modal-actions {
+        gap: var(--arena-space-2xs);
+    }
+
+    #profile-modal .profile-modal-card,
+    #transfer-code-modal .transfer-code-modal-card,
+    #rulebook-modal .rulebook-modal-card {
+        width: min(100%, calc(100vw - 1rem));
+        max-height: calc(100dvh - 1rem);
+    }
+
+    #profile-modal .profile-modal-edit-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    #profile-modal .profile-modal-name-save-btn {
+        width: 100%;
+    }
+
+    #rulebook-modal .rulebook-content {
+        max-height: 66dvh;
+        padding: var(--arena-space-sm);
+    }
+}
+
+/*
+ * These are state-orientation motions, not decoration. They deliberately
+ * remain active when the OS reports reduced motion, per the product brief.
+ * Existing arena and lobby reduced-motion rules remain scoped to their own UI.
+ */
+@media (prefers-reduced-motion: reduce) {
+    #login-screen
+        :is(.login-hero-card, .auth-flow-card, .auth-status-card) {
+        animation-duration: var(--arena-dur-long);
+    }
+
+    #kifu-list-screen .kifu-card,
+    dialog.modal:not(.arena-logs-modal):not(.full-open-settlement-modal)[open]
+        > .modal-card,
+    dialog.modal:not(.arena-logs-modal):not(
+            .full-open-settlement-modal
+        )[open]::backdrop {
+        animation-duration: var(--arena-dur-reveal);
     }
 }
