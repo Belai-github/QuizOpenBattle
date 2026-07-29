@@ -8815,6 +8815,7 @@ function renderRooms(rooms) {
     const metaEl = document.createElement("div");
     metaEl.className = "room-card-meta";
     const roomState = String(room.game_state || "waiting");
+    card.dataset.roomState = roomState;
     const gameStateLabelByState = {
       waiting: "準備中",
       playing: "対戦中",
@@ -8822,7 +8823,30 @@ function renderRooms(rooms) {
     };
     const gameStateLabel = gameStateLabelByState[roomState] || "準備中";
     const genreLabel = String(room.genre || "").trim() || "未設定";
-    metaEl.textContent = `状態 ${gameStateLabel} / 参加 ${room.participant_count}人 / 観戦 ${room.spectator_count}人 / ジャンル:${genreLabel}`;
+    const roomMetaItems = [
+      ["状態", gameStateLabel, "room-card-state"],
+      ["参加", `${room.participant_count}人`, ""],
+      ["観戦", `${room.spectator_count}人`, ""],
+      ["ジャンル", genreLabel, ""],
+    ];
+    roomMetaItems.forEach(([label, value, extraClass]) => {
+      const itemEl = document.createElement("span");
+      itemEl.className = `room-card-meta-item ${extraClass}`.trim();
+
+      const labelEl = document.createElement("span");
+      labelEl.className = "room-card-meta-label";
+      labelEl.textContent = label;
+
+      const valueEl = document.createElement("span");
+      valueEl.className = "room-card-meta-value";
+      valueEl.textContent = value;
+
+      itemEl.append(labelEl, valueEl);
+      metaEl.appendChild(itemEl);
+    });
+
+    card.appendChild(questionerEl);
+    card.appendChild(metaEl);
 
     const shouldShowJoinActions = !room.is_owner || Boolean(room.is_ai_room);
     if (shouldShowJoinActions) {
@@ -8867,9 +8891,6 @@ function renderRooms(rooms) {
 
       card.appendChild(actionsEl);
     }
-
-    card.appendChild(questionerEl);
-    card.appendChild(metaEl);
     roomListEl.appendChild(card);
   });
 
