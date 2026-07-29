@@ -65,6 +65,7 @@
     --arena-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
     --arena-dur-micro: 100ms;
     --arena-dur-short: 160ms;
+    --arena-dur-reveal: 220ms;
     --arena-dur-long: 300ms;
 
     --arena-shadow-panel: 0 0 0 var(--arena-rule-thin) var(--arena-color-stage-rule);
@@ -187,11 +188,11 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     min-height: 2.75rem;
     height: 2.75rem;
     margin: 0;
-    color: var(--arena-color-turn);
+    color: var(--arena-color-on-stage);
 }
 
 #game-arena-screen #toggle-question-visibility-btn[data-view-mode="all"] {
-    color: var(--arena-color-turn);
+    color: var(--arena-color-on-stage);
 }
 
 #game-arena-screen #toggle-question-visibility-btn[data-view-mode="team-left"] {
@@ -691,15 +692,40 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
     background: var(--arena-color-stage-raised);
     color: var(--arena-color-on-stage);
     box-shadow: var(--arena-shadow-overlay);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(calc(var(--arena-space-xs) * -1));
     transition:
-        opacity var(--arena-dur-short) var(--arena-ease-out),
-        transform var(--arena-dur-short) var(--arena-ease-out);
+        opacity var(--arena-dur-reveal) var(--arena-ease-out),
+        transform var(--arena-dur-reveal) var(--arena-ease-out),
+        visibility 0s linear var(--arena-dur-reveal);
 }
 
 #game-arena-screen #arena-team-left-dropdown,
 #game-arena-screen #arena-team-right-dropdown {
     border-color: var(--arena-color-stage-rule);
     background: var(--arena-color-stage-raised);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    body[data-arena-team-card-pinned="false"]
+        #game-arena-screen
+        .arena-team-card-shell:hover
+        .arena-team-dropdown {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+        transition-delay: 0s;
+        pointer-events: auto;
+    }
+}
+
+#game-arena-screen .arena-team-card-shell.is-pinned .arena-team-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition-delay: 0s;
+    pointer-events: auto;
 }
 
 #game-arena-screen .player-list-item {
@@ -1168,6 +1194,55 @@ body:has(#game-arena-screen:not([style*="none"]))
     line-height: 1;
 }
 
+@keyframes arena-new-log-slide-up {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(var(--arena-space-xs));
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+#game-arena-screen .new-log-indicator:not(.hidden) {
+    animation: arena-new-log-slide-up var(--arena-dur-reveal)
+        var(--arena-ease-out) both;
+}
+
+@keyframes arena-toast-slide-down {
+    from {
+        opacity: 0;
+        transform: translate(-50%, calc(var(--arena-space-sm) * -1));
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+#game-arena-screen .arena-toast-layer {
+    opacity: 0;
+    transform: translate(-50%, calc(var(--arena-space-sm) * -1));
+    transition:
+        opacity var(--arena-dur-reveal) var(--arena-ease-out),
+        transform var(--arena-dur-reveal) var(--arena-ease-out);
+}
+
+#game-arena-screen .arena-toast-layer.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    animation: arena-toast-slide-down var(--arena-dur-reveal)
+        var(--arena-ease-out) both;
+}
+
+#game-arena-screen .arena-toast-layer.is-hiding {
+    opacity: 0;
+    transform: translate(-50%, calc(var(--arena-space-sm) * -1));
+}
+
 /* Arena overlays */
 #game-arena-screen .modal-card,
 #game-arena-screen .arena-logs-modal-shell {
@@ -1386,6 +1461,17 @@ body:has(#game-arena-screen:not([style*="none"]))
     :is(
         #toggle-question-visibility-btn,
         #shuffle-participants-btn,
+        #rulebook-btn-arena
+    ) {
+    scale: 1;
+    transform-origin: center;
+    transition: scale var(--arena-dur-reveal) var(--arena-ease-out);
+}
+
+#game-arena-screen
+    :is(
+        #toggle-question-visibility-btn,
+        #shuffle-participants-btn,
         #rulebook-btn-arena,
         #arena-intentional-draw-btn,
         #arena-team-left-toggle-btn,
@@ -1397,6 +1483,26 @@ body:has(#game-arena-screen:not([style*="none"]))
     background: transparent;
     box-shadow: none;
     transform: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    #game-arena-screen
+        :is(
+            #toggle-question-visibility-btn,
+            #shuffle-participants-btn,
+            #rulebook-btn-arena
+        ):hover:not(:disabled) {
+        scale: 1.08;
+    }
+
+    #game-arena-screen
+        :is(
+            #toggle-question-visibility-btn,
+            #shuffle-participants-btn,
+            #rulebook-btn-arena
+        ):active:not(:disabled) {
+        scale: 0.98;
+    }
 }
 
 /* Mobile-first corrections over the legacy max-width rules */
@@ -2059,7 +2165,17 @@ body:has(#game-arena-screen:not([style*="none"]))
 }
 
 @media (prefers-reduced-motion: reduce) {
-    #game-arena-screen *,
+    #game-arena-screen
+        *:not(
+            :is(
+                .arena-team-dropdown,
+                .new-log-indicator,
+                .arena-toast-layer,
+                #toggle-question-visibility-btn,
+                #shuffle-participants-btn,
+                #rulebook-btn-arena
+            )
+        ),
     #game-arena-screen *::before,
     #game-arena-screen *::after {
         animation-duration: 0.01ms !important;
@@ -2089,6 +2205,12 @@ body:has(#game-arena-screen:not([style*="none"]))
     #game-arena-screen
         button:active:not(:disabled):not([aria-disabled="true"]):not(
             .new-log-indicator
+        ):not(
+            :is(
+                #toggle-question-visibility-btn,
+                #shuffle-participants-btn,
+                #rulebook-btn-arena
+            )
         ),
     #game-arena-screen
         [role="button"]:not(.arena-question-char):not(.player-list-item):not(
@@ -2099,6 +2221,12 @@ body:has(#game-arena-screen:not([style*="none"]))
         :is(
             button:not(:disabled):not([aria-disabled="true"]):not(
                     .new-log-indicator
+                ):not(
+                    :is(
+                        #toggle-question-visibility-btn,
+                        #shuffle-participants-btn,
+                        #rulebook-btn-arena
+                    )
                 ),
             [role="button"]:not(.arena-question-char):not(.player-list-item):not(
                     [aria-disabled="true"]
