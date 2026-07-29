@@ -7,7 +7,7 @@
     <title>QuizOpenBattle</title>
     <link rel="icon" href="img/favicon.png" type="image/png">
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="hallmark-theme.css?v=20260729-arena-motion-16">
+    <link rel="stylesheet" href="hallmark-theme.css?v=20260729-kifu-transport-20">
 </head>
 
 <body>
@@ -157,15 +157,31 @@
                 <div id="leave-game-arena" role="button" tabindex="0" aria-label="部屋を閉じる">✕ 部屋を閉じる</div>
                 <div id="close-room-btn" class="hidden" role="button" tabindex="0" aria-label="部屋を閉じる">✕ 部屋を閉じる</div>
             </div>
+            <div id="kifu-replay-controls" class="kifu-replay-controls hidden" role="group" aria-label="棋譜の手順移動" aria-live="polite">
+                <button id="kifu-step-first-btn" type="button" class="kifu-step-btn kifu-step-btn-edge" aria-label="最初へ" title="最初へ">
+                    <svg class="kifu-step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M7 5v14M17 7l-5 5 5 5" />
+                    </svg>
+                </button>
+                <button id="kifu-step-prev-btn" type="button" class="kifu-step-btn" aria-label="1手戻る" title="1手戻る">
+                    <svg class="kifu-step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M15 6l-6 6 6 6" />
+                    </svg>
+                </button>
+                <span id="kifu-step-label">0 / 0</span>
+                <button id="kifu-step-next-btn" type="button" class="kifu-step-btn" aria-label="1手進む" title="1手進む">
+                    <svg class="kifu-step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M9 6l6 6-6 6" />
+                    </svg>
+                </button>
+                <button id="kifu-step-last-btn" type="button" class="kifu-step-btn kifu-step-btn-edge" aria-label="最後へ" title="最後へ">
+                    <svg class="kifu-step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M17 5v14M7 7l5 5-5 5" />
+                    </svg>
+                </button>
+            </div>
             <div class="arena-header-right-actions">
                 <button id="start-game-btn" class="start-game-btn hidden" type="button">ゲーム開始</button>
-                <div id="kifu-replay-controls" class="kifu-replay-controls hidden" aria-live="polite">
-                    <button id="kifu-step-first-btn" type="button" class="kifu-step-btn" aria-label="最初へ">|←</button>
-                    <button id="kifu-step-prev-btn" type="button" class="kifu-step-btn" aria-label="1手戻る">←</button>
-                    <span id="kifu-step-label">0 / 0</span>
-                    <button id="kifu-step-next-btn" type="button" class="kifu-step-btn" aria-label="1手進む">→</button>
-                    <button id="kifu-step-last-btn" type="button" class="kifu-step-btn" aria-label="最後へ">→|</button>
-                </div>
                 <button id="toggle-question-visibility-btn" class="question-visibility-btn hidden" type="button" aria-label="表示視点を切り替え" title="表示視点を切り替え">
                     <img src="img/view.svg" alt="表示視点" class="question-visibility-icon">
                 </button>

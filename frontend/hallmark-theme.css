@@ -102,10 +102,28 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 
 /* Broadcast control rail */
 #game-arena-screen .arena-header-tools {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--arena-space-xs);
     min-height: 3.25rem;
     margin-block-end: var(--arena-space-sm);
     padding-block-end: var(--arena-space-sm);
     border-block-end: var(--arena-rule-thin) solid var(--arena-color-stage-rule);
+}
+
+#game-arena-screen .arena-header-left-actions {
+    grid-column: 1;
+}
+
+#game-arena-screen .kifu-replay-controls {
+    grid-column: 2;
+    justify-self: center;
+}
+
+#game-arena-screen .arena-header-right-actions {
+    grid-column: 3;
+    margin-inline-start: 0;
 }
 
 #game-arena-screen .arena-header-left-actions,
@@ -131,8 +149,7 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
         transform var(--arena-dur-micro) var(--arena-ease-out);
 }
 
-#game-arena-screen .start-game-btn,
-#game-arena-screen .kifu-step-btn {
+#game-arena-screen .start-game-btn {
     min-width: 2.75rem;
     min-height: 2.75rem;
     height: 2.75rem;
@@ -160,21 +177,94 @@ body:has(#game-arena-screen:not([style*="none"])) #game-arena-screen {
 }
 
 #game-arena-screen .kifu-replay-controls {
-    gap: var(--arena-space-2xs);
+    grid-template-columns: 2.75rem 2.75rem minmax(3.5rem, 1fr) 2.75rem 2.75rem;
+    width: min(100%, 15.5rem);
+    height: 2.75rem;
+    gap: 0;
+    overflow: clip;
+    border: 0;
+    border-radius: var(--arena-radius-control);
+    background: var(--arena-color-stage-raised);
+    color: var(--arena-color-on-stage);
+    box-shadow: inset 0 0 0 var(--arena-rule-thin)
+        var(--arena-color-stage-rule);
 }
 
-#game-arena-screen .kifu-step-btn {
-    width: 2.75rem;
+#game-arena-screen #kifu-replay-controls:not(.hidden) {
+    display: grid;
+}
+
+#game-arena-screen #kifu-replay-controls .kifu-step-btn {
+    display: grid;
+    place-items: center;
+    width: 100% !important;
+    min-width: 0;
+    min-height: 100% !important;
+    height: 100%;
+    margin: 0;
     padding: 0;
-    font-family: var(--arena-font-data);
+    border: 0;
+    border-inline-end: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+    border-radius: 0;
+    background: transparent;
+    color: var(--arena-color-on-stage);
+    box-shadow: none;
+    touch-action: manipulation;
+    scale: 1;
+    transform: none;
+}
+
+#game-arena-screen
+    #kifu-replay-controls
+    .kifu-step-btn:nth-of-type(3) {
+    border-inline-start: var(--arena-rule-thin) solid
+        var(--arena-color-stage-rule);
+}
+
+#game-arena-screen #kifu-replay-controls .kifu-step-btn:last-child {
+    border-inline-end: 0;
+}
+
+#game-arena-screen #kifu-replay-controls .kifu-step-btn-edge {
+    color: var(--arena-color-on-stage-muted);
+}
+
+#game-arena-screen .kifu-step-icon {
+    display: block;
+    width: 1.125rem;
+    height: 1.125rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: square;
+    stroke-linejoin: miter;
+    pointer-events: none;
 }
 
 #game-arena-screen #kifu-step-label {
-    min-width: 4.75rem;
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    height: 100%;
     color: var(--arena-color-on-stage);
     font-family: var(--arena-font-data);
     font-size: var(--arena-text-xs);
+    font-weight: 700;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+#game-arena-screen #kifu-step-label::after {
+    content: "";
+    position: absolute;
+    inset-inline: 30%;
+    inset-block-end: 0;
+    height: var(--arena-rule-strong);
+    background: var(--arena-color-turn);
+    pointer-events: none;
 }
 
 #game-arena-screen .shuffle-icon,
@@ -1502,6 +1592,105 @@ body:has(#game-arena-screen:not([style*="none"]))
             #rulebook-btn-arena
         ):active:not(:disabled) {
         scale: 0.98;
+    }
+}
+
+#game-arena-screen
+    #kifu-replay-controls
+    .kifu-step-btn:is(:hover, :active, :focus-visible, :disabled) {
+    scale: 1;
+}
+
+#game-arena-screen
+    #kifu-replay-controls
+    .kifu-step-btn:focus-visible {
+    z-index: 1;
+    outline-color: var(--arena-color-focus);
+    outline-offset: calc(var(--arena-rule-strong) * -1);
+    box-shadow: inset 0 0 0 var(--arena-rule-thin)
+        var(--arena-color-focus-contrast);
+}
+
+#game-arena-screen #kifu-replay-controls .kifu-step-btn:disabled {
+    background: transparent;
+    color: var(--arena-color-on-stage-muted);
+    opacity: 0.42;
+    transform: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    #game-arena-screen
+        #kifu-replay-controls
+        .kifu-step-btn:hover:not(:disabled) {
+        background: var(--arena-color-stage-high);
+        color: var(--arena-color-on-stage);
+        transform: translateY(-1px);
+        scale: 1;
+    }
+}
+
+#game-arena-screen
+    #kifu-replay-controls
+    .kifu-step-btn:active:not(:disabled) {
+    background: var(--arena-color-stage-high);
+    color: var(--arena-color-on-stage);
+    transform: translateY(1px);
+    scale: 1;
+}
+
+@media (min-width: 375px) and (max-width: 47.99rem) {
+    #game-arena-screen .arena-header-tools {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    #game-arena-screen .arena-header-left-actions {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    #game-arena-screen .arena-header-right-actions {
+        grid-column: 3;
+        grid-row: 1;
+        justify-self: end;
+    }
+
+    #game-arena-screen #kifu-replay-controls:not(.hidden) {
+        grid-template-columns:
+            1.75rem 2.25rem minmax(2.5rem, 1fr) 2.25rem 1.75rem;
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: center;
+        width: min(100%, 11.5rem);
+        margin-block-start: 0;
+    }
+
+    #game-arena-screen .kifu-step-icon {
+        width: 1rem;
+        height: 1rem;
+    }
+}
+
+@media (max-width: 374px) {
+    #game-arena-screen .arena-header-tools {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    #game-arena-screen .arena-header-left-actions {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    #game-arena-screen .arena-header-right-actions {
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: end;
+    }
+
+    #game-arena-screen #kifu-replay-controls:not(.hidden) {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        justify-self: center;
+        margin-block-start: var(--arena-space-2xs);
     }
 }
 
