@@ -1871,15 +1871,11 @@ function renderArenaLogsForRoom(roomOwnerId, options = {}) {
     if (!scrollContainer) return;
 
     const wasNearBottom = isLogNearBottom(scrollContainer);
-    const distanceFromBottom = Math.max(
-      0,
-      scrollContainer.scrollHeight -
-        (scrollContainer.scrollTop + scrollContainer.clientHeight),
-    );
+    const scrollTopFromTop = Math.max(0, scrollContainer.scrollTop);
 
     scrollStateByChatType.set(chatType, {
       wasNearBottom,
-      distanceFromBottom,
+      scrollTopFromTop,
     });
   });
 
@@ -1949,15 +1945,9 @@ function renderArenaLogsForRoom(roomOwnerId, options = {}) {
         return;
       }
 
-      const distanceFromBottom = Math.max(
-        0,
-        Number(prevScrollState?.distanceFromBottom || 0),
-      );
       scrollContainer.scrollTop = Math.max(
         0,
-        scrollContainer.scrollHeight -
-          scrollContainer.clientHeight -
-          distanceFromBottom,
+        Number(prevScrollState?.scrollTopFromTop || 0),
       );
       if (indicatorEl) {
         indicatorEl.classList.remove("hidden");
@@ -9060,12 +9050,8 @@ function appendLogToContainer(
 
   const scrollContainer = resolveLogScrollContainer(logEl);
   const wasNearBottom = isLogNearBottom(scrollContainer);
-  const distanceFromBottom = scrollContainer
-    ? Math.max(
-        0,
-        scrollContainer.scrollHeight -
-          (scrollContainer.scrollTop + scrollContainer.clientHeight),
-      )
+  const scrollTopFromTop = scrollContainer
+    ? Math.max(0, scrollContainer.scrollTop)
     : 0;
   const indicatorEl = ensureLogNewIndicator(scrollContainer);
 
@@ -9083,12 +9069,7 @@ function appendLogToContainer(
         return;
       }
 
-      scrollContainer.scrollTop = Math.max(
-        0,
-        scrollContainer.scrollHeight -
-          scrollContainer.clientHeight -
-          distanceFromBottom,
-      );
+      scrollContainer.scrollTop = scrollTopFromTop;
       if (indicatorEl) {
         indicatorEl.classList.remove("hidden");
       }
@@ -9491,12 +9472,8 @@ function hydrateLobbyChatHistoryIfNeeded(history) {
   const scrollContainer = resolveLogScrollContainer(waitingLogEl);
   const indicatorEl = ensureLogNewIndicator(scrollContainer);
   const wasNearBottom = isLogNearBottom(scrollContainer);
-  const distanceFromBottom = scrollContainer
-    ? Math.max(
-        0,
-        scrollContainer.scrollHeight -
-          (scrollContainer.scrollTop + scrollContainer.clientHeight),
-      )
+  const scrollTopFromTop = scrollContainer
+    ? Math.max(0, scrollContainer.scrollTop)
     : 0;
 
   waitingLogEl.innerHTML = "";
@@ -9535,12 +9512,7 @@ function hydrateLobbyChatHistoryIfNeeded(history) {
     return;
   }
 
-  scrollContainer.scrollTop = Math.max(
-    0,
-    scrollContainer.scrollHeight -
-      scrollContainer.clientHeight -
-      distanceFromBottom,
-  );
+  scrollContainer.scrollTop = scrollTopFromTop;
   if (indicatorEl) {
     indicatorEl.classList.remove("hidden");
   }
